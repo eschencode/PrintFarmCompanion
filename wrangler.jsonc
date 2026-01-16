@@ -5,5 +5,12 @@
 	"compatibility_flags": [
 		"nodejs_als"
 	],
-	"pages_build_output_dir": ".svelte-kit/cloudflare"
+	"pages_build_output_dir": ".svelte-kit/cloudflare",
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "3dtracker-db",
+			"database_id": "21972452-33d3-47bd-a1a3-63fd4957358e"
+		}
+	]
 }
