@@ -23,6 +23,11 @@
 {/if}
 
 <h2>Spools</h2>
+
+<form method="POST" action="?/addBlueSpool">
+  <button type="submit">Add Blue Spool</button>
+</form>
+
 {#if data.spools.length === 0}
   <p>No spools found.</p>
 {:else}

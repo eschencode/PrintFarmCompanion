@@ -30,6 +30,33 @@ export async function updateSpoolWeight(db: D1Database, id: number, remainingWei
   await db.prepare('UPDATE spools SET remaining_weight = ? WHERE id = ?').bind(remainingWeight, id).run();
 }
 
+export async function createSpool(db: D1Database, spool: {
+  presetId?: number | null;
+  brand: string;
+  material: string;
+  color?: string | null;
+  initialWeight: number;
+  remainingWeight: number;
+  cost?: number | null;
+}) {
+  const result = await db.prepare(`
+    INSERT INTO spools (preset_id, brand, material, color, initial_weight, remaining_weight, cost)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    spool.presetId ?? null,
+    spool.brand,
+    spool.material,
+    spool.color ?? null,
+    spool.initialWeight,
+    spool.remainingWeight,
+    spool.cost ?? null
+  ).run();
+  
+  return result;
+}
+
+
+
 // Print Modules
 export async function getAllPrintModules(db: D1Database) {
   const result = await db.prepare('SELECT * FROM print_modules').all();

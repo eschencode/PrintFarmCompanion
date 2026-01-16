@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { getAllPrinters, getAllSpools } from '$lib/server';
+import  * as db from '$lib/server';
 
 export const load: PageServerLoad = async ({ platform }) => {
  
@@ -10,9 +10,31 @@ export const load: PageServerLoad = async ({ platform }) => {
     return { printers: [] };
   }
 
-  const printers = await getAllPrinters(db);
-  const spools = await getAllSpools(db);
-
+  const printers = await db.getAllPrinters(db);
+  const spools = await db.getAllSpools(db);
 
   return { printers, spools };
+};
+
+
+export const actions: Actions = {
+  addBlueSpool: async ({ platform }) => {
+    const database = platform?.env?._3dtracker_db;
+    
+    if (!database) {
+      return { success: false };
+    }
+
+    await db.createSpool(database, {
+      presetId: 1,
+      brand: 'Generic',
+      material: 'PLA',
+      color: 'Blue',
+      initialWeight: 1000,
+      remainingWeight: 1000,
+      cost: 20.00
+    });
+
+    return { success: true };
+  }
 };
