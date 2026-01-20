@@ -55,29 +55,39 @@ app.use((req, res, next) => {
   next();
 });
 
-// Security Layer 2: Authentication token (except health check)
-app.use((req, res, next) => {
-  if (req.path === '/health') return next();
-  
-  const token = req.headers['x-auth-token'];
-  if (!token || token !== AUTH_TOKEN) {
-    console.error('❌ Invalid or missing auth token');
-    return res.status(401).json({ error: 'Unauthorized - invalid token' });
-  }
-  next();
-});
-
-// CORS - only allow requests from your app
+// CORS - MUST BE BEFORE AUTH CHECK
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
   res.header('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token');
   res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   
-  // Handle preflight requests
+  // Handle preflight requests WITHOUT auth check
   if (req.method === 'OPTIONS') {
+    console.log('✓ CORS preflight request');
     return res.sendStatus(200);
   }
   
+  next();
+});
+
+// Security Layer 2: Authentication token (AFTER CORS, except health check)
+app.use((req, res, next) => {
+  if (req.path === '/health') return next();
+  
+  const token = req.headers['x-auth-token'];
+  
+  if (!token) {
+    console.error('❌ Missing auth token');
+    return res.status(401).json({ error: 'Unauthorized - missing token' });
+  }
+  
+  if (token !== AUTH_TOKEN) {
+    console.error(`❌ Invalid auth token. Received: ${token.substring(0, 10)}...`);
+    console.error(`   Expected: ${AUTH_TOKEN.substring(0, 10)}...`);
+    return res.status(401).json({ error: 'Unauthorized - invalid token' });
+  }
+  
+  console.log('✓ Auth token valid');
   next();
 });
 
@@ -198,7 +208,7 @@ app.post('/open-file', (req, res) => {
 
 // Test endpoint (requires auth)
 app.post('/test', (req, res) => {
-  console.log('🧪 Test endpoint called');
+  console.log('🧪 Test endpoint called - auth successful');
   res.json({ 
     message: 'Authentication successful!',
     timestamp: new Date().toISOString()
@@ -244,6 +254,7 @@ app.listen(PORT, HOST, () => {
     console.log('='.repeat(70));
   } else {
     console.log('✅ Using AUTH_TOKEN from .env file');
+    console.log(`🔑 Token: ${AUTH_TOKEN.substring(0, 10)}...`);
     console.log('='.repeat(70));
   }
   
