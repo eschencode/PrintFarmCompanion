@@ -31,7 +31,8 @@ export const actions: Actions = {
       expectedTime: Number(formData.get('expectedTime')),
       objectsPerPrint: Number(formData.get('objectsPerPrint')) || 1,
       defaultSpoolPresetId: Number(formData.get('defaultSpoolPresetId')) || null,
-      path: formData.get('path') as string
+      path: formData.get('path') as string,
+      imagePath: (formData.get('imagePath') as string) || null
     });
 
     return result;

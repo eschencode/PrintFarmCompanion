@@ -1,13 +1,3 @@
--- Spool Presets table
-CREATE TABLE IF NOT EXISTS spool_presets (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  brand TEXT NOT NULL,
-  material TEXT NOT NULL,
-  color TEXT NOT NULL,
-  default_weight INTEGER DEFAULT 1000,
-  cost REAL
-);
 
 -- Spools table
 CREATE TABLE IF NOT EXISTS spools (
@@ -42,6 +32,7 @@ CREATE TABLE IF NOT EXISTS print_modules (
   objects_per_print INTEGER DEFAULT 1,
   default_spool_preset_id INTEGER,
   path TEXT NOT NULL,
+  image_path TEXT,
   FOREIGN KEY (default_spool_preset_id) REFERENCES spool_presets(id)
 );
 

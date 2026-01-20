@@ -67,6 +67,11 @@
       <input type="text" name="path" id="path" placeholder="/models/haken_blau.3mf" required />
     </div>
 
+    <div class="form-group">
+      <label for="imagePath">Image Path (optional):</label>
+      <input type="text" name="imagePath" id="imagePath" placeholder="/images/haken_blau.png" />
+    </div>
+
     <button type="submit" class="btn-primary">Add Module</button>
   </form>
 </section>
