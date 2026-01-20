@@ -33,5 +33,9 @@
 		"typescript-eslint": "^8.48.1",
 		"vite": "^7.2.6",
 		"wrangler": "^4.56.0"
+	},
+	"dependencies": {
+		"echarts": "^6.0.0",
+		"svelte-echarts": "^1.0.0"
 	}
 }

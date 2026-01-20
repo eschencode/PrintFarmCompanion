@@ -428,3 +428,4 @@ export async function getAllPrintJobs(db: D1Database) {
   
   return result.results || [];
 }
+

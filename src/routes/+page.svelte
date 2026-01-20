@@ -2,6 +2,8 @@
   import type { PageData } from './$types';
   import p1sImage from '$lib/assets/p1s.png';
   import { enhance } from '$app/forms';
+  import { onMount } from 'svelte';
+  
   export let data: PageData;
   
   let selectedPrinter: any = null;
@@ -12,6 +14,11 @@
   let selectedModuleId: number | null = null;
   let selectedFailureReason: string = '';
   let customFailureReason: string = '';
+  
+  // File handler state
+  let fileHandlerToken = '';
+  let fileHandlerConnected = false;
+  let fileHandlerChecking = true;
   
   // Predefined failure reasons
   const failureReasons = [
@@ -207,6 +214,70 @@
     }
     return selectedFailureReason || 'No reason selected';
   }
+
+  // NEW: File Handler Functions
+  onMount(() => {
+    // Load token from localStorage
+    fileHandlerToken = localStorage.getItem('fileHandlerToken') || '';
+    
+    // Test connection if token exists
+    if (fileHandlerToken) {
+      testFileHandlerConnection();
+    } else {
+      fileHandlerChecking = false;
+    }
+  });
+  
+  async function testFileHandlerConnection() {
+    try {
+      const response = await fetch('http://127.0.0.1:3001/health');
+      if (response.ok) {
+        fileHandlerConnected = true;
+        console.log('✅ File handler connected');
+      } else {
+        fileHandlerConnected = false;
+      }
+    } catch (error) {
+      fileHandlerConnected = false;
+      console.log('⚠️ File handler offline (this is okay)');
+    } finally {
+      fileHandlerChecking = false;
+    }
+  }
+  
+  async function openFileLocally(filePath: string, moduleName: string, printerId: number) {
+    // If no token or not connected, silently skip
+    if (!fileHandlerToken || !fileHandlerConnected) {
+      console.log('⚠️ File handler not available - skipping file open');
+      return;
+    }
+    
+    try {
+      const response = await fetch('http://127.0.0.1:3001/open-file', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Auth-Token': fileHandlerToken
+        },
+        body: JSON.stringify({
+          filePath,
+          moduleName,
+          printerId
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        console.log('✅ File opened:', moduleName);
+      } else {
+        console.warn('⚠️ Failed to open file:', result.error);
+      }
+    } catch (error) {
+      console.warn('⚠️ File handler error (continuing anyway):', error);
+      // Silently fail - don't show error to user
+    }
+  }
 </script>
 
 <div class="h-screen w-screen bg-black p-6 overflow-hidden">
@@ -299,16 +370,16 @@
       {:else if cell.type === 'stats'}
         <!-- Stats Card -->
         <a
-          href="/db-viewer"
+          href="/stats"
           class="group bg-slate-900/50 border border-slate-800 
                  rounded-xl p-4 hover:border-emerald-900/50 hover:bg-slate-900/80
                  transition-all duration-300 hover:scale-[1.02]
                  flex flex-col items-center justify-center"
         >
           <div class="text-5xl mb-3 opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
-            🗄️
+            📈
           </div>
-          <h3 class="text-sm font-medium text-white">Database</h3>
+          <h3 class="text-sm font-medium text-white">Stats</h3>
           <p class="text-xs text-slate-500 mt-1 font-light">Inspect Data</p>
         </a>
 
@@ -856,8 +927,19 @@
             use:enhance={() => {
               return async ({ result }) => {
                 if (result.type === 'success') {
+                  // Get the selected module details
+                  const selectedModule = availableModules.find(m => m.id === selectedModuleId);
+                  
+                  // Try to open file locally (fails silently if handler not available)
+                  if (selectedModule && selectedModule.path) {
+                    await openFileLocally(
+                      selectedModule.path, 
+                      selectedModule.name,
+                      selectedPrinter.id
+                    );
+                  }
+                  
                   closePrinterModal();
-                  // Reload page data
                   window.location.reload();
                 }
               };
@@ -998,3 +1080,20 @@
     </div>
   </div>
 {/if}
+
+<!-- Status Indicator (Top-right corner) -->
+<div class="fixed top-4 right-4 z-50 flex items-center gap-2 bg-slate-900/80 backdrop-blur-sm border border-slate-800 rounded-lg px-3 py-2">
+  {#if fileHandlerChecking}
+    <div class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>
+    <span class="text-xs text-slate-400">Checking...</span>
+  {:else if fileHandlerConnected}
+    <div class="w-2 h-2 rounded-full bg-green-400"></div>
+    <span class="text-xs text-slate-400">File Handler Online</span>
+  {:else if fileHandlerToken}
+    <div class="w-2 h-2 rounded-full bg-orange-400"></div>
+    <span class="text-xs text-slate-400">File Handler Offline</span>
+  {:else}
+    <div class="w-2 h-2 rounded-full bg-slate-600"></div>
+    <span class="text-xs text-slate-500">File Handler Not Configured</span>
+  {/if}
+</div>
