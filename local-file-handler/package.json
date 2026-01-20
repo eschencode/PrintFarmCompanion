@@ -1,0 +1,19 @@
+
+{
+  "name": "printfarm-file-handler",
+  "version": "1.0.0",
+  "description": "Local file handler for 3D Print Farm - Opens print files on your Mac",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node test.js"
+  },
+  "keywords": ["3d-printing", "file-handler", "local-server"],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1"
+  }
+}
