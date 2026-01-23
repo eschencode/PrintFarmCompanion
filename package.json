@@ -36,5 +36,8 @@
 	},
 	"dependencies": {
 		"echarts": "^6.0.0"
+	},
+	"optionalDependencies": {
+		"@rollup/rollup-linux-x64-gnu": "^4.56.0"
 	}
 }
