@@ -57,16 +57,35 @@ app.use((req, res, next) => {
 
 // CORS - MUST BE BEFORE AUTH CHECK
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
+  const origin = req.headers.origin;
+  
+  // List of allowed origins
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'https://printfarmcompanion.pages.dev',  // ✅ Add your Cloudflare domain
+    // You can add more if needed
+  ];
+  
+  // Check if the request origin is in the allowed list
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    // Allow requests with no origin (like curl, Postman)
+    res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
+  }
+  
   res.header('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token');
   res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.header('Access-Control-Allow-Credentials', 'true');
   
   // Handle preflight requests WITHOUT auth check
   if (req.method === 'OPTIONS') {
-    console.log('✓ CORS preflight request');
+    console.log(`✓ CORS preflight request from ${origin}`);
     return res.sendStatus(200);
   }
   
+  console.log(`✓ CORS allowed for origin: ${origin}`);
   next();
 });
 
