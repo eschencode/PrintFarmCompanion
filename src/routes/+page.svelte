@@ -3,6 +3,7 @@
   import p1sImage from '$lib/assets/p1s.png';
   import { enhance } from '$app/forms';
   import { onMount } from 'svelte';
+  import { fileHandlerStore } from '$lib/stores/fileHandler';
   
   export let data: PageData;
   
@@ -15,11 +16,12 @@
   let selectedFailureReason: string = '';
   let customFailureReason: string = '';
   
-  // File handler state
-  let fileHandlerToken = '';
-  let fileHandlerConnected = false;
-  let fileHandlerChecking = true;
+  $: fileHandlerState = $fileHandlerStore;
   
+  async function openFileLocally(filePath: string, moduleName: string, printerId: number) {
+    return await fileHandlerStore.openFile(filePath, moduleName, printerId);
+  }
+
   // Predefined failure reasons
   const failureReasons = [
     'Spaghetti / Layer Adhesion Failure',
@@ -27,7 +29,6 @@
     'Filament Runout',
     'Nozzle Clog',
     'Power Outage',
-    'Print Shifted / Belt Issue',
     'Poor First Layer',
     'Stringing / Oozing',
     'Custom' // This will show the custom input field
@@ -47,6 +48,14 @@
     selectedFailureReason = '';
     customFailureReason = '';
   }
+
+  function closeFailureReasonModal() {
+    showFailureReasonModal = false;
+    selectedFailureReason = '';
+    customFailureReason = '';
+  }
+
+ 
 
   function getPrinterImage(model: any) {
     if (!model) return p1sImage;
@@ -173,11 +182,7 @@
     selectedModuleId = null;
   }
 
-  function closeFailureReasonModal() {
-    showFailureReasonModal = false;
-    selectedFailureReason = '';
-    customFailureReason = '';
-  }
+
 
   function selectSpoolPreset(presetId: number) {
     selectedPresetId = presetId;
@@ -190,7 +195,9 @@
   function selectFailureReason(reason: string) {
     selectedFailureReason = reason;
     if (reason !== 'Custom') {
-      customFailureReason = '';
+      customFailureReason = reason;
+    } else {
+      customFailureReason = 'Custom';
     }
   }
 
@@ -215,69 +222,10 @@
     return selectedFailureReason || 'No reason selected';
   }
 
-  // NEW: File Handler Functions
-  onMount(() => {
-    // Load token from localStorage
-    fileHandlerToken = localStorage.getItem('fileHandlerToken') || '';
-    
-    // Test connection if token exists
-    if (fileHandlerToken) {
-      testFileHandlerConnection();
-    } else {
-      fileHandlerChecking = false;
-    }
-  });
+   
   
-  async function testFileHandlerConnection() {
-    try {
-      const response = await fetch('http://127.0.0.1:3001/health');
-      if (response.ok) {
-        fileHandlerConnected = true;
-        console.log('✅ File handler connected');
-      } else {
-        fileHandlerConnected = false;
-      }
-    } catch (error) {
-      fileHandlerConnected = false;
-      console.log('⚠️ File handler offline (this is okay)');
-    } finally {
-      fileHandlerChecking = false;
-    }
-  }
   
-  async function openFileLocally(filePath: string, moduleName: string, printerId: number) {
-    // If no token or not connected, silently skip
-    if (!fileHandlerToken || !fileHandlerConnected) {
-      console.log('⚠️ File handler not available - skipping file open');
-      return;
-    }
-    
-    try {
-      const response = await fetch('http://127.0.0.1:3001/open-file', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Auth-Token': fileHandlerToken
-        },
-        body: JSON.stringify({
-          filePath,
-          moduleName,
-          printerId
-        })
-      });
-
-      const result = await response.json();
-      
-      if (result.success) {
-        console.log('✅ File opened:', moduleName);
-      } else {
-        console.warn('⚠️ Failed to open file:', result.error);
-      }
-    } catch (error) {
-      console.warn('⚠️ File handler error (continuing anyway):', error);
-      // Silently fail - don't show error to user
-    }
-  }
+  // Removed onMount as it's no longer needed
 </script>
 
 <div class="h-screen w-screen bg-black p-6 overflow-hidden">
@@ -637,13 +585,13 @@
                 onclick={handleLoadSpool}
                 class="bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-3 rounded-lg transition-colors font-medium"
               >
-                🎨 Load Spool
+                Load Spool
               </button>
               <button 
                 onclick={handleStartPrint}
                 class="bg-green-500/20 hover:bg-green-500/30 text-green-400 px-4 py-3 rounded-lg transition-colors font-medium"
               >
-                ▶️ Start Print
+                Start Print
               </button>
             </div>
           </div>
@@ -964,9 +912,10 @@
   </div>
 {/if}
 
-<!-- Failure Reason Modal -->
+<!-- Failure Reason Modal - FIX THE BUTTON LOGIC -->
 {#if selectedPrinter && showFailureReasonModal}
   {@const activePrintJob = getActivePrintJob(selectedPrinter.id)}
+  {@const loadedSpool = getLoadedSpool(selectedPrinter.loaded_spool_id)}
   
   <div
     class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-6"
@@ -989,7 +938,7 @@
         <div class="flex justify-between items-start mb-6">
           <div>
             <h2 class="text-2xl font-medium text-white mb-1">Print Failed</h2>
-            <p class="text-sm text-slate-400">Select the reason for failure</p>
+            <p class="text-sm text-slate-400">What went wrong?</p>
           </div>
           <button 
             onclick={closeFailureReasonModal}
@@ -1002,33 +951,90 @@
           </button>
         </div>
 
+        <!-- Material Usage Decision -->
+        {#if loadedSpool && activePrintJob}
+          <div class="mb-6 bg-slate-800/50 rounded-xl p-4">
+            <p class="text-sm text-slate-400 mb-3">Did the print consume material before failing?</p>
+            <div class="grid grid-cols-2 gap-3">
+              <button
+                onclick={() => selectFailureReason('Failed - Deduct Material')}
+                class="text-left bg-slate-700/50 hover:bg-slate-700 border-2 rounded-lg p-3 transition-all
+                       {selectedFailureReason === 'Failed - Deduct Material' ? 'border-orange-500 bg-slate-700' : 'border-transparent'}"
+              >
+                <div class="flex items-start justify-between mb-2">
+                  <span class="text-white text-sm font-medium">Yes, Material Used</span>
+                  {#if selectedFailureReason === 'Failed - Deduct Material'}
+                    <div class="w-5 h-5 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0 ml-2">
+                      <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  {/if}
+                </div>
+                <p class="text-xs text-slate-500">
+                  Deduct {activePrintJob.expected_weight}g from spool
+                </p>
+              </button>
+
+              <button
+                onclick={() => selectFailureReason('Failed - Keep Material')}
+                class="text-left bg-slate-700/50 hover:bg-slate-700 border-2 rounded-lg p-3 transition-all
+                       {selectedFailureReason === 'Failed - Keep Material' ? 'border-blue-500 bg-slate-700' : 'border-transparent'}"
+              >
+                <div class="flex items-start justify-between mb-2">
+                  <span class="text-white text-sm font-medium">No, Keep Weight</span>
+                  {#if selectedFailureReason === 'Failed - Keep Material'}
+                    <div class="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 ml-2">
+                      <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  {/if}
+                </div>
+                <p class="text-xs text-slate-500">
+                  Spool stays at {loadedSpool.remaining_weight}g
+                </p>
+              </button>
+            </div>
+          </div>
+        {/if}
+
         <!-- Failure Reasons List -->
-        <div class="space-y-2 mb-6">
-          {#each failureReasons as reason}
-            <button
-              onclick={() => selectFailureReason(reason)}
-              class="w-full text-left bg-slate-800/50 hover:bg-slate-800 border-2 rounded-lg p-3 transition-all
-                     {selectedFailureReason === reason ? 'border-red-500 bg-slate-800' : 'border-transparent'}"
-            >
-              <div class="flex items-center justify-between">
-                <span class="text-white text-sm">{reason}</span>
-                {#if selectedFailureReason === reason}
-                  <div class="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
-                    <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                {/if}
-              </div>
-            </button>
-          {/each}
+        <div class="mb-4">
+          <p class="text-sm text-slate-400 mb-3">What caused the failure?</p>
+          <div class="space-y-2">
+            {#each failureReasons as reason}
+              <button
+                onclick={() => {
+                  if (reason === 'Custom') {
+                    customFailureReason = '';
+                  } else {
+                    customFailureReason = reason;
+                  }
+                }}
+                class="w-full text-left bg-slate-800/50 hover:bg-slate-800 border-2 rounded-lg p-3 transition-all
+                       {customFailureReason === reason || (reason === 'Custom' && customFailureReason !== '' && !failureReasons.includes(customFailureReason)) ? 'border-red-500 bg-slate-800' : 'border-transparent'}"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="text-white text-sm">{reason}</span>
+                  {#if (customFailureReason === reason && reason !== 'Custom') || (reason === 'Custom' && customFailureReason !== '' && !failureReasons.includes(customFailureReason))}
+                    <div class="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                      <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  {/if}
+                </div>
+              </button>
+            {/each}
+          </div>
         </div>
 
-        <!-- Custom Reason Input (shown when "Custom" is selected) -->
-        {#if selectedFailureReason === 'Custom'}
+        <!-- Custom Reason Input -->
+        {#if !failureReasons.includes(customFailureReason) && customFailureReason !== ''}
           <div class="mb-6 p-4 bg-slate-800/50 rounded-lg">
             <label for="customReason" class="block text-sm text-slate-400 mb-2">
-              Enter custom failure reason:
+              Custom failure reason:
             </label>
             <input
               id="customReason"
@@ -1055,6 +1061,7 @@
             use:enhance={() => {
               return async ({ result }) => {
                 if (result.type === 'success') {
+                  closeFailureReasonModal();
                   closePrinterModal();
                   window.location.reload();
                 }
@@ -1063,12 +1070,24 @@
           >
             {#if activePrintJob}
               <input type="hidden" name="jobId" value={activePrintJob.id} />
+              <input type="hidden" name="success" value="false" />
+              
+              <!-- Determine actual weight based on user choice -->
+              {#if selectedFailureReason === 'Failed - Deduct Material'}
+                <input type="hidden" name="actualWeight" value={activePrintJob.expected_weight} />
+              {:else if selectedFailureReason === 'Failed - Keep Material'}
+                <input type="hidden" name="actualWeight" value="0" />
+              {:else}
+                <input type="hidden" name="actualWeight" value="0" />
+              {/if}
+              
+              <!-- Build failure reason string -->
+              <input type="hidden" name="failureReason" value="{selectedFailureReason}: {customFailureReason}" />
             {/if}
-            <input type="hidden" name="success" value="false" />
-            <input type="hidden" name="failureReason" value={getFinalFailureReason()} />
+            
             <button 
               type="submit"
-              disabled={!selectedFailureReason || (selectedFailureReason === 'Custom' && !customFailureReason)}
+              disabled={!selectedFailureReason || !customFailureReason}
               class="w-full bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-lg transition-colors font-medium
                      disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-500"
             >
@@ -1083,17 +1102,17 @@
 
 <!-- Status Indicator (Top-right corner) -->
 <div class="fixed top-4 right-4 z-50 flex items-center gap-2 bg-slate-900/80 backdrop-blur-sm border border-slate-800 rounded-lg px-3 py-2">
-  {#if fileHandlerChecking}
+  {#if fileHandlerState.checking}
     <div class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>
     <span class="text-xs text-slate-400">Checking...</span>
-  {:else if fileHandlerConnected}
+  {:else if fileHandlerState.connected}
     <div class="w-2 h-2 rounded-full bg-green-400"></div>
     <span class="text-xs text-slate-400">File Handler Online</span>
-  {:else if fileHandlerToken}
+  {:else if fileHandlerState.token}
     <div class="w-2 h-2 rounded-full bg-orange-400"></div>
     <span class="text-xs text-slate-400">File Handler Offline</span>
   {:else}
     <div class="w-2 h-2 rounded-full bg-slate-600"></div>
-    <span class="text-xs text-slate-500">File Handler Not Configured</span>
+    <span class="text-xs text-slate-500">Not Configured</span>
   {/if}
 </div>

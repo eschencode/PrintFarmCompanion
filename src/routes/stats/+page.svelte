@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { PageData } from './$types';
   import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { enhance } from '$app/forms';
   import * as echarts from 'echarts';
   
   export let data: PageData;
@@ -11,6 +13,45 @@
   let topModulesChart: HTMLDivElement;
   let failureReasonsChart: HTMLDivElement;
   let printerUtilizationChart: HTMLDivElement;
+  
+  // Toggle states
+  let showSpools = false;
+  let showPrintHistory = false;
+  
+  // Edit spool state
+  let editingSpoolId: number | null = null;
+  let editForm = {
+    brand: '',
+    material: '',
+    color: '',
+    remaining_weight: 0,
+    cost: 0
+  };
+  
+  // Sort spools by ID descending (newest first)
+  $: sortedSpools = [...(data.spools || [])].sort((a, b) => b.id - a.id);
+  
+  function startEdit(spool: any) {
+    editingSpoolId = spool.id;
+    editForm = {
+      brand: spool.brand,
+      material: spool.material,
+      color: spool.color || '',
+      remaining_weight: spool.remaining_weight,
+      cost: spool.cost || 0
+    };
+  }
+  
+  function cancelEdit() {
+    editingSpoolId = null;
+    editForm = {
+      brand: '',
+      material: '',
+      color: '',
+      remaining_weight: 0,
+      cost: 0
+    };
+  }
   
   onMount(() => {
     // Print History Line Chart
@@ -267,13 +308,17 @@
     
     window.addEventListener('resize', handleResize);
     
+    // Cleanup when leaving the page
     return () => {
       window.removeEventListener('resize', handleResize);
       historyChart.dispose();
       materialChart.dispose();
       successChart.dispose();
       modulesChart.dispose();
-      failureChart?.dispose();
+      if (data.stats.failureReasons.length > 0) {
+        const failureChart = echarts.init(failureReasonsChart, 'dark');
+        failureChart?.dispose();
+      }
       utilizationChart.dispose();
     };
   });
@@ -295,7 +340,12 @@
     <!-- Header -->
     <div class="flex justify-between items-center mb-8">
       <h1 class="text-3xl font-light">Statistics & Analytics</h1>
-      <a href="/" class="text-slate-400 hover:text-white transition-colors">← Back to Dashboard</a>
+      <button 
+        onclick={() => goto('/')}
+        class="text-slate-400 hover:text-white transition-colors cursor-pointer"
+      >
+        ← Back to Dashboard
+      </button>
     </div>
     
     <!-- Key Metrics Cards -->
@@ -324,72 +374,393 @@
       </div>
     </div>
     
-    <!-- Print History Table -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl mb-8 overflow-hidden">
-      <div class="p-6 border-b border-slate-800">
-        <h2 class="text-xl font-medium">Print History</h2>
-        <p class="text-sm text-slate-400 mt-1">{data.printJobs.length} total jobs</p>
-      </div>
-      <div class="overflow-x-auto max-h-96 overflow-y-auto">
-        <table class="w-full">
-          <thead class="bg-slate-800 sticky top-0">
-            <tr>
-              <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Date</th>
-              <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Module</th>
-              <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Printer</th>
-              <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Duration</th>
-              <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Material</th>
-              <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each data.printJobs as job, i}
-              {@const printer = data.printers.find(p => p.id === job.printer_id)}
-              {@const duration = job.end_time ? Math.floor((job.end_time - job.start_time) / 60) : null}
-              <tr class="border-t border-slate-800 hover:bg-slate-800/50 transition-colors">
-                <td class="px-4 py-3 text-sm text-slate-400">
-                  {formatDate(job.start_time)}
-                </td>
-                <td class="px-4 py-3 text-sm text-white font-medium">
-                  {job.name || 'Unknown'}
-                </td>
-                <td class="px-4 py-3 text-sm text-slate-400">
-                  {printer?.name || 'Unknown'}
-                </td>
-                <td class="px-4 py-3 text-sm text-slate-400">
-                  {duration ? formatDuration(duration) : 'In Progress'}
-                </td>
-                <td class="px-4 py-3 text-sm text-slate-400">
-                  {job.actual_weight || job.planned_weight}g
-                </td>
-                <td class="px-4 py-3 text-sm">
-                  {#if job.success}
-                    <span class="inline-flex items-center gap-1 text-green-400">
-                      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                      </svg>
-                      Success
-                    </span>
-                  {:else}
-                    <div>
-                      <span class="inline-flex items-center gap-1 text-red-400">
-                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-                        </svg>
-                        Failed
-                      </span>
-                      {#if job.failure_reason}
-                        <p class="text-xs text-slate-500 mt-1">{job.failure_reason}</p>
-                      {/if}
-                    </div>
-                  {/if}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+    <!-- Toggle Buttons Row -->
+    <div class="flex gap-3 mb-6">
+      <button
+        onclick={() => showPrintHistory = !showPrintHistory}
+        class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg px-4 py-2.5 transition-colors"
+      >
+        <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <span class="text-white font-medium">
+          {showPrintHistory ? 'Hide' : 'Show'} Print History
+        </span>
+        <span class="text-slate-400 text-sm">({data.printJobs.length})</span>
+        <svg 
+          class="w-4 h-4 text-slate-400 transition-transform duration-200 {showPrintHistory ? 'rotate-180' : ''}" 
+          fill="none" 
+          stroke="currentColor" 
+          viewBox="0 0 24 24"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      
+      <button
+        onclick={() => showSpools = !showSpools}
+        class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg px-4 py-2.5 transition-colors"
+      >
+        <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+        </svg>
+        <span class="text-white font-medium">
+          {showSpools ? 'Hide' : 'Show'} All Spools
+        </span>
+        <span class="text-slate-400 text-sm">({data.spools?.length || 0})</span>
+        <svg 
+          class="w-4 h-4 text-slate-400 transition-transform duration-200 {showSpools ? 'rotate-180' : ''}" 
+          fill="none" 
+          stroke="currentColor" 
+          viewBox="0 0 24 24"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
     </div>
+    
+    <!-- Print History Table (Collapsible) -->
+    {#if showPrintHistory}
+      <div class="bg-slate-900 border border-slate-800 rounded-xl mb-8 overflow-hidden animate-fade-in">
+        <div class="p-6 border-b border-slate-800">
+          <h2 class="text-xl font-medium">Print History</h2>
+          <p class="text-sm text-slate-400 mt-1">{data.printJobs.length} total jobs</p>
+        </div>
+        <div class="overflow-x-auto max-h-96 overflow-y-auto">
+          <table class="w-full">
+            <thead class="bg-slate-800 sticky top-0">
+              <tr>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Date</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Module</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Printer</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Duration</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Material</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each data.printJobs as job}
+                {@const printer = data.printers.find(p => p.id === job.printer_id)}
+                {@const duration = job.end_time ? Math.floor((job.end_time - job.start_time) / 60) : null}
+                <tr class="border-t border-slate-800 hover:bg-slate-800/50 transition-colors">
+                  <td class="px-4 py-3 text-sm text-slate-400">
+                    {formatDate(job.start_time)}
+                  </td>
+                  <td class="px-4 py-3 text-sm text-white font-medium">
+                    {job.name || 'Unknown'}
+                  </td>
+                  <td class="px-4 py-3 text-sm text-slate-400">
+                    {printer?.name || 'Unknown'}
+                  </td>
+                  <td class="px-4 py-3 text-sm text-slate-400">
+                    {duration ? formatDuration(duration) : 'In Progress'}
+                  </td>
+                  <td class="px-4 py-3 text-sm text-slate-400">
+                    {job.actual_weight || job.planned_weight}g
+                  </td>
+                  <td class="px-4 py-3 text-sm">
+                    {#if job.success}
+                      <span class="inline-flex items-center gap-1 text-green-400">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                        </svg>
+                        Success
+                      </span>
+                    {:else}
+                      <div>
+                        <span class="inline-flex items-center gap-1 text-red-400">
+                          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                          </svg>
+                          Failed
+                        </span>
+                        {#if job.failure_reason}
+                          <p class="text-xs text-slate-500 mt-1">{job.failure_reason}</p>
+                        {/if}
+                      </div>
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {/if}
+    
+    <!-- All Spools Table (UPDATED with Edit/Delete) -->
+    {#if showSpools}
+      <div class="bg-slate-900 border border-slate-800 rounded-xl mb-8 overflow-hidden animate-fade-in">
+        <div class="p-6 border-b border-slate-800">
+          <h2 class="text-xl font-medium">All Spools</h2>
+          <p class="text-sm text-slate-400 mt-1">{sortedSpools.length} total spools (newest first)</p>
+        </div>
+        <div class="overflow-x-auto max-h-96 overflow-y-auto">
+          <table class="w-full">
+            <thead class="bg-slate-800 sticky top-0 z-10">
+              <tr>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">ID</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Brand</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Material</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Color</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Initial</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Remaining</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Used</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">% Left</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Cost</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Status</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#if sortedSpools.length > 0}
+                {#each sortedSpools as spool}
+                  {@const percentLeft = ((spool.remaining_weight / spool.initial_weight) * 100).toFixed(1)}
+                  {@const usedWeight = spool.initial_weight - spool.remaining_weight}
+                  {@const isLoaded = data.printers.some(p => p.loaded_spool_id === spool.id)}
+                  {@const loadedPrinter = data.printers.find(p => p.loaded_spool_id === spool.id)}
+                  {@const isEditing = editingSpoolId === spool.id}
+                  
+                  <tr class="border-t border-slate-800 hover:bg-slate-800/50 transition-colors">
+                    <!-- ID -->
+                    <td class="px-4 py-3 text-sm text-slate-400 font-mono">
+                      #{spool.id}
+                    </td>
+                    
+                    <!-- Brand (Editable) -->
+                    <td class="px-4 py-3 text-sm">
+                      {#if isEditing}
+                        <input
+                          type="text"
+                          bind:value={editForm.brand}
+                          class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm"
+                        />
+                      {:else}
+                        <span class="text-white font-medium">{spool.brand}</span>
+                      {/if}
+                    </td>
+                    
+                    <!-- Material (Editable) -->
+                    <td class="px-4 py-3 text-sm">
+                      {#if isEditing}
+                        <input
+                          type="text"
+                          bind:value={editForm.material}
+                          class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm"
+                        />
+                      {:else}
+                        <span class="text-slate-300">{spool.material}</span>
+                      {/if}
+                    </td>
+                    
+                    <!-- Color (Editable) -->
+                    <td class="px-4 py-3 text-sm">
+                      {#if isEditing}
+                        <input
+                          type="text"
+                          bind:value={editForm.color}
+                          placeholder="Color"
+                          class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm"
+                        />
+                      {:else if spool.color}
+                        <span class="inline-flex items-center gap-2">
+                          <span class="w-3 h-3 rounded-full border border-slate-600" style="background-color: {spool.color.toLowerCase()}"></span>
+                          {spool.color}
+                        </span>
+                      {:else}
+                        <span class="text-slate-500">-</span>
+                      {/if}
+                    </td>
+                    
+                    <!-- Initial Weight (Read-only) -->
+                    <td class="px-4 py-3 text-sm text-slate-400">
+                      {spool.initial_weight}g
+                    </td>
+                    
+                    <!-- Remaining Weight (Editable) -->
+                    <td class="px-4 py-3 text-sm">
+                      {#if isEditing}
+                        <input
+                          type="number"
+                          bind:value={editForm.remaining_weight}
+                          min="0"
+                          max={spool.initial_weight}
+                          class="w-20 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm"
+                        />
+                        <span class="text-slate-500 text-xs ml-1">g</span>
+                      {:else}
+                        <span class="text-white font-medium">{spool.remaining_weight}g</span>
+                      {/if}
+                    </td>
+                    
+                    <!-- Used Weight -->
+                    <td class="px-4 py-3 text-sm text-slate-400">
+                      {usedWeight}g
+                    </td>
+                    
+                    <!-- Percentage Bar -->
+                    <td class="px-4 py-3 text-sm">
+                      <div class="flex items-center gap-2">
+                        <div class="w-16 h-2 bg-slate-700 rounded-full overflow-hidden">
+                          <div 
+                            class="h-full transition-all duration-300 {
+                              Number(percentLeft) > 50 ? 'bg-green-500' : 
+                              Number(percentLeft) > 20 ? 'bg-yellow-500' : 
+                              'bg-red-500'
+                            }"
+                            style="width: {percentLeft}%"
+                          ></div>
+                        </div>
+                        <span class="text-xs {
+                          Number(percentLeft) > 50 ? 'text-green-400' : 
+                          Number(percentLeft) > 20 ? 'text-yellow-400' : 
+                          'text-red-400'
+                        }">
+                          {percentLeft}%
+                        </span>
+                      </div>
+                    </td>
+                    
+                    <!-- Cost (Editable) -->
+                    <td class="px-4 py-3 text-sm">
+                      {#if isEditing}
+                        <div class="flex items-center gap-1">
+                          <span class="text-slate-500">$</span>
+                          <input
+                            type="number"
+                            bind:value={editForm.cost}
+                            min="0"
+                            step="0.01"
+                            class="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm"
+                          />
+                        </div>
+                      {:else if spool.cost}
+                        <span class="text-green-400">${spool.cost.toFixed(2)}</span>
+                      {:else}
+                        <span class="text-slate-500">-</span>
+                      {/if}
+                    </td>
+                    
+                    <!-- Status -->
+                    <td class="px-4 py-3 text-sm">
+                      {#if isLoaded}
+                        <span class="inline-flex items-center gap-1 text-blue-400 bg-blue-500/10 px-2 py-1 rounded text-xs">
+                          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                          </svg>
+                          Loaded
+                        </span>
+                        <p class="text-xs text-slate-500 mt-1">{loadedPrinter?.name}</p>
+                      {:else if spool.remaining_weight <= 0}
+                        <span class="inline-flex items-center gap-1 text-slate-500 bg-slate-800 px-2 py-1 rounded text-xs">
+                          Empty
+                        </span>
+                      {:else}
+                        <span class="inline-flex items-center gap-1 text-slate-400 text-xs">
+                          Available
+                        </span>
+                      {/if}
+                    </td>
+                    
+                    <!-- Actions (Edit/Delete or Save/Cancel) -->
+                    <td class="px-4 py-3 text-sm">
+                      {#if isEditing}
+                        <div class="flex items-center gap-2">
+                          <form 
+                            method="POST" 
+                            action="?/updateSpool"
+                            use:enhance={() => {
+                              return async ({ result }) => {
+                                if (result.type === 'success') {
+                                  cancelEdit();
+                                  window.location.reload();
+                                }
+                              };
+                            }}
+                          >
+                            <input type="hidden" name="spoolId" value={spool.id} />
+                            <input type="hidden" name="brand" value={editForm.brand} />
+                            <input type="hidden" name="material" value={editForm.material} />
+                            <input type="hidden" name="color" value={editForm.color} />
+                            <input type="hidden" name="remaining_weight" value={editForm.remaining_weight} />
+                            <input type="hidden" name="cost" value={editForm.cost} />
+                            <button
+                              type="submit"
+                              class="text-green-400 hover:text-green-300 transition-colors"
+                              title="Save changes"
+                            >
+                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </button>
+                          </form>
+                          <button
+                            onclick={cancelEdit}
+                            class="text-slate-400 hover:text-white transition-colors"
+                            title="Cancel"
+                          >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      {:else}
+                        <div class="flex items-center gap-2">
+                          <button
+                            onclick={() => startEdit(spool)}
+                            class="text-blue-400 hover:text-blue-300 transition-colors"
+                            title="Edit spool"
+                            disabled={isLoaded}
+                          >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <form 
+                            method="POST" 
+                            action="?/deleteSpool"
+                            use:enhance={() => {
+                              return async ({ result, update }) => {
+                                if (result.type === 'success') {
+                                  await update();
+                                }
+                              };
+                            }}
+                          >
+                            <input type="hidden" name="spoolId" value={spool.id} />
+                            <button
+                              type="submit"
+                              onclick={(e) => {
+                                if (!confirm(`Delete spool #${spool.id} (${spool.brand} ${spool.material})?`)) {
+                                  e.preventDefault();
+                                }
+                              }}
+                              disabled={isLoaded}
+                              class="text-red-400 hover:text-red-300 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                              title={isLoaded ? 'Cannot delete loaded spool' : 'Delete spool'}
+                            >
+                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </form>
+                        </div>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              {:else}
+                <tr>
+                  <td colspan="11" class="px-4 py-8 text-center text-slate-500">
+                    No spools found
+                  </td>
+                </tr>
+              {/if}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {/if}
     
     <!-- Charts Grid -->
     <div class="grid grid-cols-2 gap-6 mb-6">
@@ -427,3 +798,20 @@
     </div>
   </div>
 </div>
+
+<style>
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+  }
+</style>

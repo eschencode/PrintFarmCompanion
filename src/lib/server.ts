@@ -11,8 +11,14 @@ export async function getPrinterById(db: D1Database, id: number) {
   return result;
 }
 
-export async function updatePrinterStatus(db: D1Database, id: number, status: string) {
-  await db.prepare('UPDATE printers SET status = ? WHERE id = ?').bind(status, id).run();
+export async function updatePrinterStatus(db: D1Database, id: number, status: string, loadedSpoolId?: number | null) {
+  if (loadedSpoolId !== undefined) {
+    await db.prepare('UPDATE printers SET status = ?, loaded_spool_id = ? WHERE id = ?')
+      .bind(status, loadedSpoolId, id).run();
+  } else {
+    await db.prepare('UPDATE printers SET status = ? WHERE id = ?')
+      .bind(status, id).run();
+  }
 }
 
 // Spools
@@ -155,6 +161,19 @@ export async function getRecentPrintJobs(db: D1Database, limit = 10) {
   return result.results || [];
 }
 
+export async function getPrintJobById(db: D1Database, id: number) {
+  const result = await db.prepare(`
+    SELECT 
+      pj.*,
+      p.loaded_spool_id as printer_loaded_spool_id
+    FROM print_jobs pj
+    LEFT JOIN printers p ON pj.printer_id = p.id
+    WHERE pj.id = ?
+  `).bind(id).first();
+  
+  return result;
+}
+
 // Start a print job
 export async function startPrintJob(db: D1Database, params: {
   printerId: number;
@@ -245,72 +264,25 @@ export async function startPrintJob(db: D1Database, params: {
 }
 
 // Complete/finish a print job
-export async function completePrintJob(db: D1Database, params: {
-  jobId: number;
-  success: boolean;
-  actualWeight?: number;
-  wasteWeight?: number;
-  failureReason?: string;
-}) {
-  const { jobId, success, actualWeight, wasteWeight = 0, failureReason } = params;
-
-  // 1. Get the print job
-  const job = await db.prepare('SELECT * FROM print_jobs WHERE id = ?').bind(jobId).first();
-  
-  if (!job) {
-    return { success: false, error: 'Print job not found' };
-  }
-
-  // 2. Update the job with completion details
-  await db.prepare(`
-    UPDATE print_jobs 
-    SET 
-      end_time = ?,
-      success = ?,
-      actual_weight = ?,
-      waste_weight = ?,
-      failure_reason = ?
-    WHERE id = ?
-  `).bind(
-    Math.floor(Date.now() / 1000),
-    success ? 1 : 0,
-    actualWeight || null,
-    wasteWeight,
-    failureReason || null,
-    jobId
-  ).run();
-
-  // 3. Update spool remaining weight
-  if (success && actualWeight) {
-    const totalUsed = actualWeight + wasteWeight;
-    const spool = await getSpoolById(db, job.spool_id);
-    
-    if (spool) {
-      const newWeight = Math.max(0, spool.remaining_weight - totalUsed);
-      await updateSpoolWeight(db, job.spool_id, newWeight);
-    }
-  }
-
-  // 4. Update printer status back to IDLE
-  await updatePrinterStatus(db, job.printer_id, 'IDLE');
-
-  // 5. Update printer total hours
-  if (success && job.start_time) {
-    const duration = (Date.now() / 1000) - job.start_time;
-    const hours = duration / 3600;
-    
-    const printer = await getPrinterById(db, job.printer_id);
-    if (printer) {
-      await db.prepare('UPDATE printers SET total_hours = total_hours + ? WHERE id = ?')
-        .bind(hours, job.printer_id)
-        .run();
-    }
-  }
-
-  return {
-    success: true,
-    message: success ? 'Print completed successfully' : 'Print failed'
-  };
+export async function completePrintJob(
+  db: D1Database,
+  jobId: number,
+  endTime: number,
+  success: boolean,
+  actualWeight: number,
+  failureReason: string | null = null  // Make sure this parameter exists!
+) {
+  await db
+    .prepare(`
+      UPDATE print_jobs 
+      SET end_time = ?, 
+          success = ?, 
+          actual_weight = ?, 
+          failure_reason = ?
+      WHERE id = ?
+    `)
+    .bind(endTime, success ? 1 : 0, actualWeight, failureReason, jobId)
+    .run();
 }
 
 // Spool Presets
@@ -386,7 +358,6 @@ export async function createPrintModule(db: D1Database, module: {
 
 export async function deletePrintModule(db: D1Database, moduleId: number) {
   await db.prepare('DELETE FROM print_modules WHERE id = ?').bind(moduleId).run();
-  
   return {
     success: true,
     message: 'Print module deleted successfully'

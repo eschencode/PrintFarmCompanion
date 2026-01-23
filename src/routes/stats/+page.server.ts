@@ -1,4 +1,4 @@
-import type { PageServerLoad } from './$types';
+import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
 
 export const load: PageServerLoad = async ({ platform }) => {
@@ -9,6 +9,7 @@ export const load: PageServerLoad = async ({ platform }) => {
       printJobs: [], 
       printers: [],
       modules: [],
+      spools: [],  // Add this
       stats: {
         totalPrints: 0,
         successfulPrints: 0,
@@ -28,6 +29,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   const printers = await db.getAllPrinters(database);
   const printJobs = await db.getAllPrintJobs(database);
   const modules = await db.getAllPrintModules(database);
+  const spools = await db.getAllSpools(database);  // Add this line
   
   // Sort print jobs by start_time descending (newest first)
   const sortedJobs = [...printJobs].sort((a, b) => b.start_time - a.start_time);
@@ -110,5 +112,70 @@ export const load: PageServerLoad = async ({ platform }) => {
     printerUtilization
   };
   
-  return { printJobs: sortedJobs, printers, modules, stats };
+  return { printJobs: sortedJobs, printers, modules, spools, stats };  // Add spools here
+};
+
+export const actions: Actions = {
+  updateSpool: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) {
+      return { error: 'Database not available' };
+    }
+
+    const formData = await request.formData();
+    const spoolId = Number(formData.get('spoolId'));
+    const brand = formData.get('brand') as string;
+    const material = formData.get('material') as string;
+    const color = formData.get('color') as string || null;
+    const remaining_weight = Number(formData.get('remaining_weight'));
+    const cost = Number(formData.get('cost')) || null;
+
+    try {
+      await database.prepare(`
+        UPDATE spools 
+        SET brand = ?, 
+            material = ?, 
+            color = ?, 
+            remaining_weight = ?, 
+            cost = ?
+        WHERE id = ?
+      `).bind(brand, material, color, remaining_weight, cost, spoolId).run();
+
+      return { success: true, message: 'Spool updated successfully' };
+    } catch (error) {
+      console.error('Error updating spool:', error);
+      return { error: 'Failed to update spool' };
+    }
+  },
+
+  deleteSpool: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) {
+      return { error: 'Database not available' };
+    }
+
+    const formData = await request.formData();
+    const spoolId = Number(formData.get('spoolId'));
+
+    try {
+      // Check if spool is loaded on any printer
+      const loadedPrinter = await database.prepare(`
+        SELECT id, name FROM printers WHERE loaded_spool_id = ?
+      `).bind(spoolId).first();
+
+      if (loadedPrinter) {
+        return { 
+          error: `Cannot delete spool - it's currently loaded on ${loadedPrinter.name}` 
+        };
+      }
+
+      // Delete the spool
+      await database.prepare('DELETE FROM spools WHERE id = ?').bind(spoolId).run();
+
+      return { success: true, message: 'Spool deleted successfully' };
+    } catch (error) {
+      console.error('Error deleting spool:', error);
+      return { error: 'Failed to delete spool' };
+    }
+  }
 };

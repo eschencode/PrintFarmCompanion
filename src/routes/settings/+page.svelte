@@ -1,22 +1,25 @@
 <script lang="ts">
   import type { PageData, ActionData } from './$types';
-  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation'; // Add this import
+  import { fileHandlerStore } from '$lib/stores/fileHandler';
   
   export let data: PageData;
   export let form: ActionData;
+  
+  // Subscribe to store
+  $: fileHandlerState = $fileHandlerStore;
   
   let fileHandlerToken = '';
   let testingConnection = false;
   let connectionStatus: 'untested' | 'success' | 'failed' = 'untested';
   
-  onMount(() => {
-    fileHandlerToken = localStorage.getItem('fileHandlerToken') || '';
-  });
+  // Sync local variable with store
+  $: fileHandlerToken = fileHandlerState.token;
   
   function saveFileHandlerToken() {
-    localStorage.setItem('fileHandlerToken', fileHandlerToken);
+    fileHandlerStore.setToken(fileHandlerToken);
     connectionStatus = 'untested';
-    alert('✅ Token saved! Test the connection below.');
+    alert('✅ Token saved! Connection will be tested automatically.');
   }
   
   async function testConnection() {
@@ -28,45 +31,31 @@
     testingConnection = true;
     connectionStatus = 'untested';
     
-    try {
-      const response = await fetch('http://127.0.0.1:3001/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Auth-Token': fileHandlerToken
-        }
-      });
-      
-      if (response.ok) {
-        connectionStatus = 'success';
-      } else {
-        connectionStatus = 'failed';
-      }
-    } catch (error) {
-      connectionStatus = 'failed';
-    } finally {
-      testingConnection = false;
-    }
+    const connected = await fileHandlerStore.testConnection();
+    
+    connectionStatus = connected ? 'success' : 'failed';
+    testingConnection = false;
   }
 </script>
 
 <div class="min-h-screen bg-black text-white p-6">
   <div class="max-w-6xl mx-auto">
-    <!-- Header -->
+    <!-- Header - UPDATED -->
     <div class="flex justify-between items-center mb-8">
       <div>
         <h1 class="text-3xl font-light tracking-wide mb-2">Settings</h1>
         <p class="text-slate-400 text-sm">Manage print modules and spool presets</p>
       </div>
-      <a 
-        href="/" 
-        class="text-slate-400 hover:text-white transition-colors flex items-center gap-2"
+      <!-- Changed from <a> to <button> with goto -->
+      <button 
+        onclick={() => goto('/')}
+        class="text-slate-400 hover:text-white transition-colors flex items-center gap-2 cursor-pointer"
       >
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
         </svg>
         Back to Dashboard
-      </a>
+      </button>
     </div>
 
     <!-- Messages -->
@@ -88,7 +77,7 @@
       </div>
     {/if}
 
-    <!-- File Handler Configuration (NEW - Add at top) -->
+    <!-- File Handler Configuration -->
     <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
       <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
         <h2 class="text-xl font-medium flex items-center gap-2">
@@ -163,29 +152,42 @@
       </div>
     </div>
 
-    <!-- Rest of existing settings sections -->
+    <!-- Rest of settings page - Print Modules and Spool Presets -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- Left Column: Forms -->
+      
+      <!-- Print Modules Section -->
       <div class="space-y-6">
-        <!-- Add Print Module Form -->
         <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
           <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-            <h2 class="text-xl font-medium flex items-center gap-2">
-              <span class="text-2xl">📦</span>
-              Add Print Module
-            </h2>
+            <h2 class="text-xl font-medium">Print Modules</h2>
+            <p class="text-sm text-slate-500 mt-1">Define your print configurations</p>
           </div>
+          
+          <!-- Add Module Form -->
           <form method="POST" action="?/addModule" class="p-6 space-y-4">
             <div>
               <label for="moduleName" class="block text-sm text-slate-400 mb-2">Module Name</label>
               <input 
                 type="text" 
-                name="name" 
-                id="moduleName" 
-                placeholder="e.g., Haken Blau" 
-                required 
+                id="moduleName"
+                name="name"
+                required
+                placeholder="e.g., Small Gear Print"
                 class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
               />
+            </div>
+            
+            <div>
+              <label for="modulePath" class="block text-sm text-slate-400 mb-2">File Path</label>
+              <input 
+                type="text" 
+                id="modulePath"
+                name="path"
+                required
+                placeholder="/Users/username/Documents/3d-models/file.3mf"
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors font-mono text-sm"
+              />
+              <p class="text-xs text-slate-600 mt-1">Must be an absolute path</p>
             </div>
 
             <div class="grid grid-cols-2 gap-4">
@@ -193,10 +195,12 @@
                 <label for="expectedWeight" class="block text-sm text-slate-400 mb-2">Weight (g)</label>
                 <input 
                   type="number" 
-                  name="expectedWeight" 
-                  id="expectedWeight" 
-                  placeholder="175" 
-                  required 
+                  id="expectedWeight"
+                  name="expectedWeight"
+                  required
+                  min="0"
+                  step="0.1"
+                  placeholder="25"
                   class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
@@ -205,135 +209,130 @@
                 <label for="expectedTime" class="block text-sm text-slate-400 mb-2">Time (min)</label>
                 <input 
                   type="number" 
-                  name="expectedTime" 
-                  id="expectedTime" 
-                  placeholder="300" 
-                  required 
+                  id="expectedTime"
+                  name="expectedTime"
+                  required
+                  min="0"
+                  placeholder="120"
                   class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label for="objectsPerPrint" class="block text-sm text-slate-400 mb-2">Objects Per Print</label>
-                <input 
-                  type="number" 
-                  name="objectsPerPrint" 
-                  id="objectsPerPrint" 
-                  placeholder="19" 
-                  value="1" 
-                  required 
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label for="defaultSpoolPresetId" class="block text-sm text-slate-400 mb-2">Default Spool</label>
-                <select 
-                  name="defaultSpoolPresetId" 
-                  id="defaultSpoolPresetId"
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
-                >
-                  <option value="">None</option>
-                  {#each data.spoolPresets as preset}
-                    <option value={preset.id}>{preset.name} - {preset.material}</option>
-                  {/each}
-                </select>
-              </div>
-            </div>
-
             <div>
-              <label for="path" class="block text-sm text-slate-400 mb-2">File Path</label>
+              <label for="objectsPerPrint" class="block text-sm text-slate-400 mb-2">Objects Per Print</label>
               <input 
-                type="text" 
-                name="path" 
-                id="path" 
-                placeholder="/models/haken_blau.3mf" 
-                required 
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-              />
-            </div>
-
-            <div>
-              <label for="imagePath" class="block text-sm text-slate-400 mb-2">Image Path (optional)</label>
-              <input 
-                type="text" 
-                name="imagePath" 
-                id="imagePath" 
-                placeholder="/images/haken_blau.png" 
+                type="number" 
+                id="objectsPerPrint"
+                name="objectsPerPrint"
+                required
+                min="1"
+                value="1"
                 class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
               />
             </div>
 
             <button 
-              type="submit" 
-              class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-3 rounded-lg transition-colors"
+              type="submit"
+              class="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-3 rounded-lg transition-colors"
             >
               Add Module
             </button>
           </form>
         </div>
 
-        <!-- Add Spool Preset Form -->
+        <!-- Modules List -->
+        {#if data.printModules && data.printModules.length > 0}
+          <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
+              <h3 class="text-lg font-medium">Existing Modules ({data.printModules.length})</h3>
+            </div>
+            <div class="divide-y divide-slate-800">
+              {#each data.printModules as module}
+                <div class="p-4 hover:bg-slate-800/30 transition-colors">
+                  <div class="flex justify-between items-start mb-2">
+                    <h4 class="text-white font-medium">{module.name}</h4>
+                    <form method="POST" action="?/deleteModule">
+                      <input type="hidden" name="id" value={module.id} />
+                      <button 
+                        type="submit"
+                        class="text-red-400 hover:text-red-300 text-sm"
+                      >
+                        Delete
+                      </button>
+                    </form>
+                  </div>
+                  <div class="space-y-1 text-sm">
+                    <p class="text-slate-400 font-mono text-xs truncate">{module.path}</p>
+                    <div class="flex gap-4 text-slate-500">
+                      <span>{module.expected_weight}g</span>
+                      <span>{module.expected_time}min</span>
+                      <span>{module.objects_per_print} objects</span>
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Spool Presets Section -->
+      <div class="space-y-6">
         <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
           <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-            <h2 class="text-xl font-medium flex items-center gap-2">
-              <span class="text-2xl">🎨</span>
-              Add Spool Preset
-            </h2>
+            <h2 class="text-xl font-medium">Spool Presets</h2>
+            <p class="text-sm text-slate-500 mt-1">Create reusable spool configurations</p>
           </div>
+          
+          <!-- Add Preset Form -->
           <form method="POST" action="?/addSpoolPreset" class="p-6 space-y-4">
             <div>
               <label for="presetName" class="block text-sm text-slate-400 mb-2">Preset Name</label>
               <input 
                 type="text" 
-                name="name" 
-                id="presetName" 
-                placeholder="e.g., Bambu Blau PLA" 
-                required 
+                id="presetName"
+                name="name"
+                required
+                placeholder="e.g., Bambu PLA Basic Black"
                 class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
               />
             </div>
 
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label for="presetBrand" class="block text-sm text-slate-400 mb-2">Brand</label>
+                <label for="brand" class="block text-sm text-slate-400 mb-2">Brand</label>
                 <input 
                   type="text" 
-                  name="brand" 
-                  id="presetBrand" 
-                  placeholder="Generic" 
-                  required 
+                  id="brand"
+                  name="brand"
+                  required
+                  placeholder="Bambu Lab"
                   class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
 
               <div>
-                <label for="presetMaterial" class="block text-sm text-slate-400 mb-2">Material</label>
-                <select 
-                  name="material" 
-                  id="presetMaterial" 
+                <label for="material" class="block text-sm text-slate-400 mb-2">Material</label>
+                <input 
+                  type="text" 
+                  id="material"
+                  name="material"
                   required
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
-                >
-                  <option value="PLA">PLA</option>
-                  <option value="PETG">PETG</option>
-                  <option value="ABS">ABS</option>
-                  <option value="TPU">TPU</option>
-                  <option value="Nylon">Nylon</option>
-                </select>
+                  placeholder="PLA"
+                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                />
               </div>
             </div>
 
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label for="presetColor" class="block text-sm text-slate-400 mb-2">Color</label>
+                <label for="color" class="block text-sm text-slate-400 mb-2">Color</label>
                 <input 
                   type="text" 
-                  name="color" 
-                  id="presetColor" 
-                  placeholder="Blue" 
+                  id="color"
+                  name="color"
+                  placeholder="Black"
                   class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
@@ -342,199 +341,74 @@
                 <label for="defaultWeight" class="block text-sm text-slate-400 mb-2">Weight (g)</label>
                 <input 
                   type="number" 
-                  name="defaultWeight" 
-                  id="defaultWeight" 
-                  placeholder="1000" 
-                  required 
+                  id="defaultWeight"
+                  name="defaultWeight"
+                  required
+                  min="0"
+                  value="1000"
                   class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
             </div>
 
             <div>
-              <label for="presetCost" class="block text-sm text-slate-400 mb-2">Cost ($)</label>
+              <label for="cost" class="block text-sm text-slate-400 mb-2">Cost ($)</label>
               <input 
                 type="number" 
-                step="0.01" 
-                name="cost" 
-                id="presetCost" 
-                placeholder="20.00" 
+                id="cost"
+                name="cost"
+                min="0"
+                step="0.01"
+                placeholder="20.00"
                 class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
               />
             </div>
 
             <button 
-              type="submit" 
-              class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-3 rounded-lg transition-colors"
+              type="submit"
+              class="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-3 rounded-lg transition-colors"
             >
-              Add Preset
+              Add Spool Preset
             </button>
           </form>
         </div>
-      </div>
 
-      <!-- Right Column: Lists -->
-      <div class="space-y-6">
-        <!-- Existing Print Modules -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-            <h2 class="text-xl font-medium">Print Modules ({data.printModules.length})</h2>
-          </div>
-          <div class="p-6">
-            {#if data.printModules.length === 0}
-              <div class="text-center py-8">
-                <div class="text-5xl mb-3 opacity-30">📦</div>
-                <p class="text-slate-500">No print modules found</p>
-                <p class="text-slate-600 text-sm mt-1">Add your first module using the form</p>
-              </div>
-            {:else}
-              <div class="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-                {#each data.printModules as module}
-                  <div class="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4 hover:border-slate-600 transition-colors">
-                    <div class="flex justify-between items-start mb-3">
-                      <h3 class="text-lg font-medium text-white">{module.name}</h3>
-                      <form method="POST" action="?/deleteModule" style="display: inline;">
-                        <input type="hidden" name="moduleId" value={module.id} />
-                        <button 
-                          type="submit" 
-                          class="text-red-400 hover:text-red-300 transition-colors text-sm"
-                          onclick={(e) => { 
-                            if (!confirm('Delete this module?')) e.preventDefault(); 
-                          }}
-                        >
-                          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </form>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2 text-sm">
-                      <div class="flex items-center gap-2 text-slate-400">
-                        <span>📦</span>
-                        <span>{module.objects_per_print} objects</span>
-                      </div>
-                      <div class="flex items-center gap-2 text-slate-400">
-                        <span>⚖️</span>
-                        <span>{module.expected_weight}g</span>
-                      </div>
-                      <div class="flex items-center gap-2 text-slate-400">
-                        <span>⏱️</span>
-                        <span>{module.expected_time} min</span>
-                      </div>
-                      <div class="flex items-center gap-2 text-slate-400 col-span-2 truncate">
-                        <span>📁</span>
-                        <span class="truncate">{module.path}</span>
-                      </div>
-                      {#if module.image_path}
-                        <div class="flex items-center gap-2 text-slate-400 col-span-2 truncate">
-                          <span>🖼️</span>
-                          <span class="truncate">{module.image_path}</span>
-                        </div>
-                      {/if}
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        </div>
-
-        <!-- Existing Spool Presets -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-            <h2 class="text-xl font-medium">Spool Presets ({data.spoolPresets.length})</h2>
-          </div>
-          <div class="p-6">
-            {#if data.spoolPresets.length === 0}
-              <div class="text-center py-8">
-                <div class="text-5xl mb-3 opacity-30">🎨</div>
-                <p class="text-slate-500">No spool presets found</p>
-                <p class="text-slate-600 text-sm mt-1">Add your first preset using the form</p>
-              </div>
-            {:else}
-              <div class="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-                {#each data.spoolPresets as preset}
-                  <div class="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4 hover:border-slate-600 transition-colors">
-                    <h3 class="text-base font-medium text-white mb-2">{preset.name}</h3>
-                    <div class="space-y-1 text-sm">
-                      <div class="flex justify-between text-slate-400">
-                        <span>Brand:</span>
-                        <span class="text-white">{preset.brand}</span>
-                      </div>
-                      <div class="flex justify-between text-slate-400">
-                        <span>Material:</span>
-                        <span class="text-white">{preset.material}</span>
-                      </div>
+        <!-- Presets List -->
+        {#if data.spoolPresets && data.spoolPresets.length > 0}
+          <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
+              <h3 class="text-lg font-medium">Existing Presets ({data.spoolPresets.length})</h3>
+            </div>
+            <div class="divide-y divide-slate-800">
+              {#each data.spoolPresets as preset}
+                <div class="p-4 hover:bg-slate-800/30 transition-colors">
+                  <div class="flex justify-between items-start">
+                    <div>
+                      <h4 class="text-white font-medium mb-1">{preset.name}</h4>
+                      <p class="text-sm text-slate-400">{preset.brand} • {preset.material}</p>
                       {#if preset.color}
-                        <div class="flex justify-between text-slate-400">
-                          <span>Color:</span>
-                          <span class="text-white">{preset.color}</span>
-                        </div>
+                        <p class="text-xs text-slate-500 mt-1">{preset.color}</p>
                       {/if}
-                      <div class="flex justify-between text-slate-400">
-                        <span>Weight:</span>
-                        <span class="text-white">{preset.default_weight}g</span>
-                      </div>
-                      {#if preset.cost}
-                        <div class="flex justify-between text-slate-400">
-                          <span>Cost:</span>
+                      <div class="flex gap-4 mt-2 text-sm">
+                        <span class="text-slate-500">{preset.default_weight}g</span>
+                        {#if preset.cost}
                           <span class="text-green-400">${preset.cost.toFixed(2)}</span>
-                        </div>
-                      {/if}
+                        {/if}
+                      </div>
                     </div>
                   </div>
-                {/each}
-              </div>
-            {/if}
+                </div>
+              {/each}
+            </div>
           </div>
-        </div>
+        {/if}
       </div>
+
     </div>
   </div>
 </div>
 
 <style>
-  .breadcrumb {
-    margin-bottom: 2rem;
-  }
-
-  .breadcrumb a {
-    color: #2196F3;
-    text-decoration: none;
-    font-weight: bold;
-  }
-
-  .breadcrumb a:hover {
-    text-decoration: underline;
-  }
-
-  section {
-    margin: 2rem 0;
-  }
-
-  hr {
-    margin: 3rem 0;
-    border: none;
-    border-top: 2px solid #e0e0e0;
-  }
-
-  .settings-form {
-    background: #f9f9f9;
-    padding: 1.5rem;
-    border-radius: 8px;
-    max-width: 700px;
-  }
-
-  .form-group {
-    margin-bottom: 1rem;
-  }
-
-  .form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-  }
-
   label {
     display: block;
     font-weight: bold;
