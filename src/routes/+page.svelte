@@ -480,7 +480,7 @@
               </div>
             {:else}
               <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
-                <p class="text-sm text-red-400">⚠️ No spool loaded</p>
+                <p class="text-sm text-red-400">No spool loaded</p>
               </div>
             {/if}
 
@@ -546,7 +546,7 @@
               </div>
             {:else}
               <div class="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4">
-                <p class="text-sm text-orange-400">⚠️ No spool loaded</p>
+                <p class="text-sm text-orange-400"> No spool loaded</p>
                 <p class="text-xs text-slate-500 mt-1">Load a spool to start printing</p>
               </div>
             {/if}
@@ -903,7 +903,7 @@
               class="w-full bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-lg transition-colors font-medium
                      disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-500"
             >
-              ▶️ Start Print Job
+              Start Print Job
             </button>
           </form>
         </div>
