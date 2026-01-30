@@ -7,7 +7,7 @@ INSERT INTO spool_presets (name, brand, material, color, default_weight, cost) V
   ('Transparent', '3dJake','PLA', 'Transparent', 1000, 20),
   ('Lila', 'Bambu lap', 'PLA', 'lila', 1000, 10.99),
   ('Rosa', 'Bambu lap', 'PLA', 'Rosa', 1000, 10.99),
-  ('Green', 'Bambu lap', 'PLA', 'Green', 1000, 10.99),
+  ('Green', 'Bambu lap', 'PLA', 'Green', 1000, 10.99);
 
 -- Sample Printers
 INSERT INTO printers (name, model, status, loaded_spool_id, total_hours) VALUES
@@ -21,4 +21,35 @@ INSERT INTO printers (name, model, status, loaded_spool_id, total_hours) VALUES
 
 INSERT INTO print_modules (name, expected_weight, expected_time, objects_per_print, default_spool_preset_id, path, image_path) VALUES
   ('Kleben Haken Blau ', 179, 256, 20, 2, '/Users/linus/Documents/3d-models/Haken/blau/Haken_blau_kleben.3mf', '/images/haken.JPG'),
-  ('Kleben Haken Blau ', 181, 321, 20, 2, '/Users/linus/Documents/3d-models/Haken/blau/Haken_blau_schrauben.3mf', '/images/haken.JPG'),
+  ('Schrauben Haken Blau ', 181, 321, 20, 2, '/Users/linus/Documents/3d-models/Haken/blau/Haken_blau_schrauben.3mf', '/images/haken.JPG'),
+  ('vase', 752, 1146, 4, 2, '/Users/linus/Documents/3d-models/Vasen/vase_Jakex4.3mf', '/images/vase.JPG'),
+  ('vase', 752, 1146, 4, 3, '/Users/linus/Documents/3d-models/Vasen/vase_Jakex4.3mf', '/images/vase.JPG'),
+  ('vase', 752, 1146, 4, 4, '/Users/linus/Documents/3d-models/Vasen/vase_Jakex4.3mf', '/images/vase.JPG'),
+  ('vase', 801, 1146, 4, 1, '/Users/linus/Documents/3d-models/Vasen/vase_bambux4.3mf', '/images/vase.JPG'),
+  ('vase', 801, 1146, 4, 6, '/Users/linus/Documents/3d-models/Vasen/vase_bambux4.3mf', '/images/vase.JPG'),
+  ('vase', 801, 1146, 4, 7, '/Users/linus/Documents/3d-models/Vasen/vase_bambux4.3mf', '/images/vase.JPG'),
+  ('vase', 801, 1146, 4, 8, '/Users/linus/Documents/3d-models/Vasen/vase_bambux4.3mf', '/images/vase.JPG'),
+  ('Kleben Haken Pink ', 179, 256, 20, 3, '/Users/linus/Documents/3d-models/Haken/pink/P1S_Haken_pink_kleben.3mf', '/images/haken.JPG'),
+  ('schrauben Haken Pink ', 181, 303, 20, 3, '/Users/linus/Documents/3d-models/Haken/pink/P1S_Haken_pink_schrauben.3mf', '/images/haken.JPG'),
+  ('Kleben Haken Orange ', 179, 256, 20, 4, '/Users/linus/Documents/3d-models/Haken/orange/P1S_Haken_pink_kleben.3mf', '/images/haken.JPG'),
+  ('schrauben Haken Orange ', 181, 303, 20, 4, '/Users/linus/Documents/3d-models/Haken/orange/P1S_Haken_pink_schrauben.3mf', '/images/haken.JPG'),
+  ('schrauben Halter Oben', 16, 58, 10, 5, '/Users/linus/Documents/3d-models/Haken/Hakenhalter/oben_schrauben_hakenhalter.3mf', '/images/hakenhalter.JPG'),
+  ('schrauben Halter unten', 18, 60, 10, 5, '/Users/linus/Documents/3d-models/Haken/Hakenhalter/unten_schrauben_hakenhalter.3mf', '/images/hakenhalter.JPG'),
+  ('kleben Halter Oben', 22, 51, 20, 5, '/Users/linus/Documents/3d-models/Haken/Hakenhalter/oben_kleben_hakenhalter.3mf', '/images/hakenhalter.JPG'),
+  ('kleben Halter unten', 22, 51, 20, 5, '/Users/linus/Documents/3d-models/Haken/Hakenhalter/unten_kleben_hakenhalter.3mf', '/images/hakenhalter.JPG'),
+  ('Schrauben Haken lila ', 192, 317, 20, 6, '/Users/linus/Documents/3d-models/Haken/lila/P1S_Haken_lila_schrauben_250216.3mf', '/images/haken.JPG'),
+  ('kleben Haken lila ', 193, 259, 20, 6, '/Users/linus/Documents/3d-models/Haken/lila/P1S_Haken_rosa_kleben.3mf', '/images/haken.JPG'),
+  ('Schrauben Haken rosa ', 192, 331, 20, 7, '/Users/linus/Documents/3d-models/Haken/rosa/P1S_Haken_rosa_schrauben_250216.3mf', '/images/haken.JPG'),
+  ('kleben Haken rosa ', 193, 259, 20, 7, '/Users/linus/Documents/3d-models/Haken/rosa/P1S_Haken_rosa_kleben.3mf', '/images/haken.JPG'),
+  ('Schrauben Haken green ', 192, 317, 20, 8, '/Users/linus/Documents/3d-models/Haken/green/P1S_Haken_lila_schrauben_250216.3mf', '/images/haken.JPG'),
+  ('kleben Haken green ', 190, 256, 20, 8, '/Users/linus/Documents/3d-models/Haken/green/P1S_Haken_mudgreen_kleben.3mf', '/images/haken.JPG'),
+  ('klohalter', 323, 561, 2, 8, '/Users/linus/Documents/3d-models/Klorolle/Klorollenhalter_bambu.3mf', '/images/klohalter.JPG'),
+  ('klohalter', 323, 561, 2, 7, '/Users/linus/Documents/3d-models/Klorolle/Klorollenhalter_bambu.3mf', '/images/klohalter.JPG'),
+  ('klohalter', 303, 510, 2, 1, '/Users/linus/Documents/3d-models/Klorolle/Klorollenhalter_bambublau.3mf', '/images/klohalter.JPG'),
+  ('klohalter', 302, 660, 2, 3, '/Users/linus/Documents/3d-models/Klorolle/Klorollenhalter_pink.3mf', '/images/klohalter.JPG'),
+  ('stab', 387, 600, 12, 1, '/Users/linus/Documents/3d-models/Klorolle/stab.3mf', '/images/stab.JPG'),
+  ('stab', 387, 600, 12, 7, '/Users/linus/Documents/3d-models/Klorolle/stab.3mf', '/images/stab.JPG'),
+  ('stab', 387, 600, 12, 4, '/Users/linus/Documents/3d-models/Klorolle/stab.3mf', '/images/stab.JPG'),
+  ('stöpsel', 308, 660, 62, 7, '/Users/linus/Documents/3d-models/Klorolle/stöpsel.3mf', '/images/stöpsel.JPG'),
+  ('stöpsel', 308, 660, 62, 4, '/Users/linus/Documents/3d-models/Klorolle/stöpsel.3mf', '/images/stöpsel.JPG'),
+  ('stöpsel', 308, 660, 62, 1, '/Users/linus/Documents/3d-models/Klorolle/stöpsel.3mf', '/images/stöpsel.JPG');
