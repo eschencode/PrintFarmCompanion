@@ -6,13 +6,23 @@ export const load: PageServerLoad = async ({ platform }) => {
   
   if (!database) {
     console.log('⚠️ Database not available.');
-    return { printModules: [], spoolPresets: [] };
+    return { printModules: [], spoolPresets: [], availableImages: [] };
   }
 
   const printModules = await db.getAllPrintModules(database);
   const spoolPresets = await db.getAllSpoolPresets(database);
+  
+  // ✅ List of available images in static/images/
+  const availableImages = [
+    'haken.JPG',
+    'hakenhalter.JPG',
+    'klohalter.JPG',
+    'stab.JPG',
+    'stöpsel.JPG',
+    'vase.JPG'
+  ];
 
-  return { printModules, spoolPresets };
+  return { printModules, spoolPresets, availableImages };
 };
 
 export const actions: Actions = {
@@ -24,6 +34,10 @@ export const actions: Actions = {
     }
 
     const formData = await request.formData();
+    const imagePath = formData.get('imagePath') as string;
+    
+    // ✅ Only set imagePath if something was selected (not empty string)
+    const normalizedImagePath = imagePath && imagePath !== '' ? `/images/${imagePath}` : null;
 
     const result = await db.createPrintModule(database, {
       name: formData.get('name') as string,
@@ -32,7 +46,7 @@ export const actions: Actions = {
       objectsPerPrint: Number(formData.get('objectsPerPrint')) || 1,
       defaultSpoolPresetId: Number(formData.get('defaultSpoolPresetId')) || null,
       path: formData.get('path') as string,
-      imagePath: (formData.get('imagePath') as string) || null
+      imagePath: normalizedImagePath  // ✅ Will be null if not selected
     });
 
     return result;

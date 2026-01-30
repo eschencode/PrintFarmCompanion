@@ -13,6 +13,10 @@
   let testingConnection = false;
   let connectionStatus: 'untested' | 'success' | 'failed' = 'untested';
   
+  // ✅ Image selection
+  let selectedImagePath = '';
+  let imagePreviewUrl = '';
+  
   // Sync local variable with store
   $: fileHandlerToken = fileHandlerState.token;
   
@@ -35,6 +39,16 @@
     
     connectionStatus = connected ? 'success' : 'failed';
     testingConnection = false;
+  }
+
+  // ✅ Update image preview when selection changes
+  function updateImagePreview(imageName: string) {
+    selectedImagePath = imageName;
+    if (imageName) {
+      imagePreviewUrl = `/images/${imageName}`;
+    } else {
+      imagePreviewUrl = '';
+    }
   }
 </script>
 
@@ -189,6 +203,58 @@
               <p class="text-xs text-slate-600 mt-1">Must be an absolute path</p>
             </div>
 
+            <!-- ✅ UPDATED: Dropdown Image Selector -->
+            <div>
+              <label for="imagePath" class="block text-sm text-slate-400 mb-2">
+                Module Image (Optional)
+              </label>
+              <select 
+                id="imagePath"
+                name="imagePath"
+                bind:value={selectedImagePath}
+                onchange={(e) => updateImagePreview(e.currentTarget.value)}
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+              >
+                <option value="">No image</option>
+                {#if data.availableImages && data.availableImages.length > 0}
+                  {#each data.availableImages as imageName}
+                    <option value={imageName}>{imageName}</option>
+                  {/each}
+                {:else}
+                  <option value="" disabled>No images available</option>
+                {/if}
+              </select>
+              <p class="text-xs text-slate-600 mt-1">
+                📁 Images are loaded from: <code class="text-blue-400">static/images/</code>
+              </p>
+              <p class="text-xs text-slate-600 mt-0.5">
+                💡 To add more images, place them in the static/images/ folder and restart the server
+              </p>
+              
+              <!-- ✅ Image Preview -->
+              {#if imagePreviewUrl}
+                <div class="mt-3 p-3 bg-slate-800/50 rounded-lg">
+                  <p class="text-xs text-slate-400 mb-2">Preview:</p>
+                  <div class="w-32 h-32 rounded-lg overflow-hidden bg-slate-700/50 flex items-center justify-center">
+                    <img 
+                      src={imagePreviewUrl} 
+                      alt="Preview"
+                      class="max-w-full max-h-full object-contain"
+                      onerror={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const errorDiv = e.currentTarget.nextElementSibling as HTMLElement;
+                        if (errorDiv) errorDiv.style.display = 'block';
+                      }}
+                    />
+                    <div style="display: none;" class="text-red-400 text-xs text-center px-4">
+                      ❌ Image not found
+                      <p class="text-slate-600 mt-1">Make sure the file exists in static/images/</p>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+            </div>
+
             <div>
               <label for="defaultSpoolPresetId" class="block text-sm text-slate-400 mb-2">
                 Preferred Spool Preset (Optional)
@@ -275,33 +341,56 @@
               {#each data.printModules as module}
                 {@const linkedPreset = data.spoolPresets.find(p => p.id === module.default_spool_preset_id)}
                 <div class="p-4 hover:bg-slate-800/30 transition-colors">
-                  <div class="flex justify-between items-start mb-2">
-                    <h4 class="text-white font-medium">{module.name}</h4>
-                    <form method="POST" action="?/deleteModule">
-                      <input type="hidden" name="moduleId" value={module.id} />
-                      <button 
-                        type="submit"
-                        class="text-red-400 hover:text-red-300 text-sm"
-                      >
-                        Delete
-                      </button>
-                    </form>
-                  </div>
-                  <div class="space-y-1 text-sm">
-                    <p class="text-slate-400 font-mono text-xs truncate">{module.path}</p>
-                    {#if linkedPreset}
-                      <p class="text-blue-400 text-xs">
-                        🎯 Preset: {linkedPreset.name}
-                      </p>
+                  <div class="flex gap-4">
+                    <!-- ✅ NEW: Show module image if available -->
+                    {#if module.image_path}
+                      <div class="w-20 h-20 rounded-lg overflow-hidden bg-slate-700/50 flex-shrink-0 flex items-center justify-center">
+                        <img 
+                          src={module.image_path} 
+                          alt={module.name}
+                          class="max-w-full max-h-full object-contain"
+                          onerror={(e) => e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'} 
+                        />
+                      </div>
                     {:else}
-                      <p class="text-slate-600 text-xs">
-                        ✨ Any spool
-                      </p>
+                      <div class="w-20 h-20 rounded-lg overflow-hidden bg-slate-700/50 flex-shrink-0 flex items-center justify-center">
+                        <span class="text-3xl opacity-50">📦</span>
+                      </div>
                     {/if}
-                    <div class="flex gap-4 text-slate-500">
-                      <span>{module.expected_weight}g</span>
-                      <span>{module.expected_time}min</span>
-                      <span>{module.objects_per_print} objects</span>
+
+                    <div class="flex-1">
+                      <div class="flex justify-between items-start mb-2">
+                        <h4 class="text-white font-medium">{module.name}</h4>
+                        <form method="POST" action="?/deleteModule">
+                          <input type="hidden" name="moduleId" value={module.id} />
+                          <button 
+                            type="submit"
+                            class="text-red-400 hover:text-red-300 text-sm"
+                          >
+                            Delete
+                          </button>
+                        </form>
+                      </div>
+                      <div class="space-y-1 text-sm">
+                        <p class="text-slate-400 font-mono text-xs truncate">{module.path}</p>
+                        {#if module.image_path}
+                          <p class="text-slate-600 font-mono text-xs truncate">🖼️ {module.image_path}</p>
+                        {/if}
+                        {#if linkedPreset}
+                          <p class="text-blue-400 text-xs">
+                            🎯 Preset: {linkedPreset.name}
+                          </p>
+                        {:else}
+                          <p class="text-slate-600 text-xs">
+                            ✨ Any spool
+                          </p>
+                        {/if}
+                        <div class="flex gap-4 text-slate-500">
+                          <span>{module.expected_weight}g</span>
+                          <span>{module.expected_time}min</span>
+                          <span>{module.objects_per_print} objects</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

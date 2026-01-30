@@ -434,7 +434,6 @@
                 <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Date</th>
                 <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Module</th>
                 <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Printer</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Duration</th>
                 <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Material</th>
                 <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Status</th>
               </tr>
@@ -442,7 +441,6 @@
             <tbody>
               {#each data.printJobs as job}
                 {@const printer = data.printers.find(p => p.id === job.printer_id)}
-                {@const duration = job.end_time ? Math.floor((job.end_time - job.start_time) / 60) : null}
                 <tr class="border-t border-slate-800 hover:bg-slate-800/50 transition-colors">
                   <td class="px-4 py-3 text-sm text-slate-400">
                     {formatDate(job.start_time)}
@@ -452,9 +450,6 @@
                   </td>
                   <td class="px-4 py-3 text-sm text-slate-400">
                     {printer?.name || 'Unknown'}
-                  </td>
-                  <td class="px-4 py-3 text-sm text-slate-400">
-                    {duration ? formatDuration(duration) : 'In Progress'}
                   </td>
                   <td class="px-4 py-3 text-sm text-slate-400">
                     {job.actual_weight || job.planned_weight}g

@@ -274,13 +274,33 @@ export async function startPrintJob(db: D1Database, params: {
 export async function completePrintJob(
   db: D1Database,
   jobId: number,
-  endTime: number,
+  actualEndTime: number,
   success: boolean,
   actualWeight: number,
   failureReason: string | null = null
 ): Promise<void> {
   const status = success ? 'success' : 'failed'; // ✅ Convert boolean to status string
+
+
+   
+  const job = await getPrintJobById(db, jobId);
   
+  if (!job) {
+    throw new Error('Print job not found');
+  }
+  
+  
+  let endTime: number;
+  
+  if (job.status == 'failed' && job.expected_time > (job.start_time - actualEndTime)) {
+    endTime = actualEndTime;
+    
+  } else {
+    const expectedDurationMs = (job.expected_time || 0) * 60 * 1000; // Convert minutes to ms
+    endTime = job.start_time + expectedDurationMs;
+    
+  }
+
   await db
     .prepare(`
       UPDATE print_jobs 
@@ -355,7 +375,7 @@ export async function createPrintModule(db: D1Database, module: {
     module.objectsPerPrint ?? 1,
     module.defaultSpoolPresetId ?? null,
     module.path,
-    module.imagePath ?? null
+    module.imagePath || null
   ).run();
 
   return {

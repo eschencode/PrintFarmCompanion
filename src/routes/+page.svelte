@@ -828,7 +828,7 @@
   </div>
 {/if}
 
-<!-- Module Selector Modal - UPDATED -->
+<!-- Module Selector Modal - UPDATED with sticky footer -->
 {#if selectedPrinter && showModuleSelector}
   {@const categorizedModules = getCategorizedModules()}
   {@const loadedSpool = getLoadedSpool(selectedPrinter.loaded_spool_id)}
@@ -845,347 +845,356 @@
     <!-- svelte-ignore a11y_interactive_supports_focus -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div 
-      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col"
       onclick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
     >
-      <div class="p-6">
-        <!-- Header -->
-        <div class="flex justify-between items-start mb-6">
-          <div>
-            <h2 class="text-2xl font-medium text-white mb-1">Start Print</h2>
-            <p class="text-sm text-slate-400">Select a module for {selectedPrinter.name}</p>
-            {#if loadedSpool}
-              {@const loadedPreset = data.spoolPresets.find(p => p.id === loadedSpool.preset_id)}
-              <p class="text-xs text-slate-500 mt-1">
-                Using: {loadedSpool.brand} {loadedSpool.material} - {loadedSpool.color} ({loadedSpool.remaining_weight}g)
-                {#if loadedPreset}
-                  <span class="text-blue-400 ml-1">(Preset: {loadedPreset.name})</span>
-                {/if}
-              </p>
-            {/if}
+      <!-- ✅ Scrollable Content Area -->
+      <div class="overflow-y-auto flex-1">
+        <div class="p-6">
+          <!-- Header -->
+          <div class="flex justify-between items-start mb-6">
+            <div>
+              <h2 class="text-2xl font-medium text-white mb-1">Start Print</h2>
+              <p class="text-sm text-slate-400">Select a module for {selectedPrinter.name}</p>
+              {#if loadedSpool}
+                {@const loadedPreset = data.spoolPresets.find(p => p.id === loadedSpool.preset_id)}
+                <p class="text-xs text-slate-500 mt-1">
+                  Using: {loadedSpool.brand} {loadedSpool.material} - {loadedSpool.color} ({loadedSpool.remaining_weight}g)
+                  {#if loadedPreset}
+                    <span class="text-blue-400 ml-1">(Preset: {loadedPreset.name})</span>
+                  {/if}
+                </p>
+              {/if}
+            </div>
+            <button 
+              onclick={closeModuleSelector}
+              class="text-slate-400 hover:text-white transition-colors"
+              aria-label="Close module selector"
+            >
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-          <button 
-            onclick={closeModuleSelector}
-            class="text-slate-400 hover:text-white transition-colors"
-            aria-label="Close module selector"
-          >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
 
-        <!-- Optimal Combination Calculator -->
-        {#if optimalCombination && optimalCombination.combination.length > 0}
-          <div class="mb-6 bg-gradient-to-r from-green-500/10 to-blue-500/10 border border-green-500/20 rounded-xl p-4">
-            <div class="flex items-start gap-3">
-              <div class="text-2xl">💡</div>
-              <div class="flex-1">
-                <h3 class="text-white font-medium mb-2 flex items-center gap-2">
-                  Optimal Combination
-                  <span class="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">
-                    {optimalCombination.wastePercentage}% waste
-                  </span>
-                </h3>
-                <div class="space-y-2">
-                  {#each optimalCombination.combination as item}
-                    <div class="flex items-center justify-between text-sm">
-                      <span class="text-slate-300">
-                        {item.count}× {item.module.name}
-                      </span>
-                      <span class="text-slate-500">
-                        {item.count * item.module.expected_weight}g
-                      </span>
+          <!-- Optimal Combination Calculator -->
+          {#if optimalCombination && optimalCombination.combination.length > 0}
+            <div class="mb-6 bg-gradient-to-r from-green-500/10 to-blue-500/10 border border-green-500/20 rounded-xl p-4">
+              <div class="flex items-start gap-3">
+                <div class="text-2xl">💡</div>
+                <div class="flex-1">
+                  <h3 class="text-white font-medium mb-2 flex items-center gap-2">
+                    Optimal Combination
+                    <span class="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">
+                      {optimalCombination.wastePercentage}% waste
+                    </span>
+                  </h3>
+                  <div class="space-y-2">
+                    {#each optimalCombination.combination as item}
+                      <div class="flex items-center justify-between text-sm">
+                        <span class="text-slate-300">
+                          {item.count}× {item.module.name}
+                        </span>
+                        <span class="text-slate-500">
+                          {item.count * item.module.expected_weight}g
+                        </span>
+                      </div>
+                    {/each}
+                    <div class="pt-2 border-t border-slate-700/50 flex justify-between text-sm">
+                      <span class="text-slate-400">Total Usage:</span>
+                      <span class="text-white font-medium">{optimalCombination.totalWeight}g / {loadedSpool?.remaining_weight}g</span>
                     </div>
-                  {/each}
-                  <div class="pt-2 border-t border-slate-700/50 flex justify-between text-sm">
-                    <span class="text-slate-400">Total Usage:</span>
-                    <span class="text-white font-medium">{optimalCombination.totalWeight}g / {loadedSpool?.remaining_weight}g</span>
-                  </div>
-                  <div class="flex justify-between text-sm">
-                    <span class="text-slate-400">Remaining:</span>
-                    <span class="text-green-400">{optimalCombination.waste.toFixed(1)}g</span>
+                    <div class="flex justify-between text-sm">
+                      <span class="text-slate-400">Remaining:</span>
+                      <span class="text-green-400">{optimalCombination.waste.toFixed(1)}g</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
+          {/if}
+
+          <!-- Module Categories -->
+          <div class="space-y-6">
+            
+            <!-- Category 1: 🟢 Compatible & Printable (PRIORITY) -->
+            {#if categorizedModules.compatiblePrintable.length > 0}
+              <div>
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <h3 class="text-sm font-medium text-green-400">
+                    Recommended for this Spool ({categorizedModules.compatiblePrintable.length})
+                  </h3>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  {#each categorizedModules.compatiblePrintable as module}
+                    {@const modulePreset = module.default_spool_preset_id ? data.spoolPresets.find(p => p.id === module.default_spool_preset_id) : null}
+                    <button
+                      type="button"
+                      onclick={() => selectModule(module.id)}
+                      class="text-left bg-slate-800/50 border-2 rounded-xl p-3 transition-all hover:bg-slate-800 cursor-pointer
+                             {selectedModuleId === module.id ? 'border-green-500 bg-slate-800' : 'border-transparent'}"
+                    >
+                      <!-- Module card content -->
+                      {#if module.image_path}
+                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/50 aspect-square flex items-center justify-center">
+                          <img 
+                            src={module.image_path} 
+                            alt={module.name}
+                            class="max-w-full max-h-full object-contain"
+                          />
+                        </div>
+                      {:else}
+                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/50 aspect-square flex items-center justify-center">
+                          <span class="text-3xl opacity-50">📦</span>
+                        </div>
+                      {/if}
+
+                      <div class="flex items-start justify-between mb-1">
+                        <h4 class="text-sm font-medium text-white">{module.name}</h4>
+                        {#if selectedModuleId === module.id}
+                          <div class="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0 ml-1">
+                            <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                        {/if}
+                      </div>
+
+                      <div class="space-y-0.5 text-xs">
+                        {#if modulePreset}
+                          <div class="flex justify-between items-center text-blue-400">
+                            <span class="text-slate-500">Preset:</span>
+                            <span>{modulePreset.name}</span>
+                          </div>
+                        {/if}
+                        <div class="flex justify-between items-center">
+                          <span class="text-slate-500">Weight:</span>
+                          <span class="text-white font-medium">{module.expected_weight}g</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                          <span class="text-slate-500">Time:</span>
+                          <span class="text-slate-400">{formatTime(module.expected_time)}</span>
+                        </div>
+                        {#if loadedSpool}
+                          <div class="flex justify-between items-center pt-1 border-t border-slate-700/50">
+                            <span class="text-slate-500">After print:</span>
+                            <span class="text-green-400">{loadedSpool.remaining_weight - module.expected_weight}g</span>
+                          </div>
+                        {/if}
+                      </div>
+                    </button>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            <!-- Category 2: 🟠 Compatible but Insufficient Material -->
+            {#if categorizedModules.compatibleInsufficientMaterial.length > 0}
+              <div>
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-2 h-2 bg-orange-500 rounded-full"></div>
+                  <h3 class="text-sm font-medium text-orange-400">
+                    Compatible - Needs More Material ({categorizedModules.compatibleInsufficientMaterial.length})
+                  </h3>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  {#each categorizedModules.compatibleInsufficientMaterial as module}
+                    {@const modulePreset = module.default_spool_preset_id ? data.spoolPresets.find(p => p.id === module.default_spool_preset_id) : null}
+                    {@const shortfall = module.expected_weight - (loadedSpool?.remaining_weight || 0)}
+                    <button
+                      type="button"
+                      onclick={() => selectModule(module.id)}
+                      class="text-left bg-slate-800/30 border-2 rounded-xl p-3 transition-all hover:bg-slate-800/50 cursor-pointer
+                             {selectedModuleId === module.id ? 'border-orange-500 bg-slate-800/50' : 'border-transparent'}"
+                    >
+                      <!-- Module card content -->
+                      {#if module.image_path}
+                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/30 aspect-square flex items-center justify-center">
+                          <img 
+                            src={module.image_path} 
+                            alt={module.name}
+                            class="max-w-full max-h-full object-contain opacity-60"
+                          />
+                        </div>
+                      {:else}
+                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/30 aspect-square flex items-center justify-center">
+                          <span class="text-3xl opacity-30">📦</span>
+                        </div>
+                      {/if}
+
+                      <div class="flex items-start justify-between mb-1">
+                        <h4 class="text-sm font-medium text-white">{module.name}</h4>
+                        {#if selectedModuleId === module.id}
+                          <div class="w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0 ml-1">
+                            <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                        {/if}
+                      </div>
+
+                      <div class="space-y-0.5 text-xs">
+                        {#if modulePreset}
+                          <div class="flex justify-between items-center text-blue-400">
+                            <span class="text-slate-500">Preset:</span>
+                            <span>{modulePreset.name}</span>
+                          </div>
+                        {/if}
+                        <div class="flex justify-between items-center">
+                          <span class="text-slate-500">Needs:</span>
+                          <span class="text-white font-medium">{module.expected_weight}g</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                          <span class="text-slate-500">Short by:</span>
+                          <span class="text-orange-400 font-medium">{shortfall}g</span>
+                        </div>
+                      </div>
+                      <div class="mt-2 pt-2 border-t border-orange-500/20">
+                        <p class="text-xs text-orange-400">⚠️ Not enough material</p>
+                      </div>
+                    </button>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            <!-- Category 3: 🔵 Any Spool & Printable -->
+            {#if categorizedModules.anySpoolPrintable.length > 0}
+              <div>
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  <h3 class="text-sm font-medium text-blue-400">
+                    Universal Modules ({categorizedModules.anySpoolPrintable.length})
+                  </h3>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  {#each categorizedModules.anySpoolPrintable as module}
+                    <button
+                      type="button"
+                      onclick={() => selectModule(module.id)}
+                      class="text-left bg-slate-800/50 border-2 rounded-xl p-3 transition-all hover:bg-slate-800 cursor-pointer
+                             {selectedModuleId === module.id ? 'border-blue-500 bg-slate-800' : 'border-transparent'}"
+                    >
+                      <!-- Module card content -->
+                      {#if module.image_path}
+                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/50 aspect-square flex items-center justify-center">
+                          <img 
+                            src={module.image_path} 
+                            alt={module.name}
+                            class="max-w-full max-h-full object-contain"
+                          />
+                        </div>
+                      {:else}
+                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/50 aspect-square flex items-center justify-center">
+                          <span class="text-3xl opacity-50">📦</span>
+                        </div>
+                      {/if}
+
+                      <div class="flex items-start justify-between mb-1">
+                        <h4 class="text-sm font-medium text-white">{module.name}</h4>
+                        {#if selectedModuleId === module.id}
+                          <div class="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 ml-1">
+                            <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                        {/if}
+                      </div>
+
+                      <div class="space-y-0.5 text-xs">
+                        <div class="flex justify-between items-center text-slate-500">
+                          <span>Preset:</span>
+                          <span class="text-slate-600">Any</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                          <span class="text-slate-500">Weight:</span>
+                          <span class="text-white font-medium">{module.expected_weight}g</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                          <span class="text-slate-500">Time:</span>
+                          <span class="text-slate-400">{formatTime(module.expected_time)}</span>
+                        </div>
+                        {#if loadedSpool}
+                          <div class="flex justify-between items-center pt-1 border-t border-slate-700/50">
+                            <span class="text-slate-500">After print:</span>
+                            <span class="text-green-400">{loadedSpool.remaining_weight - module.expected_weight}g</span>
+                          </div>
+                        {/if}
+                      </div>
+                    </button>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            <!-- Category 4: ⚫ Any Spool but Insufficient Material -->
+            {#if categorizedModules.anySpoolInsufficientMaterial.length > 0}
+              <div>
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-2 h-2 bg-slate-500 rounded-full"></div>
+                  <h3 class="text-sm font-medium text-slate-400">
+                    Universal - Needs More Material ({categorizedModules.anySpoolInsufficientMaterial.length})
+                  </h3>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                  {#each categorizedModules.anySpoolInsufficientMaterial as module}
+                    {@const shortfall = module.expected_weight - (loadedSpool?.remaining_weight || 0)}
+                    <div class="text-left bg-slate-800/20 border border-slate-700/30 rounded-xl p-3 opacity-50 cursor-not-allowed">
+                      <!-- Module card content -->
+                      {#if module.image_path}
+                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/20 aspect-square flex items-center justify-center">
+                          <img 
+                            src={module.image_path} 
+                            alt={module.name}
+                            class="max-w-full max-h-full object-contain opacity-40"
+                          />
+                        </div>
+                      {:else}
+                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/20 aspect-square flex items-center justify-center">
+                          <span class="text-3xl opacity-20">📦</span>
+                        </div>
+                      {/if}
+
+                      <h4 class="text-sm font-medium text-white mb-1">{module.name}</h4>
+                      <div class="space-y-0.5 text-xs">
+                        <div class="flex justify-between items-center">
+                          <span class="text-slate-500">Needs:</span>
+                          <span class="text-white">{module.expected_weight}g</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                          <span class="text-slate-500">Short by:</span>
+                          <span class="text-slate-400">{shortfall}g</span>
+                        </div>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            <!-- No modules message -->
+            {#if totalPrintable === 0 && categorizedModules.compatibleInsufficientMaterial.length === 0}
+              <div class="bg-slate-800/50 rounded-xl p-8 text-center">
+                <p class="text-slate-400 mb-4">No compatible modules found</p>
+                <a 
+                  href="/settings" 
+                  class="inline-block bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg transition-colors text-sm"
+                >
+                  Create Print Module
+                </a>
+              </div>
+            {/if}
+
           </div>
-        {/if}
-
-        <!-- Module Categories -->
-        <div class="space-y-6">
-          
-          <!-- Category 1: 🟢 Compatible & Printable (PRIORITY) -->
-          {#if categorizedModules.compatiblePrintable.length > 0}
-            <div>
-              <div class="flex items-center gap-2 mb-3">
-                <div class="w-2 h-2 bg-green-500 rounded-full"></div>
-                <h3 class="text-sm font-medium text-green-400">
-                  Recommended for this Spool ({categorizedModules.compatiblePrintable.length})
-                </h3>
-              </div>
-              <div class="grid grid-cols-3 gap-3">
-                {#each categorizedModules.compatiblePrintable as module}
-                  {@const modulePreset = module.default_spool_preset_id ? data.spoolPresets.find(p => p.id === module.default_spool_preset_id) : null}
-                  <button
-                    type="button"
-                    onclick={() => selectModule(module.id)}
-                    class="text-left bg-slate-800/50 border-2 rounded-xl p-3 transition-all hover:bg-slate-800 cursor-pointer
-                           {selectedModuleId === module.id ? 'border-green-500 bg-slate-800' : 'border-transparent'}"
-                  >
-                    {#if module.image_path}
-                      <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/50 aspect-square flex items-center justify-center">
-                        <img 
-                          src={module.image_path} 
-                          alt={module.name}
-                          class="max-w-full max-h-full object-contain"
-                        />
-                      </div>
-                    {:else}
-                      <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/50 aspect-square flex items-center justify-center">
-                        <span class="text-3xl opacity-50">📦</span>
-                      </div>
-                    {/if}
-
-                    <div class="flex items-start justify-between mb-1">
-                      <h4 class="text-sm font-medium text-white">{module.name}</h4>
-                      {#if selectedModuleId === module.id}
-                        <div class="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0 ml-1">
-                          <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                          </svg>
-                        </div>
-                      {/if}
-                    </div>
-
-                    <div class="space-y-0.5 text-xs">
-                      {#if modulePreset}
-                        <div class="flex justify-between items-center text-blue-400">
-                          <span class="text-slate-500">Preset:</span>
-                          <span>{modulePreset.name}</span>
-                        </div>
-                      {/if}
-                      <div class="flex justify-between items-center">
-                        <span class="text-slate-500">Weight:</span>
-                        <span class="text-white font-medium">{module.expected_weight}g</span>
-                      </div>
-                      <div class="flex justify-between items-center">
-                        <span class="text-slate-500">Time:</span>
-                        <span class="text-slate-400">{formatTime(module.expected_time)}</span>
-                      </div>
-                      {#if loadedSpool}
-                        <div class="flex justify-between items-center pt-1 border-t border-slate-700/50">
-                          <span class="text-slate-500">After print:</span>
-                          <span class="text-green-400">{loadedSpool.remaining_weight - module.expected_weight}g</span>
-                        </div>
-                      {/if}
-                    </div>
-                  </button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-
-          <!-- Category 2: 🟠 Compatible but Insufficient Material -->
-          {#if categorizedModules.compatibleInsufficientMaterial.length > 0}
-            <div>
-              <div class="flex items-center gap-2 mb-3">
-                <div class="w-2 h-2 bg-orange-500 rounded-full"></div>
-                <h3 class="text-sm font-medium text-orange-400">
-                  Compatible - Needs More Material ({categorizedModules.compatibleInsufficientMaterial.length})
-                </h3>
-              </div>
-              <div class="grid grid-cols-3 gap-3">
-                {#each categorizedModules.compatibleInsufficientMaterial as module}
-                  {@const modulePreset = module.default_spool_preset_id ? data.spoolPresets.find(p => p.id === module.default_spool_preset_id) : null}
-                  {@const shortfall = module.expected_weight - (loadedSpool?.remaining_weight || 0)}
-                  <button
-                    type="button"
-                    onclick={() => selectModule(module.id)}
-                    class="text-left bg-slate-800/30 border-2 rounded-xl p-3 transition-all hover:bg-slate-800/50 cursor-pointer
-                           {selectedModuleId === module.id ? 'border-orange-500 bg-slate-800/50' : 'border-transparent'}"
-                  >
-                    {#if module.image_path}
-                      <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/30 aspect-square flex items-center justify-center">
-                        <img 
-                          src={module.image_path} 
-                          alt={module.name}
-                          class="max-w-full max-h-full object-contain opacity-60"
-                        />
-                      </div>
-                    {:else}
-                      <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/30 aspect-square flex items-center justify-center">
-                        <span class="text-3xl opacity-30">📦</span>
-                      </div>
-                    {/if}
-
-                    <div class="flex items-start justify-between mb-1">
-                      <h4 class="text-sm font-medium text-white">{module.name}</h4>
-                      {#if selectedModuleId === module.id}
-                        <div class="w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0 ml-1">
-                          <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                          </svg>
-                        </div>
-                      {/if}
-                    </div>
-
-                    <div class="space-y-0.5 text-xs">
-                      {#if modulePreset}
-                        <div class="flex justify-between items-center text-blue-400">
-                          <span class="text-slate-500">Preset:</span>
-                          <span>{modulePreset.name}</span>
-                        </div>
-                      {/if}
-                      <div class="flex justify-between items-center">
-                        <span class="text-slate-500">Needs:</span>
-                        <span class="text-white font-medium">{module.expected_weight}g</span>
-                      </div>
-                      <div class="flex justify-between items-center">
-                        <span class="text-slate-500">Short by:</span>
-                        <span class="text-orange-400 font-medium">{shortfall}g</span>
-                      </div>
-                    </div>
-                    <div class="mt-2 pt-2 border-t border-orange-500/20">
-                      <p class="text-xs text-orange-400">⚠️ Not enough material</p>
-                    </div>
-                  </button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-
-          <!-- Category 3: 🔵 Any Spool & Printable -->
-          {#if categorizedModules.anySpoolPrintable.length > 0}
-            <div>
-              <div class="flex items-center gap-2 mb-3">
-                <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
-                <h3 class="text-sm font-medium text-blue-400">
-                  Universal Modules ({categorizedModules.anySpoolPrintable.length})
-                </h3>
-              </div>
-              <div class="grid grid-cols-3 gap-3">
-                {#each categorizedModules.anySpoolPrintable as module}
-                  <button
-                    type="button"
-                    onclick={() => selectModule(module.id)}
-                    class="text-left bg-slate-800/50 border-2 rounded-xl p-3 transition-all hover:bg-slate-800 cursor-pointer
-                           {selectedModuleId === module.id ? 'border-blue-500 bg-slate-800' : 'border-transparent'}"
-                  >
-                    {#if module.image_path}
-                      <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/50 aspect-square flex items-center justify-center">
-                        <img 
-                          src={module.image_path} 
-                          alt={module.name}
-                          class="max-w-full max-h-full object-contain"
-                        />
-                      </div>
-                    {:else}
-                      <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/50 aspect-square flex items-center justify-center">
-                        <span class="text-3xl opacity-50">📦</span>
-                      </div>
-                    {/if}
-
-                    <div class="flex items-start justify-between mb-1">
-                      <h4 class="text-sm font-medium text-white">{module.name}</h4>
-                      {#if selectedModuleId === module.id}
-                        <div class="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 ml-1">
-                          <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                          </svg>
-                        </div>
-                      {/if}
-                    </div>
-
-                    <div class="space-y-0.5 text-xs">
-                      <div class="flex justify-between items-center text-slate-500">
-                        <span>Preset:</span>
-                        <span class="text-slate-600">Any</span>
-                      </div>
-                      <div class="flex justify-between items-center">
-                        <span class="text-slate-500">Weight:</span>
-                        <span class="text-white font-medium">{module.expected_weight}g</span>
-                      </div>
-                      <div class="flex justify-between items-center">
-                        <span class="text-slate-500">Time:</span>
-                        <span class="text-slate-400">{formatTime(module.expected_time)}</span>
-                      </div>
-                      {#if loadedSpool}
-                        <div class="flex justify-between items-center pt-1 border-t border-slate-700/50">
-                          <span class="text-slate-500">After print:</span>
-                          <span class="text-green-400">{loadedSpool.remaining_weight - module.expected_weight}g</span>
-                        </div>
-                      {/if}
-                    </div>
-                  </button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-
-          <!-- Category 4: ⚫ Any Spool but Insufficient Material -->
-          {#if categorizedModules.anySpoolInsufficientMaterial.length > 0}
-            <div>
-              <div class="flex items-center gap-2 mb-3">
-                <div class="w-2 h-2 bg-slate-500 rounded-full"></div>
-                <h3 class="text-sm font-medium text-slate-400">
-                  Universal - Needs More Material ({categorizedModules.anySpoolInsufficientMaterial.length})
-                </h3>
-              </div>
-              <div class="grid grid-cols-3 gap-3">
-                {#each categorizedModules.anySpoolInsufficientMaterial as module}
-                  {@const shortfall = module.expected_weight - (loadedSpool?.remaining_weight || 0)}
-                  <div class="text-left bg-slate-800/20 border border-slate-700/30 rounded-xl p-3 opacity-50 cursor-not-allowed">
-                    {#if module.image_path}
-                      <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/20 aspect-square flex items-center justify-center">
-                        <img 
-                          src={module.image_path} 
-                          alt={module.name}
-                          class="max-w-full max-h-full object-contain opacity-40"
-                        />
-                      </div>
-                    {:else}
-                      <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/20 aspect-square flex items-center justify-center">
-                        <span class="text-3xl opacity-20">📦</span>
-                      </div>
-                    {/if}
-
-                    <h4 class="text-sm font-medium text-white mb-1">{module.name}</h4>
-                    <div class="space-y-0.5 text-xs">
-                      <div class="flex justify-between items-center">
-                        <span class="text-slate-500">Needs:</span>
-                        <span class="text-white">{module.expected_weight}g</span>
-                      </div>
-                      <div class="flex justify-between items-center">
-                        <span class="text-slate-500">Short by:</span>
-                        <span class="text-slate-400">{shortfall}g</span>
-                      </div>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
-
-          <!-- No modules message -->
-          {#if totalPrintable === 0 && categorizedModules.compatibleInsufficientMaterial.length === 0}
-            <div class="bg-slate-800/50 rounded-xl p-8 text-center">
-              <p class="text-slate-400 mb-4">No compatible modules found</p>
-              <a 
-                href="/settings" 
-                class="inline-block bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg transition-colors text-sm"
-              >
-                Create Print Module
-              </a>
-            </div>
-          {/if}
-
         </div>
+      </div>
 
-        <!-- Action Buttons -->
-        <div class="flex gap-3 mt-6 pt-6 border-t border-slate-800">
+      <!-- ✅ STICKY Footer with Action Buttons -->
+      <div class="sticky bottom-0 bg-slate-900 border-t border-slate-800 p-6">
+        <div class="flex gap-3">
           <button 
             type="button"
             onclick={closeModuleSelector}
@@ -1200,10 +1209,9 @@
             use:enhance={() => {
               return async ({ result }) => {
                 if (result.type === 'success') {
-                  // Get ALL modules including insufficient ones
                   const allModules = [
                     ...categorizedModules.compatiblePrintable,
-                    ...categorizedModules.compatibleInsufficientMaterial,  // ✅ Include these!
+                    ...categorizedModules.compatibleInsufficientMaterial,
                     ...categorizedModules.anySpoolPrintable
                   ];
                   const selectedModule = allModules.find(m => m.id === selectedModuleId);

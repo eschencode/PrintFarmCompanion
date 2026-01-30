@@ -197,20 +197,26 @@ export const actions: Actions = {
       }
 
       // ✅ Calculate printer hours from MILLISECONDS
-      if (job.printer_id && job.start_time) {
-        const elapsedMs = endTime - job.start_time; // Both in milliseconds
-        const hoursUsed = elapsedMs / (1000 * 60 * 60); // Convert ms to hours
-        
-        console.log('Updating printer hours:', {
-          printerId: job.printer_id,
-          startTime: job.start_time,
-          endTime: endTime,
-          elapsedMs,
-          hoursUsed: hoursUsed.toFixed(2)
-        });
-        
-        await db.updatePrinterHours(database, job.printer_id, hoursUsed);
+      if (job.printer_id && job.start_time && job.expected_time) {
+      let hoursUsed: number;
+      
+      if (success) {
+        // ✅ For successful prints: Use expected time
+        hoursUsed = job.expected_time / 60; // Convert minutes to hours
+      } else {
+        const elapsedMs = endTime - job.start_time;
+        hoursUsed = elapsedMs / (1000 * 60 * 60); // Convert ms to hours
       }
+      
+      console.log('Updating printer hours:', {
+        printerId: job.printer_id,
+        success,
+        expectedTime: job.expected_time,
+        hoursUsed: hoursUsed.toFixed(2)
+      });
+      
+      await db.updatePrinterHours(database, job.printer_id, hoursUsed);
+    }
 
       return { success: true, message: 'Print job completed' };
     } catch (error) {
