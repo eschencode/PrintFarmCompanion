@@ -692,7 +692,7 @@
   </div>
 {/if}
 
-<!-- Spool Selector Modal -->
+<!-- Spool Selector Modal - UPDATED with sticky footer -->
 {#if selectedPrinter && showSpoolSelector}
   <div
     class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-6"
@@ -705,82 +705,89 @@
     <!-- svelte-ignore a11y_interactive_supports_focus -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div 
-      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col"
       onclick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
     >
-      <div class="p-6">
-        <!-- Header -->
-        <div class="flex justify-between items-start mb-6">
-          <div>
-            <h2 class="text-2xl font-medium text-white mb-1">Load Spool</h2>
-            <p class="text-sm text-slate-400">Select a spool preset for {selectedPrinter.name}</p>
-          </div>
-          <button 
-            onclick={closeSpoolSelector}
-            class="text-slate-400 hover:text-white transition-colors"
-            aria-label="Close spool selector"
-          >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <!-- Spool Presets Grid -->
-        {#if data.spoolPresets && data.spoolPresets.length > 0}
-          <div class="grid grid-cols-2 gap-3 mb-6">
-            {#each data.spoolPresets as preset}
-              <button
-                onclick={() => selectSpoolPreset(preset.id)}
-                class="text-left bg-slate-800/50 hover:bg-slate-800 border-2 rounded-xl p-4 transition-all
-                       {selectedPresetId === preset.id ? 'border-blue-500 bg-slate-800' : 'border-transparent'}"
-              >
-                <div class="flex items-start justify-between mb-2">
-                  <h3 class="text-base font-medium text-white">{preset.name}</h3>
-                  {#if selectedPresetId === preset.id}
-                    <div class="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-                      <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                  {/if}
-                </div>
-                <div class="space-y-1 text-sm">
-                  <p class="text-slate-400">{preset.brand} • {preset.material}</p>
-                  {#if preset.color}
-                    <p class="text-slate-500">Color: {preset.color}</p>
-                  {/if}
-                  <div class="flex justify-between items-center mt-2 pt-2 border-t border-slate-700/50">
-                    <span class="text-slate-500">Weight:</span>
-                    <span class="text-white font-medium">{preset.default_weight}g</span>
-                  </div>
-                  {#if preset.cost}
-                    <div class="flex justify-between items-center">
-                      <span class="text-slate-500">Cost:</span>
-                      <span class="text-green-400">${preset.cost.toFixed(2)}</span>
-                    </div>
-                  {/if}
-                </div>
-              </button>
-            {/each}
-          </div>
-        {:else}
-          <div class="bg-slate-800/50 rounded-xl p-8 text-center mb-6">
-            <p class="text-slate-400 mb-4">No spool presets available</p>
-            <a 
-              href="/settings" 
-              class="inline-block bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg transition-colors text-sm"
+      <!-- ✅ Scrollable Content Area -->
+      <div class="overflow-y-auto flex-1">
+        <div class="p-6">
+          <!-- Header -->
+          <div class="flex justify-between items-start mb-6">
+            <div>
+              <h2 class="text-2xl font-medium text-white mb-1">Load Spool</h2>
+              <p class="text-sm text-slate-400">Select a spool preset for {selectedPrinter.name}</p>
+            </div>
+            <button 
+              onclick={closeSpoolSelector}
+              class="text-slate-400 hover:text-white transition-colors"
+              aria-label="Close spool selector"
             >
-              Create Spool Preset
-            </a>
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-        {/if}
 
-        <!-- Action Buttons -->
+          <!-- Spool Presets Grid -->
+          {#if data.spoolPresets && data.spoolPresets.length > 0}
+            <div class="grid grid-cols-2 gap-3">
+              {#each data.spoolPresets as preset}
+                <button
+                  type="button"
+                  onclick={() => selectSpoolPreset(preset.id)}
+                  class="text-left bg-slate-800/50 hover:bg-slate-800 border-2 rounded-xl p-4 transition-all
+                         {selectedPresetId === preset.id ? 'border-blue-500 bg-slate-800' : 'border-transparent'}"
+                >
+                  <div class="flex items-start justify-between mb-2">
+                    <h3 class="text-base font-medium text-white">{preset.name}</h3>
+                    {#if selectedPresetId === preset.id}
+                      <div class="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                        <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    {/if}
+                  </div>
+                  <div class="space-y-1 text-sm">
+                    <p class="text-slate-400">{preset.brand} • {preset.material}</p>
+                    {#if preset.color}
+                      <p class="text-slate-500">Color: {preset.color}</p>
+                    {/if}
+                    <div class="flex justify-between items-center mt-2 pt-2 border-t border-slate-700/50">
+                      <span class="text-slate-500">Weight:</span>
+                      <span class="text-white font-medium">{preset.default_weight}g</span>
+                    </div>
+                    {#if preset.cost}
+                      <div class="flex justify-between items-center">
+                        <span class="text-slate-500">Cost:</span>
+                        <span class="text-green-400">${preset.cost.toFixed(2)}</span>
+                      </div>
+                    {/if}
+                  </div>
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <div class="bg-slate-800/50 rounded-xl p-8 text-center">
+              <p class="text-slate-400 mb-4">No spool presets available</p>
+              <a 
+                href="/settings" 
+                class="inline-block bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg transition-colors text-sm"
+              >
+                Create Spool Preset
+              </a>
+            </div>
+          {/if}
+        </div>
+      </div>
+
+      <!-- ✅ STICKY Footer with Action Buttons -->
+      <div class="sticky bottom-0 bg-slate-900 border-t border-slate-800 p-6">
         <div class="flex gap-3">
           <button 
+            type="button"
             onclick={closeSpoolSelector}
             class="flex-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-3 rounded-lg transition-colors"
           >
