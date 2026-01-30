@@ -1,4 +1,18 @@
 import type { D1Database } from '@cloudflare/workers-types';
+import type {
+  Printer,
+  Spool,
+  SpoolPreset,
+  PrintModule,
+  PrintJob,
+  PrintJobExtended,
+  NewSpool,
+  NewPrintModule,
+  NewSpoolPreset,
+  LoadSpoolResponse,
+  StartPrintResponse,
+  ServerResponse
+} from './types';
 
 // Printers
 export async function getAllPrinters(db: D1Database) {
@@ -6,12 +20,14 @@ export async function getAllPrinters(db: D1Database) {
   return result.results || [];
 }
 
-export async function getPrinterById(db: D1Database, id: number) {
+export async function getPrinterById(db: D1Database, id: number): Promise<Printer | null> {
   const result = await db.prepare('SELECT * FROM printers WHERE id = ?').bind(id).first();
-  return result;
+  return result as Printer | null;
 }
 
-export async function updatePrinterStatus(db: D1Database, id: number, status: string, loadedSpoolId?: number | null) {
+export async function updatePrinterStatus(db: D1Database, id: number | null, status: string, loadedSpoolId?: number | null): Promise<void> {
+  if (!id) return; // Handle null printer_id
+  
   if (loadedSpoolId !== undefined) {
     await db.prepare('UPDATE printers SET status = ?, loaded_spool_id = ? WHERE id = ?')
       .bind(status, loadedSpoolId, id).run();
@@ -27,13 +43,16 @@ export async function getAllSpools(db: D1Database) {
   return result.results || [];
 }
 
-export async function getSpoolById(db: D1Database, id: number) {
+export async function getSpoolById(db: D1Database, id: number): Promise<Spool | null> {
   const result = await db.prepare('SELECT * FROM spools WHERE id = ?').bind(id).first();
-  return result;
+  return result as Spool | null;
 }
 
-export async function updateSpoolWeight(db: D1Database, id: number, remainingWeight: number) {
-  await db.prepare('UPDATE spools SET remaining_weight = ? WHERE id = ?').bind(remainingWeight, id).run();
+export async function updateSpoolWeight(db: D1Database, id: number | null, remainingWeight: number): Promise<void> {
+  if (!id) return; // Handle null spool_id
+  
+  await db.prepare('UPDATE spools SET remaining_weight = ? WHERE id = ?')
+    .bind(remainingWeight, id).run();
 }
 
 export async function createSpool(db: D1Database, spool: {
@@ -74,17 +93,9 @@ export async function loadSpoolToPrinter(db: D1Database, printerId: number, spoo
 // Complete load spool workflow
 export async function loadSpool(db: D1Database, params: {
   printerId: number;
-  spoolData: {
-    presetId?: number | null;
-    brand: string;
-    material: string;
-    color?: string | null;
-    initialWeight: number;
-    remainingWeight: number;
-    cost?: number | null;
-  };
+  spoolData: NewSpool;
   forceUnload?: boolean; // If true, automatically unload existing spool
-}) {
+}): Promise<LoadSpoolResponse> {
   const { printerId, spoolData, forceUnload = false } = params;
 
   // 1. Check if printer exists and get current state
@@ -98,16 +109,6 @@ export async function loadSpool(db: D1Database, params: {
     };
   }
 
-  // 2. Check if printer already has a loaded spool
-  if (printer.loaded_spool_id && !forceUnload) {
-    const currentSpool = await getSpoolById(db, printer.loaded_spool_id);
-    return {
-      success: false,
-      needsUnload: true,
-      currentSpool: currentSpool,
-      message: `Printer ${printer.name} already has a loaded spool (${currentSpool?.brand} ${currentSpool?.material} - ${currentSpool?.color})`
-    };
-  }
 
   // 3. If forceUnload is true, unload the current spool
   if (printer.loaded_spool_id && forceUnload) {
@@ -115,7 +116,15 @@ export async function loadSpool(db: D1Database, params: {
   }
 
   // 4. Create new spool in database
-  const newSpoolResult = await createSpool(db, spoolData);
+  const newSpoolResult = await createSpool(db, {
+    presetId: spoolData.preset_id,
+    brand: spoolData.brand,
+    material: spoolData.material,
+    color: spoolData.color,
+    initialWeight: spoolData.initial_weight,
+    remainingWeight: spoolData.remaining_weight,
+    cost: spoolData.cost
+  });
   const newSpoolId = newSpoolResult.meta.last_row_id;
 
   // 5. Load the new spool to the printer
@@ -161,17 +170,22 @@ export async function getRecentPrintJobs(db: D1Database, limit = 10) {
   return result.results || [];
 }
 
-export async function getPrintJobById(db: D1Database, id: number) {
+export async function getPrintJobById(db: D1Database, id: number): Promise<PrintJobExtended | null> {
   const result = await db.prepare(`
     SELECT 
       pj.*,
-      p.loaded_spool_id as printer_loaded_spool_id
+      p.loaded_spool_id as printer_loaded_spool_id,
+      p.name as printer_name,
+      pm.name as module_name,
+      pm.expected_weight,
+      pm.expected_time
     FROM print_jobs pj
     LEFT JOIN printers p ON pj.printer_id = p.id
+    LEFT JOIN print_modules pm ON pj.module_id = pm.id
     WHERE pj.id = ?
   `).bind(id).first();
   
-  return result;
+  return result as PrintJobExtended | null;
 }
 
 // Start a print job
@@ -179,7 +193,7 @@ export async function startPrintJob(db: D1Database, params: {
   printerId: number;
   moduleId: number;
   name?: string;
-}) {
+}): Promise<StartPrintResponse> {
   const { printerId, moduleId, name } = params;
 
   // 1. Check if printer exists and get its state
@@ -220,16 +234,7 @@ export async function startPrintJob(db: D1Database, params: {
     };
   }
 
-  // 5. Check if spool has enough material
-  if (spool.remaining_weight < module.expected_weight) {
-    return {
-      success: false,
-      error: `Not enough material. Spool has ${spool.remaining_weight}g, but print needs ${module.expected_weight}g`,
-      needsNewSpool: true
-    };
-  }
-
-  // 6. Create the print job
+  // Create the print job with status = 'printing'
   const jobName = name || `${module.name} - ${new Date().toLocaleString()}`;
   
   const result = await db.prepare(`
@@ -239,27 +244,29 @@ export async function startPrintJob(db: D1Database, params: {
       printer_id, 
       spool_id, 
       planned_weight,
-      start_time
+      start_time,
+      status
     )
-    VALUES (?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).bind(
     jobName,
     moduleId,
     printerId,
     printer.loaded_spool_id,
     module.expected_weight,
-    Math.floor(Date.now() / 1000) // Unix timestamp
+    Date.now(),
+    'printing'  // ✅ Set initial status to 'printing'
   ).run();
 
-  // 7. Update printer status to PRINTING
-  await updatePrinterStatus(db, printerId, 'PRINTING');
+  await updatePrinterStatus(db, printerId, 'printing');
 
   return {
     success: true,
     jobId: result.meta.last_row_id,
     message: `Print job started on ${printer.name}`,
-    expectedTime: module.expected_time,
-    expectedWeight: module.expected_weight
+    expectedTime: typeof module.expected_time === 'number' ? module.expected_time : undefined,
+    expectedWeight: typeof module.expected_weight === 'number' ? module.expected_weight : undefined,
+    lowMaterial: spool.remaining_weight < (typeof module.expected_weight === 'number' ? module.expected_weight : 0)
   };
 }
 
@@ -270,18 +277,20 @@ export async function completePrintJob(
   endTime: number,
   success: boolean,
   actualWeight: number,
-  failureReason: string | null = null  // Make sure this parameter exists!
-) {
+  failureReason: string | null = null
+): Promise<void> {
+  const status = success ? 'success' : 'failed'; // ✅ Convert boolean to status string
+  
   await db
     .prepare(`
       UPDATE print_jobs 
       SET end_time = ?, 
-          success = ?, 
+          status = ?, 
           actual_weight = ?, 
           failure_reason = ?
       WHERE id = ?
     `)
-    .bind(endTime, success ? 1 : 0, actualWeight, failureReason, jobId)
+    .bind(endTime, status, actualWeight, failureReason, jobId)
     .run();
 }
 
@@ -357,10 +366,17 @@ export async function createPrintModule(db: D1Database, module: {
 }
 
 export async function deletePrintModule(db: D1Database, moduleId: number) {
+  // First, set module_id to NULL for any print jobs using this module
+  await db.prepare(
+    'UPDATE print_jobs SET module_id = NULL WHERE module_id = ?'
+  ).bind(moduleId).run();
+
+  // Now safe to delete the module
   await db.prepare('DELETE FROM print_modules WHERE id = ?').bind(moduleId).run();
+  
   return {
     success: true,
-    message: 'Print module deleted successfully'
+    message: 'Print module deleted successfully (jobs using it were updated)'
   };
 }
 
@@ -380,7 +396,7 @@ export async function getActivePrintJobs(db: D1Database) {
     FROM print_jobs pj
     JOIN printers p ON pj.printer_id = p.id
     JOIN print_modules pm ON pj.module_id = pm.id
-    WHERE pj.end_time IS NULL
+    WHERE pj.status = 'printing'  
     ORDER BY pj.start_time DESC
   `).all();
   
@@ -398,5 +414,13 @@ export async function getAllPrintJobs(db: D1Database) {
   `).all();
   
   return result.results || [];
+}
+
+// Add this function for updating printer hours
+export async function updatePrinterHours(db: D1Database, printerId: number | null, hoursToAdd: number): Promise<void> {
+  if (!printerId) return;
+  
+  await db.prepare('UPDATE printers SET total_hours = total_hours + ? WHERE id = ?')
+    .bind(hoursToAdd, printerId).run();
 }
 

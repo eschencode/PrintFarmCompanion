@@ -9,11 +9,12 @@ export const load: PageServerLoad = async ({ platform }) => {
       printJobs: [], 
       printers: [],
       modules: [],
-      spools: [],  // Add this
+      spools: [],
       stats: {
         totalPrints: 0,
         successfulPrints: 0,
         failedPrints: 0,
+        pendingPrints: 0,  
         totalMaterialUsed: 0,
         totalHours: 0,
         last30Days: [],
@@ -29,25 +30,29 @@ export const load: PageServerLoad = async ({ platform }) => {
   const printers = await db.getAllPrinters(database);
   const printJobs = await db.getAllPrintJobs(database);
   const modules = await db.getAllPrintModules(database);
-  const spools = await db.getAllSpools(database);  // Add this line
+  const spools = await db.getAllSpools(database);
   
   // Sort print jobs by start_time descending (newest first)
   const sortedJobs = [...printJobs].sort((a, b) => b.start_time - a.start_time);
   
-  // Calculate statistics
-  const totalPrints = printJobs.length;
-  const successfulPrints = printJobs.filter(j => j.success).length;
-  const failedPrints = totalPrints - successfulPrints;
+  // Calculate statistics - ✅ FIXED: Only count completed prints
+  const completedJobs = printJobs.filter(j => j.status !== 'printing');
+  const pendingJobs = printJobs.filter(j => j.status === 'printing');
+  
+  const totalPrints = completedJobs.length;
+  const successfulPrints = printJobs.filter(j => j.status === 'success').length;
+  const failedPrints = printJobs.filter(j => j.status === 'failed').length;
+  const pendingPrints = pendingJobs.length;  // ✅ Track pending prints
   
   const totalMaterialUsed = printJobs
-    .filter(j => j.success && j.actual_weight)
+    .filter(j => j.status === 'success' && j.actual_weight)  // ✅ Only count successful prints
     .reduce((sum, j) => sum + (j.actual_weight || 0), 0);
   
   const totalHours = printers.reduce((sum, p) => sum + (p.total_hours || 0), 0);
   
-  // Get last 30 days data
-  const now = Math.floor(Date.now() / 1000);
-  const thirtyDaysAgo = now - (30 * 24 * 60 * 60);
+  // ✅ FIXED: Use milliseconds for date comparison
+  const now = Date.now();
+  const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000); // milliseconds!
   
   const last30Days = Array.from({ length: 30 }, (_, i) => {
     const date = new Date();
@@ -55,23 +60,32 @@ export const load: PageServerLoad = async ({ platform }) => {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   });
   
+  // ✅ Only count completed prints in daily stats
   const dailyPrintCounts = Array.from({ length: 30 }, (_, i) => {
-    const dayStart = now - ((29 - i) * 24 * 60 * 60);
-    const dayEnd = dayStart + (24 * 60 * 60);
-    return printJobs.filter(j => j.start_time >= dayStart && j.start_time < dayEnd).length;
+    const dayStart = now - ((29 - i) * 24 * 60 * 60 * 1000);
+    const dayEnd = dayStart + (24 * 60 * 60 * 1000);
+    return printJobs.filter(j => 
+      j.start_time >= dayStart && 
+      j.start_time < dayEnd && 
+      j.status !== 'printing'
+    ).length;
   });
   
   const dailyMaterialUsage = Array.from({ length: 30 }, (_, i) => {
-    const dayStart = now - ((29 - i) * 24 * 60 * 60);
-    const dayEnd = dayStart + (24 * 60 * 60);
+    const dayStart = now - ((29 - i) * 24 * 60 * 60 * 1000);
+    const dayEnd = dayStart + (24 * 60 * 60 * 1000);
     return printJobs
-      .filter(j => j.start_time >= dayStart && j.start_time < dayEnd && j.success)
+      .filter(j => 
+        j.start_time >= dayStart && 
+        j.start_time < dayEnd && 
+        j.status === 'success'
+      )
       .reduce((sum, j) => sum + (j.actual_weight || 0), 0);
   });
   
-  // Failure reasons breakdown
+  // Failure reasons breakdown (only failed prints)
   const failureReasonCounts = new Map();
-  printJobs.filter(j => !j.success && j.failure_reason).forEach(job => {
+  printJobs.filter(j => j.status === 'failed' && j.failure_reason).forEach(job => {
     const reason = job.failure_reason || 'Unknown';
     failureReasonCounts.set(reason, (failureReasonCounts.get(reason) || 0) + 1);
   });
@@ -80,10 +94,10 @@ export const load: PageServerLoad = async ({ platform }) => {
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
   
-  // Top modules
+  // Top modules (only completed prints)
   const moduleCounts = new Map();
-  printJobs.forEach(job => {
-    const moduleName = job.name || 'Unknown';
+  printJobs.filter(j => j.status !== 'printing').forEach(job => {
+    const moduleName = job.module_name || 'Unknown';
     moduleCounts.set(moduleName, (moduleCounts.get(moduleName) || 0) + 1);
   });
   
@@ -102,6 +116,7 @@ export const load: PageServerLoad = async ({ platform }) => {
     totalPrints,
     successfulPrints,
     failedPrints,
+    pendingPrints,  // ✅ Add this
     totalMaterialUsed,
     totalHours,
     last30Days,
@@ -112,7 +127,7 @@ export const load: PageServerLoad = async ({ platform }) => {
     printerUtilization
   };
   
-  return { printJobs: sortedJobs, printers, modules, spools, stats };  // Add spools here
+  return { printJobs: sortedJobs, printers, modules, spools, stats };
 };
 
 export const actions: Actions = {

@@ -11,7 +11,11 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"types": "wrangler types",
-		"lint": "eslint ."
+		"lint": "eslint .",
+    	"db:reset": "rm -rf .wrangler/state/v3/d1 && npx wrangler d1 execute DB --local --file=schema.sql && npx wrangler d1 execute DB --local --file=seed.sql && echo '✅ Database reset complete!'",
+    	"db:delete": "rm -rf .wrangler/state/v3/d1",
+    	"db:schema": "npx wrangler d1 execute DB --local --file=schema.sql",
+    	"db:seed": "npx wrangler d1 execute DB --local --file=seed.sql"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.4.0",

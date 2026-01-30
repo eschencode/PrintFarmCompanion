@@ -1,4 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
+
 import * as db from '$lib/server';
 
 export const load: PageServerLoad = async ({ platform }) => {
@@ -54,12 +55,12 @@ export const actions: Actions = {
     const result = await db.loadSpool(database, {
       printerId: printerId,
       spoolData: {
-        presetId: Number(formData.get('presetId')) || null,
+        preset_id: Number(formData.get('presetId')) || null,
         brand: formData.get('brand') as string,
         material: formData.get('material') as string,
         color: (formData.get('color') as string) || null,
-        initialWeight: Number(formData.get('initialWeight')),
-        remainingWeight: Number(formData.get('remainingWeight')),
+        initial_weight: Number(formData.get('initialWeight')),
+        remaining_weight: Number(formData.get('remainingWeight')),
         cost: Number(formData.get('cost')) || null,
       },
       forceUnload: true
@@ -81,12 +82,12 @@ export const actions: Actions = {
     const result = await db.loadSpool(database, {
       printerId: printerId,
       spoolData: {
-        presetId: Number(formData.get('presetId')) || null,
+        preset_id: Number(formData.get('presetId')) || null,
         brand: formData.get('brand') as string,
         material: formData.get('material') as string,
         color: (formData.get('color') as string) || null,
-        initialWeight: Number(formData.get('initialWeight')),
-        remainingWeight: Number(formData.get('remainingWeight')),
+        initial_weight: Number(formData.get('initialWeight')),
+        remaining_weight: Number(formData.get('remainingWeight')),
         cost: Number(formData.get('cost')) || null,
       },
       forceUnload: true
@@ -157,11 +158,14 @@ export const actions: Actions = {
         success,
         actualWeight,
         failureReason,
-        printerLoadedSpoolId: job.printer_loaded_spool_id
+        printerLoadedSpoolId: job.printer_loaded_spool_id,
+        startTime: job.start_time,
+        startTimeDate: new Date(job.start_time).toISOString()
       });
 
-      // Calculate actual time (elapsed time in minutes)
-      const endTime = Math.floor(Date.now() / 1000);
+      // ✅ Use milliseconds consistently
+      const endTime = Date.now();
+      
       // Complete the print job
       await db.completePrintJob(
         database,
@@ -173,7 +177,9 @@ export const actions: Actions = {
       );
 
       // Update printer status to IDLE
-      await db.updatePrinterStatus(database, job.printer_id, 'IDLE');
+      if (job.printer_id) {
+        await db.updatePrinterStatus(database, job.printer_id, 'IDLE');
+      }
 
       // Update spool weight if material was consumed
       if (actualWeight > 0 && job.printer_loaded_spool_id) {
@@ -190,9 +196,21 @@ export const actions: Actions = {
         }
       }
 
-      // Update printer total hours AADD HERE 
-      //const hoursUsed = actualTime / 60;
-      //await db.updatePrinterHours(database, job.printer_id, hoursUsed);
+      // ✅ Calculate printer hours from MILLISECONDS
+      if (job.printer_id && job.start_time) {
+        const elapsedMs = endTime - job.start_time; // Both in milliseconds
+        const hoursUsed = elapsedMs / (1000 * 60 * 60); // Convert ms to hours
+        
+        console.log('Updating printer hours:', {
+          printerId: job.printer_id,
+          startTime: job.start_time,
+          endTime: endTime,
+          elapsedMs,
+          hoursUsed: hoursUsed.toFixed(2)
+        });
+        
+        await db.updatePrinterHours(database, job.printer_id, hoursUsed);
+      }
 
       return { success: true, message: 'Print job completed' };
     } catch (error) {

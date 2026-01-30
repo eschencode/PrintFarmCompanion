@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PageData, ActionData } from './$types';
-  import { goto } from '$app/navigation'; // Add this import
+  import { goto } from '$app/navigation';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
   
   export let data: PageData;
@@ -40,13 +40,12 @@
 
 <div class="min-h-screen bg-black text-white p-6">
   <div class="max-w-6xl mx-auto">
-    <!-- Header - UPDATED -->
+    <!-- Header -->
     <div class="flex justify-between items-center mb-8">
       <div>
         <h1 class="text-3xl font-light tracking-wide mb-2">Settings</h1>
         <p class="text-slate-400 text-sm">Manage print modules and spool presets</p>
       </div>
-      <!-- Changed from <a> to <button> with goto -->
       <button 
         onclick={() => goto('/')}
         class="text-slate-400 hover:text-white transition-colors flex items-center gap-2 cursor-pointer"
@@ -190,6 +189,31 @@
               <p class="text-xs text-slate-600 mt-1">Must be an absolute path</p>
             </div>
 
+            <div>
+              <label for="defaultSpoolPresetId" class="block text-sm text-slate-400 mb-2">
+                Preferred Spool Preset (Optional)
+              </label>
+              <select 
+                id="defaultSpoolPresetId"
+                name="defaultSpoolPresetId"
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+              >
+                <option value="">Any spool (no preference)</option>
+                {#if data.spoolPresets && data.spoolPresets.length > 0}
+                  {#each data.spoolPresets as preset}
+                    <option value={preset.id}>
+                      {preset.name} ({preset.brand} {preset.material})
+                    </option>
+                  {/each}
+                {:else}
+                  <option value="" disabled>No presets available - create one first</option>
+                {/if}
+              </select>
+              <p class="text-xs text-slate-600 mt-1">
+                This module will only appear when a matching spool is loaded
+              </p>
+            </div>
+
             <div class="grid grid-cols-2 gap-4">
               <div>
                 <label for="expectedWeight" class="block text-sm text-slate-400 mb-2">Weight (g)</label>
@@ -249,11 +273,12 @@
             </div>
             <div class="divide-y divide-slate-800">
               {#each data.printModules as module}
+                {@const linkedPreset = data.spoolPresets.find(p => p.id === module.default_spool_preset_id)}
                 <div class="p-4 hover:bg-slate-800/30 transition-colors">
                   <div class="flex justify-between items-start mb-2">
                     <h4 class="text-white font-medium">{module.name}</h4>
                     <form method="POST" action="?/deleteModule">
-                      <input type="hidden" name="id" value={module.id} />
+                      <input type="hidden" name="moduleId" value={module.id} />
                       <button 
                         type="submit"
                         class="text-red-400 hover:text-red-300 text-sm"
@@ -264,6 +289,15 @@
                   </div>
                   <div class="space-y-1 text-sm">
                     <p class="text-slate-400 font-mono text-xs truncate">{module.path}</p>
+                    {#if linkedPreset}
+                      <p class="text-blue-400 text-xs">
+                        🎯 Preset: {linkedPreset.name}
+                      </p>
+                    {:else}
+                      <p class="text-slate-600 text-xs">
+                        ✨ Any spool
+                      </p>
+                    {/if}
                     <div class="flex gap-4 text-slate-500">
                       <span>{module.expected_weight}g</span>
                       <span>{module.expected_time}min</span>

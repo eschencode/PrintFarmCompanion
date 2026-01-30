@@ -324,14 +324,15 @@
   });
   
   function formatDate(timestamp: number) {
-    return new Date(timestamp * 1000).toLocaleString();
+    return new Date(timestamp).toLocaleString();
   }
-  
-  function formatDuration(minutes: number | null) {
-    if (!minutes) return 'N/A';
+
+  function formatDuration(start: number, end: number | null) {
+    if (!end) return 'In Progress';
+    const minutes = Math.floor((end - start) / 1000 / 60);
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
+    return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
   }
 </script>
 
@@ -459,14 +460,21 @@
                     {job.actual_weight || job.planned_weight}g
                   </td>
                   <td class="px-4 py-3 text-sm">
-                    {#if job.success}
+                    {#if job.status === 'printing'}
+                      <span class="inline-flex items-center gap-1 text-blue-400">
+                        <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        In Progress
+                      </span>
+                    {:else if job.status === 'success'}
                       <span class="inline-flex items-center gap-1 text-green-400">
                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                           <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
                         </svg>
                         Success
                       </span>
-                    {:else}
+                    {:else if job.status === 'failed'}
                       <div>
                         <span class="inline-flex items-center gap-1 text-red-400">
                           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

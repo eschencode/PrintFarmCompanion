@@ -1,4 +1,15 @@
 
+
+CREATE TABLE IF NOT EXISTS spool_presets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  brand TEXT,
+  material TEXT,
+  color TEXT,
+  default_weight INTEGER NOT NULL,
+  cost REAL
+);
+
 -- Spools table
 CREATE TABLE IF NOT EXISTS spools (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,9 +54,9 @@ CREATE TABLE IF NOT EXISTS print_jobs (
   module_id INTEGER,
   printer_id INTEGER,
   spool_id INTEGER,
-  start_time INTEGER DEFAULT (strftime('%s', 'now')),
+  start_time INTEGER,
   end_time INTEGER,
-  success INTEGER DEFAULT 1,
+  status TEXT DEFAULT 'Printing',
   failure_reason TEXT,
   planned_weight INTEGER NOT NULL,
   actual_weight INTEGER,
