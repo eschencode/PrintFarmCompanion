@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS print_jobs (
   spool_id INTEGER,
   start_time INTEGER,
   end_time INTEGER,
-  status TEXT DEFAULT 'Printing',
+  status TEXT DEFAULT 'printing',
   failure_reason TEXT,
   planned_weight INTEGER NOT NULL,
   actual_weight INTEGER,
