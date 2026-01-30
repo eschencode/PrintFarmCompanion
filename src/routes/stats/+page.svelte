@@ -334,6 +334,74 @@
     const mins = minutes % 60;
     return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
   }
+  
+  // ✅ NEW: Drill-down state with 4 levels for Haken
+  type TimeRange = 'last30Days' | 'thisMonth' | 'last90Days';
+  let selectedTimeRange: TimeRange = 'last30Days';
+  let expandedCategories: Set<string> = new Set();
+  let expandedSubcategories: Set<string> = new Set();  // ✅ NEW
+  let expandedModules: Set<string> = new Set();
+  
+  // Get module breakdown for selected time range
+  $: currentBreakdown = data.stats.moduleBreakdown[selectedTimeRange];
+  $: totalPrintsInRange = Object.values(currentBreakdown).reduce((sum: number, cat: any) => sum + cat.total, 0);
+  $: totalObjectsInRange = Object.values(currentBreakdown).reduce((sum: number, cat: any) => sum + cat.totalObjects, 0);  // ✅ NEW
+  
+  function toggleCategory(categoryName: string) {
+    if (expandedCategories.has(categoryName)) {
+      expandedCategories.delete(categoryName);
+      // Collapse all children
+      expandedSubcategories.forEach(key => {
+        if (key.startsWith(`${categoryName}:`)) {
+          expandedSubcategories.delete(key);
+        }
+      });
+      expandedModules.forEach(key => {
+        if (key.startsWith(`${categoryName}:`)) {
+          expandedModules.delete(key);
+        }
+      });
+    } else {
+      expandedCategories.add(categoryName);
+    }
+    expandedCategories = expandedCategories;
+  }
+  
+  function toggleSubcategory(categoryName: string, subcategoryName: string) {
+    const key = `${categoryName}:${subcategoryName}`;
+    if (expandedSubcategories.has(key)) {
+      expandedSubcategories.delete(key);
+      // Collapse all modules under this subcategory
+      expandedModules.forEach(moduleKey => {
+        if (moduleKey.startsWith(key)) {
+          expandedModules.delete(moduleKey);
+        }
+      });
+    } else {
+      expandedSubcategories.add(key);
+    }
+    expandedSubcategories = expandedSubcategories;
+  }
+  
+  function toggleModule(parentKey: string, moduleName: string) {
+    const key = `${parentKey}:${moduleName}`;
+    if (expandedModules.has(key)) {
+      expandedModules.delete(key);
+    } else {
+      expandedModules.add(key);
+    }
+    expandedModules = expandedModules;
+  }
+  
+  function getTimeRangeLabel(range: TimeRange): string {
+    switch(range) {
+      case 'last30Days': return 'Last 30 Days';
+      case 'thisMonth': return 'This Month';
+      case 'last90Days': return 'Last 90 Days';
+    }
+  }
+  
+
 </script>
 
 <div class="min-h-screen bg-black text-white p-6">
@@ -765,6 +833,358 @@
       </div>
     {/if}
     
+    <!-- ✅ UPDATED: Module Production Breakdown Section -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl mb-8 overflow-hidden">
+      <div class="p-6 border-b border-slate-800">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-medium">Module Production Breakdown</h2>
+            <p class="text-sm text-slate-400 mt-1">Detailed cost and production analysis by category</p>
+          </div>
+          
+          <!-- Time Range Selector -->
+          <div class="flex gap-2 bg-slate-800 rounded-lg p-1">
+            {#each ['last30Days', 'thisMonth', 'last90Days'] as range}
+              <button
+                onclick={() => selectedTimeRange = range as TimeRange}
+                class="px-4 py-2 rounded-md text-sm font-medium transition-all
+                       {selectedTimeRange === range 
+                         ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' 
+                         : 'text-slate-400 hover:text-white'}"
+              >
+                {getTimeRangeLabel(range as TimeRange)}
+              </button>
+            {/each}
+          </div>
+        </div>
+      </div>
+
+      <div class="p-6">
+        <!-- Total Count Header -->
+        <div class="mb-6 grid grid-cols-4 gap-4">
+          <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+            <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Total Prints</p>
+            <p class="text-3xl font-bold text-white">{totalPrintsInRange}</p>
+          </div>
+          <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+            <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Total Objects</p>
+            <p class="text-3xl font-bold text-purple-400">{totalObjectsInRange}</p>
+          </div>
+          <!-- ✅ NEW: Total Weight -->
+          <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+            <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Total Weight</p>
+            <p class="text-3xl font-bold text-blue-400">
+              {(Object.values(currentBreakdown).reduce((sum: number, cat: any) => sum + (cat.totalWeight || 0), 0) / 1000).toFixed(2)}kg
+            </p>
+          </div>
+          <!-- ✅ NEW: Total Cost -->
+          <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+            <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Total Cost</p>
+            <p class="text-3xl font-bold text-green-400">
+              ${Object.values(currentBreakdown).reduce((sum: number, cat: any) => sum + (cat.totalCost || 0), 0).toFixed(2)}
+            </p>
+          </div>
+        </div>
+
+        <!-- Category Drill-Down List -->
+        {#if Object.keys(currentBreakdown).length > 0}
+          <div class="space-y-3">
+            {#each Object.entries(currentBreakdown).sort(([,a], [,b]) => b.total - a.total) as [categoryName, categoryData]}
+              {@const isCategoryExpanded = expandedCategories.has(categoryName)}
+              {@const categoryPercentage = ((categoryData.total / totalPrintsInRange) * 100).toFixed(1)}
+              {@const hasSubcategories = Object.keys(categoryData.subcategories || {}).length > 0}
+              
+              <!-- Level 1: Category -->
+              <div class="border border-slate-700 rounded-lg overflow-hidden hover:border-slate-600 transition-colors">
+                <button
+                  onclick={() => toggleCategory(categoryName)}
+                  class="w-full px-5 py-4 flex items-center justify-between bg-slate-800/30 hover:bg-slate-800/50 transition-colors"
+                >
+                  <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                      <svg 
+                        class="w-5 h-5 text-blue-400 transition-transform duration-200 {isCategoryExpanded ? 'rotate-90' : ''}" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                    <div class="text-left">
+                      <h3 class="text-lg font-semibold text-white">{categoryName}</h3>
+                      <p class="text-xs text-slate-500 mt-0.5">{categoryData.total} prints • {categoryData.totalObjects} objects</p>
+                    </div>
+                  </div>
+                  
+                  <div class="flex items-center gap-6">
+                    <!-- Progress Bar -->
+                    <div class="flex items-center gap-3">
+                      <div class="w-24 h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div 
+                          class="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
+                          style="width: {categoryPercentage}%"
+                        ></div>
+                      </div>
+                      <span class="text-sm font-medium text-slate-400 w-12 text-right">{categoryPercentage}%</span>
+                    </div>
+                    
+                    <!-- ✅ UPDATED: Weight + Cost Info (Weight more dominant) -->
+                    <div class="text-right min-w-[160px]">
+                      <p class="text-2xl font-bold text-blue-400">
+                        {(categoryData.totalWeight / 1000).toFixed(2)}kg
+                      </p>
+                      <p class="text-sm text-green-400 mt-0.5">
+                        ${categoryData.totalCost.toFixed(2)}
+                      </p>
+                      {#if categoryData.wastedCost > 0}
+                        <p class="text-xs text-red-400 mt-0.5">
+                          -{(categoryData.wastedWeight / 1000).toFixed(2)}kg waste
+                        </p>
+                      {/if}
+                    </div>
+                  </div>
+                </button>
+
+                {#if isCategoryExpanded}
+                  <div class="bg-slate-900/50 border-t border-slate-700">
+                    
+                    <!-- ✅ Level 2: Subcategories -->
+                    {#if hasSubcategories}
+                      <div class="p-4 space-y-2">
+                        {#each Object.entries(categoryData.subcategories).sort(([,a], [,b]) => b.total - a.total) as [subcategoryName, subcategoryData]}
+                          {@const subcategoryKey = `${categoryName}:${subcategoryName}`}
+                          {@const isSubcategoryExpanded = expandedSubcategories.has(subcategoryKey)}
+                          {@const subcategoryPercentage = ((subcategoryData.total / categoryData.total) * 100).toFixed(1)}
+                          
+                          <div class="border border-slate-700/50 rounded-lg overflow-hidden">
+                            <button
+                              onclick={() => toggleSubcategory(categoryName, subcategoryName)}
+                              class="w-full px-4 py-3 flex items-center justify-between bg-slate-800/20 hover:bg-slate-800/40 transition-colors"
+                            >
+                              <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-md bg-indigo-500/10 flex items-center justify-center">
+                                  <svg 
+                                    class="w-4 h-4 text-indigo-400 transition-transform duration-200 {isSubcategoryExpanded ? 'rotate-90' : ''}" 
+                                    fill="none" 
+                                    stroke="currentColor" 
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </div>
+                                <div class="text-left">
+                                  <h4 class="text-sm font-semibold text-slate-200">{subcategoryName}</h4>
+                                  <p class="text-xs text-slate-500">{subcategoryData.total} prints • {subcategoryData.totalObjects} objects</p>
+                                </div>
+                              </div>
+                              
+                              <!-- ✅ UPDATED: Weight + Cost for subcategory -->
+                              <div class="flex items-center gap-4">
+                                <div class="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                  <div 
+                                    class="h-full bg-indigo-400 transition-all duration-500"
+                                    style="width: {subcategoryPercentage}%"
+                                  ></div>
+                                </div>
+                                <span class="text-xs font-medium text-slate-500 w-10 text-right">{subcategoryPercentage}%</span>
+                                <div class="text-right min-w-[100px]">
+                                  <span class="text-base font-bold text-blue-400">{(subcategoryData.totalWeight / 1000).toFixed(2)}kg</span>
+                                  <p class="text-xs text-green-400">${subcategoryData.totalCost.toFixed(2)}</p>
+                                </div>
+                              </div>
+                            </button>
+
+                            <!-- Level 3: Modules under Subcategory -->
+                            {#if isSubcategoryExpanded}
+                              <div class="bg-slate-900/30 border-t border-slate-700/50 p-3 space-y-1.5">
+                                {#each Object.entries(subcategoryData.modules).sort(([,a], [,b]) => b.total - a.total) as [moduleName, moduleData]}
+                                  {@const moduleKey = `${subcategoryKey}:${moduleName}`}
+                                  {@const isModuleExpanded = expandedModules.has(moduleKey)}
+                                  {@const modulePercentage = ((moduleData.total / subcategoryData.total) * 100).toFixed(1)}
+                                  
+                                  <div class="border border-slate-700/30 rounded-md overflow-hidden">
+                                    <button
+                                      onclick={() => toggleModule(subcategoryKey, moduleName)}
+                                      class="w-full px-3 py-2.5 flex items-center justify-between bg-slate-800/10 hover:bg-slate-800/30 transition-colors"
+                                    >
+                                      <div class="flex items-center gap-2">
+                                        <svg 
+                                          class="w-3 h-3 text-slate-600 transition-transform duration-200 {isModuleExpanded ? 'rotate-90' : ''}" 
+                                          fill="none" 
+                                          stroke="currentColor" 
+                                          viewBox="0 0 24 24"
+                                        >
+                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                        </svg>
+                                        <div class="text-left">
+                                          <p class="text-xs font-medium text-slate-300">{moduleName}</p>
+                                          <div class="flex items-center gap-2 mt-0.5">
+                                            <span class="text-xs text-slate-600">{moduleData.total} prints</span>
+                                            <span class="text-xs text-slate-700">•</span>
+                                            <span class="text-xs text-slate-600">{moduleData.totalObjects} obj</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      
+                                      <!-- ✅ UPDATED: Weight + Cost for module -->
+                                      <div class="flex items-center gap-3">
+                                        <div class="text-right">
+                                          <p class="text-xs font-bold text-blue-400">{(moduleData.totalWeight / 1000).toFixed(3)}kg</p>
+                                          <p class="text-xs text-slate-500">{moduleData.avgWeightPerPrint.toFixed(0)}g/print</p>
+                                          <p class="text-xs text-green-400 mt-0.5">${moduleData.avgCostPerPrint.toFixed(3)}/print</p>
+                                          <p class="text-xs text-green-500">${moduleData.costPerObject.toFixed(4)}/obj</p>
+                                        </div>
+                                        <div class="w-12 h-1 bg-slate-700 rounded-full overflow-hidden">
+                                          <div 
+                                            class="h-full bg-purple-400 transition-all duration-500"
+                                            style="width: {modulePercentage}%"
+                                          ></div>
+                                        </div>
+                                      </div>
+                                    </button>
+
+                                    <!-- Level 4: Colors -->
+                                    {#if isModuleExpanded}
+                                      <div class="bg-slate-900/50 border-t border-slate-700/30 p-2 space-y-1">
+                                        {#each Object.entries(moduleData.colors).sort(([,a], [,b]) => b.count - a.count) as [color, colorData]}
+                                          {@const colorPercentage = ((colorData.count / moduleData.total) * 100).toFixed(1)}
+                                          
+                                          <div class="px-3 py-2 bg-slate-800/20 rounded hover:bg-slate-800/40 transition-colors">
+                                            <div class="flex items-center justify-between">
+                                              <div class="flex items-center gap-2">
+                                                <div 
+                                                  class="w-3 h-3 rounded-full border-2 border-slate-600 shadow-sm"
+                                                  style="background-color: {color.toLowerCase()}"
+                                                ></div>
+                                                <span class="text-xs font-medium text-slate-400">{color}</span>
+                                              </div>
+                                              <!-- ✅ UPDATED: Weight + objects + cost for color -->
+                                              <div class="flex items-center gap-3">
+                                                <span class="text-xs font-bold text-blue-400">{(colorData.weight / 1000).toFixed(3)}kg</span>
+                                                <span class="text-xs text-slate-600">{colorData.objects} obj</span>
+                                                <div class="w-12 h-1 bg-slate-700 rounded-full overflow-hidden">
+                                                  <div 
+                                                    class="h-full bg-gradient-to-r from-green-400 to-emerald-500 transition-all duration-500"
+                                                    style="width: {colorPercentage}%"
+                                                  ></div>
+                                                </div>
+                                                <span class="text-xs font-bold text-green-400 min-w-[40px] text-right">{colorData.count}</span>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        {/each}
+                                      </div>
+                                    {/if}
+                                  </div>
+                                {/each}
+                              </div>
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
+                      
+                    {:else}
+                      <!-- No subcategories - show modules directly -->
+                      <div class="p-4 space-y-2">
+                        {#each Object.entries(categoryData.modules).sort(([,a], [,b]) => b.total - a.total) as [moduleName, moduleData]}
+                          {@const moduleKey = `${categoryName}:${moduleName}`}
+                          {@const isModuleExpanded = expandedModules.has(moduleKey)}
+                          {@const modulePercentage = ((moduleData.total / categoryData.total) * 100).toFixed(1)}
+                          
+                          <div class="border border-slate-700/50 rounded-lg overflow-hidden">
+                            <button
+                              onclick={() => toggleModule(categoryName, moduleName)}
+                              class="w-full px-4 py-3 flex items-center justify-between bg-slate-800/20 hover:bg-slate-800/40 transition-colors"
+                            >
+                              <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-md bg-purple-500/10 flex items-center justify-center">
+                                  <svg 
+                                    class="w-4 h-4 text-purple-400 transition-transform duration-200 {isModuleExpanded ? 'rotate-90' : ''}" 
+                                    fill="none" 
+                                    stroke="currentColor" 
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </div>
+                                <div class="text-left">
+                                  <h4 class="text-sm font-semibold text-slate-200">{moduleName}</h4>
+                                  <p class="text-xs text-slate-500">{moduleData.total} prints • {moduleData.totalObjects} objects</p>
+                                </div>
+                              </div>
+                              
+                              <!-- ✅ UPDATED: Weight + Cost for module (no subcategory) -->
+                              <div class="flex items-center gap-4">
+                                <div class="text-right">
+                                  <p class="text-sm font-bold text-blue-400">{(moduleData.totalWeight / 1000).toFixed(3)}kg</p>
+                                  <p class="text-xs text-slate-500">{moduleData.avgWeightPerPrint.toFixed(0)}g/print</p>
+                                  <p class="text-xs text-green-400 mt-0.5">${moduleData.avgCostPerPrint.toFixed(3)}/print</p>
+                                  <p class="text-xs text-green-500">${moduleData.costPerObject.toFixed(4)}/obj</p>
+                                </div>
+                                <div class="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                  <div 
+                                    class="h-full bg-purple-400 transition-all duration-500"
+                                    style="width: {modulePercentage}%"
+                                  ></div>
+                                </div>
+                                <span class="text-xs font-medium text-slate-500 w-10 text-right">{modulePercentage}%</span>
+                              </div>
+                            </button>
+
+                            <!-- Level 3: Colors -->
+                            {#if isModuleExpanded}
+                              <div class="bg-slate-900/30 border-t border-slate-700/50 p-3 space-y-1.5">
+                                {#each Object.entries(moduleData.colors).sort(([,a], [,b]) => b.count - a.count) as [color, colorData]}
+                                  {@const colorPercentage = ((colorData.count / moduleData.total) * 100).toFixed(1)}
+                                  
+                                  <div class="px-3 py-2 bg-slate-800/20 rounded hover:bg-slate-800/40 transition-colors">
+                                    <div class="flex items-center justify-between">
+                                      <div class="flex items-center gap-2">
+                                        <div 
+                                          class="w-3 h-3 rounded-full border-2 border-slate-600 shadow-sm"
+                                          style="background-color: {color.toLowerCase()}"
+                                        ></div>
+                                        <span class="text-xs font-medium text-slate-400">{color}</span>
+                                      </div>
+                                      <!-- ✅ UPDATED: Weight + objects + cost for color -->
+                                      <div class="flex items-center gap-3">
+                                        <span class="text-xs font-bold text-blue-400">{(colorData.weight / 1000).toFixed(3)}kg</span>
+                                        <span class="text-xs text-slate-600">{colorData.objects} obj</span>
+                                        <div class="w-12 h-1 bg-slate-700 rounded-full overflow-hidden">
+                                          <div 
+                                            class="h-full bg-gradient-to-r from-green-400 to-emerald-500 transition-all duration-500"
+                                            style="width: {colorPercentage}%"
+                                          ></div>
+                                        </div>
+                                        <span class="text-xs font-bold text-green-400 min-w-[40px] text-right">{colorData.count}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                {/each}
+                              </div>
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="text-center py-12">
+            <svg class="w-16 h-16 mx-auto text-slate-700 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+            </svg>
+            <p class="text-slate-500 text-lg font-medium">No prints found</p>
+            <p class="text-slate-600 text-sm mt-1">{getTimeRangeLabel(selectedTimeRange)}</p>
+          </div>
+        {/if}
+      </div>
+    </div>
+
     <!-- Charts Grid -->
     <div class="grid grid-cols-2 gap-6 mb-6">
       <!-- Print History Line Chart -->
@@ -797,6 +1217,73 @@
       <!-- Printer Utilization -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
         <div bind:this={printerUtilizationChart} style="width: 100%; height: 400px;"></div>
+      </div>
+    </div>
+
+    <!-- ✅ NEW: Product Sets Cost Analysis -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl mb-8 overflow-hidden">
+      <div class="p-6 border-b border-slate-800">
+        <h2 class="text-xl font-medium">Product Sets Cost Analysis</h2>
+        <p class="text-sm text-slate-400 mt-1">Cost breakdown for complete product sets</p>
+      </div>
+
+      <div class="p-6">
+        {#if data.stats.setCosts && data.stats.setCosts[selectedTimeRange]}
+          {@const currentSets = data.stats.setCosts[selectedTimeRange]}
+          
+          <div class="grid grid-cols-2 gap-6">
+            {#each Object.entries(currentSets) as [setName, setData]}
+              <div class="bg-slate-800/50 rounded-xl p-6">
+                <!-- Set Header -->
+                <div class="flex items-center justify-between mb-4">
+                  <div class="flex items-center gap-3">
+                    <span class="text-3xl">{setData.emoji}</span>
+                    <div>
+                      <h3 class="text-lg font-medium text-white">{setName}</h3>
+                      <p class="text-xs text-slate-400">
+                        {setData.possibleSets === Infinity ? 0 : setData.possibleSets} complete sets produced
+                      </p>
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <p class="text-sm text-slate-400">Cost per Set</p>
+                    <p class="text-2xl font-bold text-green-400">
+                      ${setData.possibleSets > 0 ? setData.costPerSet.toFixed(2) : '0.00'}
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Components Breakdown -->
+                <div class="space-y-3 border-t border-slate-700 pt-4">
+                  {#each Object.entries(setData.components) as [componentName, componentData]}
+                    <div class="bg-slate-700/30 rounded-lg p-3">
+                      <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-slate-200 capitalize">
+                          {componentData.quantity}x {componentName}
+                        </span>
+                        <span class="text-sm text-green-400">
+                          ${(componentData.costPerObject * componentData.quantity).toFixed(2)}
+                        </span>
+                      </div>
+                      <div class="flex items-center justify-between text-xs text-slate-500">
+                        <span>${componentData.costPerObject.toFixed(3)}/object</span>
+                        <span>{componentData.objectsProduced} objects produced</span>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+
+                <!-- Total Cost -->
+                <div class="mt-4 pt-4 border-t border-slate-700 flex items-center justify-between">
+                  <span class="text-sm text-slate-400">Total Material Cost</span>
+                  <span class="text-lg font-bold text-white">${setData.totalCost.toFixed(2)}</span>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <p class="text-center text-slate-500">No set data available</p>
+        {/if}
       </div>
     </div>
   </div>
