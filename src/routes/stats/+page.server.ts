@@ -337,6 +337,7 @@ function buildModuleBreakdown(jobs: any[]) {
           successfulPrints: 0,
           failedPrints: 0,
           avgCostPerPrint: 0,
+          avgWeightPerPrint: 0,  // ✅ FIXED: Was missing!
           costPerObject: 0,
           colors: {}
         };
@@ -357,6 +358,7 @@ function buildModuleBreakdown(jobs: any[]) {
       // Calculate averages
       const moduleData = breakdown[category].modules[job.module_name];
       moduleData.avgCostPerPrint = moduleData.totalCost / moduleData.total;
+      moduleData.avgWeightPerPrint = moduleData.totalWeight / moduleData.total;  // ✅ FIXED: Was missing!
       moduleData.costPerObject = moduleData.totalObjects > 0 
         ? moduleData.totalCost / moduleData.totalObjects 
         : 0;

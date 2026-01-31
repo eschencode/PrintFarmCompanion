@@ -7,6 +7,60 @@
   
   export let data: PageData;
   
+  // Type definitions for breakdown data structures
+  type TimeRange = 'last30Days' | 'thisMonth' | 'last90Days';
+  
+  interface ColorData {
+    count: number;
+    objects: number;
+    weight: number;
+    cost: number;
+    wastedCost: number;
+    wastedWeight: number;
+  }
+  
+  interface ModuleData {
+    total: number;
+    totalObjects: number;
+    totalWeight: number;
+    totalCost: number;
+    wastedCost: number;
+    wastedWeight: number;
+    successfulPrints: number;
+    failedPrints: number;
+    avgCostPerPrint: number;
+    avgWeightPerPrint: number;
+    costPerObject: number;
+    colors: Record<string, ColorData>;
+  }
+  
+  interface SubcategoryData {
+    total: number;
+    totalObjects: number;
+    totalWeight: number;
+    totalCost: number;
+    wastedCost: number;
+    wastedWeight: number;
+    successfulPrints: number;
+    failedPrints: number;
+    modules: Record<string, ModuleData>;
+  }
+  
+  interface CategoryData {
+    total: number;
+    totalObjects: number;
+    totalWeight: number;
+    totalCost: number;
+    wastedCost: number;
+    wastedWeight: number;
+    successfulPrints: number;
+    failedPrints: number;
+    subcategories: Record<string, SubcategoryData>;
+    modules: Record<string, ModuleData>;
+    colors: Record<string, Omit<ColorData, 'weight' | 'wastedWeight'>>;
+  }
+  
+  // Chart element references
   let printHistoryChart: HTMLDivElement;
   let materialUsageChart: HTMLDivElement;
   let successRateChart: HTMLDivElement;
@@ -17,6 +71,12 @@
   // Toggle states
   let showSpools = false;
   let showPrintHistory = false;
+  let selectedTimeRange: TimeRange = 'last30Days';
+  
+  // Expansion state - simple objects with direct updates (no async/debounce)
+  let expandedCategories: Record<string, boolean> = {};
+  let expandedSubcategories: Record<string, boolean> = {};
+  let expandedModules: Record<string, boolean> = {};
   
   // Edit spool state
   let editingSpoolId: number | null = null;
@@ -28,8 +88,86 @@
     cost: 0
   };
   
-  // Sort spools by ID descending (newest first)
+  // Reactive statements with proper typing
   $: sortedSpools = [...(data.spools || [])].sort((a, b) => b.id - a.id);
+  $: currentBreakdown = (data.stats.moduleBreakdown?.[selectedTimeRange] || {}) as Record<string, CategoryData>;
+  $: currentSets = data.stats.setCosts?.[selectedTimeRange] || {};
+  $: totalPrintsInRange = Object.values(currentBreakdown).reduce((sum, cat) => sum + (cat?.total || 0), 0);
+  $: totalObjectsInRange = Object.values(currentBreakdown).reduce((sum, cat) => sum + (cat?.totalObjects || 0), 0);
+  
+  function getTimeRangeLabel(range: TimeRange): string {
+    switch(range) {
+      case 'last30Days': return 'Last 30 Days';
+      case 'thisMonth': return 'This Month';
+      case 'last90Days': return 'Last 90 Days';
+    }
+  }
+  
+  // ✅ SIMPLIFIED: Direct synchronous toggle - no async, no flags, no race conditions
+  function toggleCategory(categoryName: string) {
+    if (expandedCategories[categoryName]) {
+      // Collapse: remove this category and all its children
+      const newExpanded = { ...expandedCategories };
+      delete newExpanded[categoryName];
+      expandedCategories = newExpanded;
+      
+      // Clean up children (subcategories and modules under this category)
+      const newSubcategories = { ...expandedSubcategories };
+      const newModules = { ...expandedModules };
+      
+      Object.keys(newSubcategories).forEach(key => {
+        if (key.startsWith(`${categoryName}:`)) {
+          delete newSubcategories[key];
+        }
+      });
+      Object.keys(newModules).forEach(key => {
+        if (key.startsWith(`${categoryName}:`)) {
+          delete newModules[key];
+        }
+      });
+      
+      expandedSubcategories = newSubcategories;
+      expandedModules = newModules;
+    } else {
+      // Expand this category
+      expandedCategories = { ...expandedCategories, [categoryName]: true };
+    }
+  }
+  
+  function toggleSubcategory(categoryName: string, subcategoryName: string) {
+    const key = `${categoryName}:${subcategoryName}`;
+    
+    if (expandedSubcategories[key]) {
+      // Collapse: remove this subcategory and its module children
+      const newSubcategories = { ...expandedSubcategories };
+      delete newSubcategories[key];
+      expandedSubcategories = newSubcategories;
+      
+      // Clean up modules under this subcategory
+      const newModules = { ...expandedModules };
+      Object.keys(newModules).forEach(moduleKey => {
+        if (moduleKey.startsWith(`${key}:`)) {
+          delete newModules[moduleKey];
+        }
+      });
+      expandedModules = newModules;
+    } else {
+      // Expand this subcategory
+      expandedSubcategories = { ...expandedSubcategories, [key]: true };
+    }
+  }
+  
+  function toggleModule(parentKey: string, moduleName: string) {
+    const key = `${parentKey}:${moduleName}`;
+    
+    if (expandedModules[key]) {
+      const newModules = { ...expandedModules };
+      delete newModules[key];
+      expandedModules = newModules;
+    } else {
+      expandedModules = { ...expandedModules, [key]: true };
+    }
+  }
   
   function startEdit(spool: any) {
     editingSpoolId = spool.id;
@@ -51,6 +189,23 @@
       remaining_weight: 0,
       cost: 0
     };
+  }
+  
+  function formatDate(timestamp: number) {
+    return new Date(timestamp).toLocaleString();
+  }
+
+  function formatDuration(start: number, end: number | null) {
+    if (!end) return 'In Progress';
+    const minutes = Math.floor((end - start) / 1000 / 60);
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  }
+  
+  // ✅ FIX: Navigation function that always works
+  function navigateToDashboard() {
+    goto('/');
   }
   
   onMount(() => {
@@ -223,8 +378,9 @@
     });
     
     // Failure Reasons Pie Chart
+    let failureChart: echarts.ECharts | undefined;
     if (data.stats.failureReasons.length > 0) {
-      const failureChart = echarts.init(failureReasonsChart, 'dark');
+      failureChart = echarts.init(failureReasonsChart, 'dark');
       failureChart.setOption({
         title: {
           text: 'Failure Reasons',
@@ -300,138 +456,33 @@
       materialChart.resize();
       successChart.resize();
       modulesChart.resize();
-      if (data.stats.failureReasons.length > 0) {
-        failureChart?.resize();
-      }
+      failureChart?.resize();
       utilizationChart.resize();
     };
     
     window.addEventListener('resize', handleResize);
     
-    // Cleanup when leaving the page
+    // Cleanup when component unmounts
     return () => {
       window.removeEventListener('resize', handleResize);
       historyChart.dispose();
       materialChart.dispose();
       successChart.dispose();
       modulesChart.dispose();
-      if (data.stats.failureReasons.length > 0) {
-        const failureChart = echarts.init(failureReasonsChart, 'dark');
-        failureChart?.dispose();
-      }
+      failureChart?.dispose();
       utilizationChart.dispose();
     };
   });
-  
-  function formatDate(timestamp: number) {
-    return new Date(timestamp).toLocaleString();
-  }
-
-  function formatDuration(start: number, end: number | null) {
-    if (!end) return 'In Progress';
-    const minutes = Math.floor((end - start) / 1000 / 60);
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-  }
-  
-  // ✅ NEW: Drill-down state with 4 levels for Haken
-  type TimeRange = 'last30Days' | 'thisMonth' | 'last90Days';
-  let selectedTimeRange: TimeRange = 'last30Days';
-  let expandedCategories: Set<string> = new Set();
-  let expandedSubcategories: Set<string> = new Set();  // ✅ NEW
-  let expandedModules: Set<string> = new Set();
-  
-  // Get module breakdown for selected time range
-  $: currentBreakdown = data.stats.moduleBreakdown[selectedTimeRange];
-  $: totalPrintsInRange = Object.values(currentBreakdown).reduce((sum: number, cat: any) => sum + cat.total, 0);
-  $: totalObjectsInRange = Object.values(currentBreakdown).reduce((sum: number, cat: any) => sum + cat.totalObjects, 0);  // ✅ NEW
-  
-  function toggleCategory(categoryName: string) {
-    const newSet = new Set(expandedCategories); // ✅ Create new Set
-    
-    if (newSet.has(categoryName)) {
-      newSet.delete(categoryName);
-      
-      // Collapse all children
-      const newSubcategories = new Set(expandedSubcategories);
-      const newModules = new Set(expandedModules);
-      
-      newSubcategories.forEach(key => {
-        if (key.startsWith(`${categoryName}:`)) {
-          newSubcategories.delete(key);
-        }
-      });
-      
-      newModules.forEach(key => {
-        if (key.startsWith(`${categoryName}:`)) {
-          newModules.delete(key);
-        }
-      });
-      
-      expandedSubcategories = newSubcategories;
-      expandedModules = newModules;
-    } else {
-      newSet.add(categoryName);
-    }
-    
-    expandedCategories = newSet; // ✅ Assign new Set
-  }
-  
-  function toggleSubcategory(categoryName: string, subcategoryName: string) {
-    const key = `${categoryName}:${subcategoryName}`;
-    const newSet = new Set(expandedSubcategories); // ✅ Create new Set
-    
-    if (newSet.has(key)) {
-      newSet.delete(key);
-      
-      // Collapse all modules under this subcategory
-      const newModules = new Set(expandedModules);
-      newModules.forEach(moduleKey => {
-        if (moduleKey.startsWith(key)) {
-          newModules.delete(moduleKey);
-        }
-      });
-      expandedModules = newModules;
-    } else {
-      newSet.add(key);
-    }
-    
-    expandedSubcategories = newSet; // ✅ Assign new Set
-  }
-  
-  function toggleModule(parentKey: string, moduleName: string) {
-    const key = `${parentKey}:${moduleName}`;
-    const newSet = new Set(expandedModules); // ✅ Create new Set
-    
-    if (newSet.has(key)) {
-      newSet.delete(key);
-    } else {
-      newSet.add(key);
-    }
-    
-    expandedModules = newSet; // ✅ Assign new Set
-  }
-  
-  function getTimeRangeLabel(range: TimeRange): string {
-    switch(range) {
-      case 'last30Days': return 'Last 30 Days';
-      case 'thisMonth': return 'This Month';
-      case 'last90Days': return 'Last 90 Days';
-    }
-  }
-  
-
 </script>
 
 <div class="min-h-screen bg-black text-white p-6">
   <div class="max-w-7xl mx-auto">
-    <!-- Header -->
-    <div class="flex justify-between items-center mb-8">
+    <!-- Header - Use dedicated function and higher z-index -->
+    <div class="flex justify-between items-center mb-8 relative z-50">
       <h1 class="text-3xl font-light">Statistics & Analytics</h1>
       <button 
-        onclick={() => goto('/')}
-        class="text-slate-400 hover:text-white transition-colors cursor-pointer"
+        on:click={navigateToDashboard}
+        class="text-slate-400 hover:text-white transition-colors cursor-pointer pointer-events-auto"
       >
         ← Back to Dashboard
       </button>
@@ -466,7 +517,7 @@
     <!-- Toggle Buttons Row -->
     <div class="flex gap-3 mb-6">
       <button
-        onclick={() => showPrintHistory = !showPrintHistory}
+        on:click|stopPropagation={() => showPrintHistory = !showPrintHistory}
         class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg px-4 py-2.5 transition-colors"
       >
         <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -487,7 +538,7 @@
       </button>
       
       <button
-        onclick={() => showSpools = !showSpools}
+        on:click|stopPropagation={() => showSpools = !showSpools}
         class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg px-4 py-2.5 transition-colors"
       >
         <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -786,7 +837,7 @@
                             </button>
                           </form>
                           <button
-                            onclick={cancelEdit}
+                            on:click|stopPropagation={cancelEdit}
                             class="text-slate-400 hover:text-white transition-colors"
                             title="Cancel"
                           >
@@ -798,7 +849,7 @@
                       {:else}
                         <div class="flex items-center gap-2">
                           <button
-                            onclick={() => startEdit(spool)}
+                            on:click|stopPropagation={() => startEdit(spool)}
                             class="text-blue-400 hover:text-blue-300 transition-colors"
                             title="Edit spool"
                             disabled={isLoaded}
@@ -821,7 +872,7 @@
                             <input type="hidden" name="spoolId" value={spool.id} />
                             <button
                               type="submit"
-                              onclick={(e) => {
+                              on:click|stopPropagation={(e) => {
                                 if (!confirm(`Delete spool #${spool.id} (${spool.brand} ${spool.material})?`)) {
                                   e.preventDefault();
                                 }
@@ -866,7 +917,7 @@
           <div class="flex gap-2 bg-slate-800 rounded-lg p-1">
             {#each ['last30Days', 'thisMonth', 'last90Days'] as range}
               <button
-                onclick={() => selectedTimeRange = range as TimeRange}
+                on:click|stopPropagation={() => selectedTimeRange = range as TimeRange}
                 class="px-4 py-2 rounded-md text-sm font-medium transition-all
                        {selectedTimeRange === range 
                          ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' 
@@ -910,14 +961,14 @@
         {#if Object.keys(currentBreakdown).length > 0}
           <div class="space-y-3">
             {#each Object.entries(currentBreakdown).sort(([,a], [,b]) => b.total - a.total) as [categoryName, categoryData]}
-              {@const isCategoryExpanded = expandedCategories.has(categoryName)}
+              {@const isCategoryExpanded = !!expandedCategories[categoryName]}
               {@const categoryPercentage = ((categoryData.total / totalPrintsInRange) * 100).toFixed(1)}
               {@const hasSubcategories = Object.keys(categoryData.subcategories || {}).length > 0}
               
               <!-- Level 1: Category -->
               <div class="border border-slate-700 rounded-lg overflow-hidden hover:border-slate-600 transition-colors">
                 <button
-                  onclick={() => toggleCategory(categoryName)}
+                  on:click|stopPropagation={() => toggleCategory(categoryName)}
                   class="w-full px-5 py-4 flex items-center justify-between bg-slate-800/30 hover:bg-slate-800/50 transition-colors"
                 >
                   <div class="flex items-center gap-4">
@@ -974,12 +1025,12 @@
                       <div class="p-4 space-y-2">
                         {#each Object.entries(categoryData.subcategories).sort(([,a], [,b]) => b.total - a.total) as [subcategoryName, subcategoryData]}
                           {@const subcategoryKey = `${categoryName}:${subcategoryName}`}
-                          {@const isSubcategoryExpanded = expandedSubcategories.has(subcategoryKey)}
+                          {@const isSubcategoryExpanded = !!expandedSubcategories[subcategoryKey]}
                           {@const subcategoryPercentage = ((subcategoryData.total / categoryData.total) * 100).toFixed(1)}
                           
                           <div class="border border-slate-700/50 rounded-lg overflow-hidden">
                             <button
-                              onclick={() => toggleSubcategory(categoryName, subcategoryName)}
+                              on:click|stopPropagation={() => toggleSubcategory(categoryName, subcategoryName)}
                               class="w-full px-4 py-3 flex items-center justify-between bg-slate-800/20 hover:bg-slate-800/40 transition-colors"
                             >
                               <div class="flex items-center gap-3">
@@ -1020,12 +1071,12 @@
                               <div class="bg-slate-900/30 border-t border-slate-700/50 p-3 space-y-1.5">
                                 {#each Object.entries(subcategoryData.modules).sort(([,a], [,b]) => b.total - a.total) as [moduleName, moduleData]}
                                   {@const moduleKey = `${subcategoryKey}:${moduleName}`}
-                                  {@const isModuleExpanded = expandedModules.has(moduleKey)}
+                                  {@const isModuleExpanded = !!expandedModules[moduleKey]}
                                   {@const modulePercentage = ((moduleData.total / subcategoryData.total) * 100).toFixed(1)}
                                   
                                   <div class="border border-slate-700/30 rounded-md overflow-hidden">
                                     <button
-                                      onclick={() => toggleModule(subcategoryKey, moduleName)}
+                                      on:click|stopPropagation={() => toggleModule(subcategoryKey, moduleName)}
                                       class="w-full px-3 py-2.5 flex items-center justify-between bg-slate-800/10 hover:bg-slate-800/30 transition-colors"
                                     >
                                       <div class="flex items-center gap-2">
@@ -1109,12 +1160,12 @@
                       <div class="p-4 space-y-2">
                         {#each Object.entries(categoryData.modules).sort(([,a], [,b]) => b.total - a.total) as [moduleName, moduleData]}
                           {@const moduleKey = `${categoryName}:${moduleName}`}
-                          {@const isModuleExpanded = expandedModules.has(moduleKey)}
+                          {@const isModuleExpanded = !!expandedModules[moduleKey]}
                           {@const modulePercentage = ((moduleData.total / categoryData.total) * 100).toFixed(1)}
                           
                           <div class="border border-slate-700/50 rounded-lg overflow-hidden">
                             <button
-                              onclick={() => toggleModule(categoryName, moduleName)}
+                              on:click|stopPropagation={() => toggleModule(categoryName, moduleName)}
                               class="w-full px-4 py-3 flex items-center justify-between bg-slate-800/20 hover:bg-slate-800/40 transition-colors"
                             >
                               <div class="flex items-center gap-3">
@@ -1138,7 +1189,7 @@
                               <div class="flex items-center gap-4">
                                 <div class="text-right">
                                   <p class="text-sm font-bold text-blue-400">{(moduleData.totalWeight / 1000).toFixed(3)}kg</p>
-                                  <p class="text-xs text-slate-500">{moduleData.avgWeightPerPrint.toFixed(0)}g/print</p>
+                                  <p class="text-xs text-slate-500">{(moduleData.avgWeightPerPrint || 0).toFixed(0)}g/print</p>
                                   <p class="text-xs text-green-400 mt-0.5">${moduleData.avgCostPerPrint.toFixed(3)}/print</p>
                                   <p class="text-xs text-green-500">${moduleData.costPerObject.toFixed(4)}/obj</p>
                                 </div>
