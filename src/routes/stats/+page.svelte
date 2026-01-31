@@ -348,49 +348,69 @@
   $: totalObjectsInRange = Object.values(currentBreakdown).reduce((sum: number, cat: any) => sum + cat.totalObjects, 0);  // ✅ NEW
   
   function toggleCategory(categoryName: string) {
-    if (expandedCategories.has(categoryName)) {
-      expandedCategories.delete(categoryName);
+    const newSet = new Set(expandedCategories); // ✅ Create new Set
+    
+    if (newSet.has(categoryName)) {
+      newSet.delete(categoryName);
+      
       // Collapse all children
-      expandedSubcategories.forEach(key => {
+      const newSubcategories = new Set(expandedSubcategories);
+      const newModules = new Set(expandedModules);
+      
+      newSubcategories.forEach(key => {
         if (key.startsWith(`${categoryName}:`)) {
-          expandedSubcategories.delete(key);
+          newSubcategories.delete(key);
         }
       });
-      expandedModules.forEach(key => {
+      
+      newModules.forEach(key => {
         if (key.startsWith(`${categoryName}:`)) {
-          expandedModules.delete(key);
+          newModules.delete(key);
         }
       });
+      
+      expandedSubcategories = newSubcategories;
+      expandedModules = newModules;
     } else {
-      expandedCategories.add(categoryName);
+      newSet.add(categoryName);
     }
-    expandedCategories = expandedCategories;
+    
+    expandedCategories = newSet; // ✅ Assign new Set
   }
   
   function toggleSubcategory(categoryName: string, subcategoryName: string) {
     const key = `${categoryName}:${subcategoryName}`;
-    if (expandedSubcategories.has(key)) {
-      expandedSubcategories.delete(key);
+    const newSet = new Set(expandedSubcategories); // ✅ Create new Set
+    
+    if (newSet.has(key)) {
+      newSet.delete(key);
+      
       // Collapse all modules under this subcategory
-      expandedModules.forEach(moduleKey => {
+      const newModules = new Set(expandedModules);
+      newModules.forEach(moduleKey => {
         if (moduleKey.startsWith(key)) {
-          expandedModules.delete(moduleKey);
+          newModules.delete(moduleKey);
         }
       });
+      expandedModules = newModules;
     } else {
-      expandedSubcategories.add(key);
+      newSet.add(key);
     }
-    expandedSubcategories = expandedSubcategories;
+    
+    expandedSubcategories = newSet; // ✅ Assign new Set
   }
   
   function toggleModule(parentKey: string, moduleName: string) {
     const key = `${parentKey}:${moduleName}`;
-    if (expandedModules.has(key)) {
-      expandedModules.delete(key);
+    const newSet = new Set(expandedModules); // ✅ Create new Set
+    
+    if (newSet.has(key)) {
+      newSet.delete(key);
     } else {
-      expandedModules.add(key);
+      newSet.add(key);
     }
-    expandedModules = expandedModules;
+    
+    expandedModules = newSet; // ✅ Assign new Set
   }
   
   function getTimeRangeLabel(range: TimeRange): string {

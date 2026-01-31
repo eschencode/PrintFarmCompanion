@@ -163,7 +163,7 @@ const last90DaysJobs = allCompletedJobs.filter(j => j.start_time >= ninetyDaysAg
   // ✅ NEW: Define product sets
   const PRODUCT_SETS = {
     'Klorolle Set': {
-      emoji: '🚽📦',
+      emoji: '',
       components: [
         { name: 'klohalter', quantity: 1 },
         { name: 'stab', quantity: 1 },
@@ -171,7 +171,7 @@ const last90DaysJobs = allCompletedJobs.filter(j => j.start_time >= ninetyDaysAg
       ]
     },
     'Haken Set': {
-      emoji: '🪝📦',
+      emoji: '',
       components: [
         { name: 'haken', quantity: 5, mustInclude: ['kleben', 'schrauben'] }, // Any haken module that includes these words
         { name: 'halter', quantity: 2, mustInclude: ['halter'] }
