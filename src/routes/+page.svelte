@@ -342,9 +342,34 @@
             <!-- Status Indicator -->
             <div class="absolute top-3 right-3">
               {#if printer.status === 'printing'}
-                <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                {@const activePrintForDot = getActivePrintJob(Number(printer.id))}
+                {@const progressForDot = activePrintForDot ? getProgress(Number(activePrintForDot.start_time), Number(activePrintForDot.expected_time)) : 0}
+                {#if progressForDot >= 100}
+                  <!-- Print time complete - purple indicator -->
+                  <div class="w-2 h-2 bg-violet-500 rounded-full animate-pulse"></div>
+                {:else}
+                  <!-- Still printing - blue indicator -->
+                  <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                {/if}
               {:else if printer.status === 'IDLE'}
-                <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                {@const loadedSpoolForDot = printer.loaded_spool_id ? getLoadedSpool(printer.loaded_spool_id) : null}
+                {@const canPrintAnyModule = loadedSpoolForDot && (loadedSpoolForDot as any).remaining_weight > 0 && data.printModules.length > 0 && data.printModules.some((m: any) => {
+                  const hasEnoughWeight = m.expected_weight <= (loadedSpoolForDot as any).remaining_weight;
+                  const moduleHasPresetPreference = m.default_spool_preset_id !== null;
+                  const presetMatches = (loadedSpoolForDot as any).preset_id === m.default_spool_preset_id;
+                  // Module is printable if: (no preset preference OR preset matches) AND has enough weight
+                  return hasEnoughWeight && (!moduleHasPresetPreference || presetMatches);
+                })}
+                {#if !loadedSpoolForDot}
+                  <!-- No spool loaded - yellow indicator -->
+                  <div class="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                {:else if canPrintAnyModule}
+                  <!-- Has enough filament for a compatible module - green indicator -->
+                  <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                {:else}
+                  <!-- Spool loaded but not enough for any compatible module - yellow indicator -->
+                  <div class="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                {/if}
               {:else}
                 <div class="w-2 h-2 bg-slate-600 rounded-full"></div>
               {/if}
@@ -359,7 +384,7 @@
               />
             </div>
 
-            <!-- Printer Name -->
+            <!-- Printer Name & Progress -->
             <div class="w-full text-center space-y-1 border-t border-slate-800/50 pt-3">
               <h3 class="text-sm font-medium text-white">{printer.name}</h3>
               <p class="text-xs text-slate-500 font-light">
@@ -371,6 +396,23 @@
                   <span class="text-slate-500">{printer.status}</span>
                 {/if}
               </p>
+              
+              <!-- Progress Bar for Active Prints -->
+              {#if printer.status === 'printing'}
+                {@const activePrint = getActivePrintJob(Number(printer.id))}
+                {#if activePrint}
+                  {@const progress = getProgress(Number(activePrint.start_time), Number(activePrint.expected_time))}
+                  <div class="mt-2 px-1">
+                    <div class="w-full bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
+                      <div 
+                        class="bg-blue-500 h-full rounded-full transition-all duration-300" 
+                        style="width: {progress}%"
+                      ></div>
+                    </div>
+                
+                  </div>
+                {/if}
+              {/if}
             </div>
           </button>
         {:else}
