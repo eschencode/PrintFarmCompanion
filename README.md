@@ -9,6 +9,9 @@ A modern, full-stack web application for managing a 3D print farm. Track printer
 
 ---
 
+
+![dashboardView](/static/images/screen.png)
+
 ## ✨ Features
 
 ### 📊 Dashboard

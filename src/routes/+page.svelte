@@ -26,9 +26,9 @@
   // Predefined failure reasons
   const failureReasons = [
     'Spaghetti / Layer Adhesion Failure',
-    'Warping / Bed Adhesion Issue',
+    'Werkzeug kopf abgefallen',
     'Filament Runout',
-    'Nozzle Clog',
+    'Poor quality',
     'Power Outage',
     'Poor First Layer',
     'Stringing / Oozing',
@@ -405,7 +405,7 @@
                   <div class="mt-2 px-1">
                     <div class="w-full bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
                       <div 
-                        class="bg-blue-500 h-full rounded-full transition-all duration-300" 
+                        class="{progress >= 100 ? 'bg-violet-500' : 'bg-blue-500'} h-full rounded-full transition-all duration-300" 
                         style="width: {progress}%"
                       ></div>
                     </div>
