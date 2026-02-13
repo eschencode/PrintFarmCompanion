@@ -67,6 +67,7 @@ export interface SpoolPreset {
   color: string | null;
   default_weight: number;
   cost: number | null;
+  storage_count: number;
 }
 
 /**
@@ -219,7 +220,7 @@ export interface NewPrinter {
  * Grid Cell - Represents a single cell in the 3x3 grid
  */
 export interface GridCell {
-  type: 'printer' | 'stats' | 'settings' | 'spools' | 'empty';
+  type: 'printer' | 'stats' | 'settings' | 'spools' | 'storage' | 'empty';
   printerId?: number;
 }
 

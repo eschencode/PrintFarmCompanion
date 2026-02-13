@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS spool_presets (
   material TEXT,
   color TEXT,
   default_weight INTEGER NOT NULL,
-  cost REAL
+  cost REAL,
+  storage_count INTEGER DEFAULT 0
 );
 
 -- Spools table

@@ -29,7 +29,7 @@
   let editingGridConfig: GridCell[] = [];
 
   // Cell types available for selection
-  const cellTypes = ['printer', 'stats', 'settings', 'empty'] as const;
+  const cellTypes = ['printer', 'stats', 'settings', 'storage', 'empty'] as const;
 
   // Generate empty grid config based on dimensions
   function generateEmptyGrid(rows: number, cols: number): GridCell[] {
@@ -366,6 +366,7 @@
                       {cell.type === 'stats' ? 'bg-green-500/30 text-green-300' : ''}
                       {cell.type === 'settings' ? 'bg-purple-500/30 text-purple-300' : ''}
                       {cell.type === 'spools' ? 'bg-orange-500/30 text-orange-300' : ''}
+                      {cell.type === 'storage' ? 'bg-amber-500/30 text-amber-300' : ''}
                       {cell.type === 'empty' ? 'bg-slate-700/30 text-slate-500' : ''}
                     ">
                       {#if cell.type === 'printer'}
@@ -376,6 +377,8 @@
                         ⚙️
                       {:else if cell.type === 'spools'}
                         🎨
+                      {:else if cell.type === 'storage'}
+                        📦
                       {:else}
                         ∅
                       {/if}
@@ -1004,6 +1007,7 @@
                     <option value="printer">Printer</option>
                     <option value="stats">Stats</option>
                     <option value="settings">Settings</option>
+                    <option value="storage">Storage</option>
                     <option value="spools">Materials</option>
                   </select>
 
@@ -1034,6 +1038,8 @@
                       <span class="text-lg">📊</span>
                     {:else if cell.type === 'settings'}
                       <span class="text-lg">⚙️</span>
+                    {:else if cell.type === 'storage'}
+                      <span class="text-lg">📦</span>
                     {:else if cell.type === 'spools'}
                       <span class="text-lg">🎨</span>
                     {:else}

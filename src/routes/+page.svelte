@@ -668,6 +668,22 @@
           <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">Inspect Data</p>
         </a>
 
+      {:else if cell.type === 'storage'}
+        <!-- Storage Card -->
+        <a
+          href="/storage"
+          class="group bg-slate-900/50 border border-slate-800 
+                 rounded-xl p-2 hover:border-amber-900/50 hover:bg-slate-900/80
+                 transition-all duration-300 hover:scale-[1.02]
+                 flex flex-col items-center justify-center overflow-hidden"
+        >
+          <div class="text-[clamp(1.5rem,4vw,3rem)] opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
+            📦
+          </div>
+          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white mt-1">Storage</h3>
+          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">Inventory</p>
+        </a>
+
       {:else if cell.type === 'spools'}
         <!-- Materials/Spools Card -->
         <a
@@ -1046,9 +1062,9 @@
                   </div>
                   <div class="space-y-1 text-sm">
                     <p class="text-slate-400">{preset.brand} • {preset.material}</p>
-                    {#if preset.color}
-                      <p class="text-slate-500">Color: {preset.color}</p>
-                    {/if}
+                    <p class="text-slate-500 {(preset.storage_count || 0) === 0 ? 'text-red-400' : (preset.storage_count || 0) <= 2 ? 'text-amber-400' : ''}">
+                      Stock: {preset.storage_count || 0}
+                    </p>
                     <div class="flex justify-between items-center mt-2 pt-2 border-t border-slate-700/50">
                       <span class="text-slate-500">Weight:</span>
                       <span class="text-white font-medium">{preset.default_weight}g</span>

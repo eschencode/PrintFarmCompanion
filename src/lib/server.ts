@@ -213,7 +213,16 @@ export async function loadSpool(db: D1Database, params: {
   });
   const newSpoolId = newSpoolResult.meta.last_row_id;
 
-  // 5. Load the new spool to the printer
+  // 5. Decrement storage count if loading from a preset
+  if (spoolData.preset_id) {
+    await db.prepare(`
+      UPDATE spool_presets 
+      SET storage_count = MAX(0, COALESCE(storage_count, 0) - 1) 
+      WHERE id = ?
+    `).bind(spoolData.preset_id).run();
+  }
+
+  // 6. Load the new spool to the printer
   await loadSpoolToPrinter(db, printerId, newSpoolId);
 
   return {
@@ -431,6 +440,44 @@ export async function createSpoolPreset(db: D1Database, preset: {
     presetId: result.meta.last_row_id,
     message: `Spool preset "${preset.name}" created successfully`
   };
+}
+
+// Update spool preset storage count
+export async function updateStorageCount(db: D1Database, presetId: number, delta: number): Promise<ServerResponse> {
+  try {
+    await db.prepare(`
+      UPDATE spool_presets 
+      SET storage_count = MAX(0, COALESCE(storage_count, 0) + ?) 
+      WHERE id = ?
+    `).bind(delta, presetId).run();
+    
+    return { success: true, message: 'Storage count updated' };
+  } catch (error) {
+    console.error('Error updating storage count:', error);
+    return { success: false, error: 'Failed to update storage count' };
+  }
+}
+
+// Set absolute storage count for a preset
+export async function setStorageCount(db: D1Database, presetId: number, count: number): Promise<ServerResponse> {
+  try {
+    await db.prepare(`
+      UPDATE spool_presets 
+      SET storage_count = ? 
+      WHERE id = ?
+    `).bind(Math.max(0, count), presetId).run();
+    
+    return { success: true, message: 'Storage count set' };
+  } catch (error) {
+    console.error('Error setting storage count:', error);
+    return { success: false, error: 'Failed to set storage count' };
+  }
+}
+
+// Get a single spool preset by ID
+export async function getSpoolPresetById(db: D1Database, id: number): Promise<SpoolPreset | null> {
+  const result = await db.prepare('SELECT * FROM spool_presets WHERE id = ?').bind(id).first();
+  return result as SpoolPreset | null;
 }
 
 // Print Module Functions
