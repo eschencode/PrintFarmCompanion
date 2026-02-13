@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PageData } from './$types';
+  import type { GridCell } from '$lib/types';
   import p1sImage from '$lib/assets/p1s.png';
   import { enhance } from '$app/forms';
   import { onMount } from 'svelte';
@@ -70,22 +71,191 @@
     return p1sImage;
   }
 
-  // Grid Configuration - customize your layout here!
-  const gridLayout = [
-    { type: 'printer', printerId: 4 },
-    { type: 'printer', printerId: 5 },
-    { type: 'printer', printerId: 6 },
+  // Default Grid Configuration (fallback if no preset exists)
+  const defaultGridLayout: GridCell[] = [
     { type: 'printer', printerId: 1 },
     { type: 'printer', printerId: 2 },
     { type: 'printer', printerId: 3 },
+    { type: 'printer', printerId: 4 },
+    { type: 'printer', printerId: 5 },
+    { type: 'printer', printerId: 6 },
     { type: 'printer', printerId: 7 },
     { type: 'stats' },
     { type: 'settings' },
   ];
 
+  // Grid switching state
+  let currentGridIndex = 0;
+  let gridContainer: HTMLElement;
+
+  // Get all available grids (from presets or default)
+  function getAllGrids(): { name: string; config: GridCell[]; rows: number; cols: number }[] {
+    if (data.gridPresets && data.gridPresets.length > 0) {
+      // Sort to put default first
+      const sorted = [...data.gridPresets].sort((a, b) => (b.is_default || 0) - (a.is_default || 0));
+      return sorted.map(preset => ({
+        name: preset.name,
+        config: parseGridConfig(preset.grid_config),
+        rows: preset.rows || 3,
+        cols: preset.cols || 3
+      }));
+    }
+    return [{ name: 'Default', config: defaultGridLayout, rows: 3, cols: 3 }];
+  }
+
+  function parseGridConfig(jsonString: string): GridCell[] {
+    try {
+      return JSON.parse(jsonString);
+    } catch {
+      return defaultGridLayout;
+    }
+  }
+
+  // Reactive grids list
+  $: allGrids = getAllGrids();
+  $: currentGrid = allGrids[currentGridIndex] || allGrids[0];
+  $: gridLayout = currentGrid?.config || defaultGridLayout;
+  $: gridRows = currentGrid?.rows || 3;
+  $: gridCols = currentGrid?.cols || 3;
+
+  // Grid navigation
+  function goToGrid(index: number) {
+    if (index >= 0 && index < allGrids.length) {
+      currentGridIndex = index;
+    }
+  }
+
+  function nextGrid() {
+    if (currentGridIndex < allGrids.length - 1) {
+      currentGridIndex++;
+    }
+  }
+
+  function prevGrid() {
+    if (currentGridIndex > 0) {
+      currentGridIndex--;
+    }
+  }
+
+  // Keyboard navigation
+  function handleKeydown(event: KeyboardEvent) {
+    // Only handle if no modal is open
+    if (selectedPrinter) return;
+    
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      nextGrid();
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      prevGrid();
+    }
+  }
+
+  // Touch/swipe handling
+  let touchStartX = 0;
+  let touchStartY = 0;
+
+  function handleTouchStart(event: TouchEvent) {
+    touchStartX = event.touches[0].clientX;
+    touchStartY = event.touches[0].clientY;
+  }
+
+  function handleTouchEnd(event: TouchEvent) {
+    const touchEndX = event.changedTouches[0].clientX;
+    const touchEndY = event.changedTouches[0].clientY;
+    const deltaX = touchEndX - touchStartX;
+    const deltaY = touchEndY - touchStartY;
+
+    // Only handle horizontal swipes (ignore vertical)
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+      if (deltaX < 0) {
+        nextGrid();
+      } else {
+        prevGrid();
+      }
+    }
+  }
+
+  // Wheel/trackpad handling - simple swipe with black edge reveal
+  let resetTimeout: ReturnType<typeof setTimeout> | null = null;
+  let swipeOffset = 0; // Pixel offset for visual feedback
+  let accumulatedDelta = 0;
+  let isSwiping = false;
+  const SWIPE_THRESHOLD = 100; // Pixels to trigger switch
+
+  function handleWheel(event: WheelEvent) {
+    if (selectedPrinter) return;
+
+    // Only handle horizontal scrolling
+    if (Math.abs(event.deltaX) > Math.abs(event.deltaY) && Math.abs(event.deltaX) > 1) {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      isSwiping = true;
+      
+      // Accumulate the swipe
+      accumulatedDelta += event.deltaX;
+      
+      // Check if we can navigate in that direction
+      const canGoNext = currentGridIndex < allGrids.length - 1;
+      const canGoPrev = currentGridIndex > 0;
+      
+      // Only allow offset if we can navigate that direction
+      if (accumulatedDelta > 0 && canGoNext) {
+        // Swiping left (going to next) - show black on right
+        swipeOffset = -Math.min(accumulatedDelta * 0.4, 150);
+      } else if (accumulatedDelta < 0 && canGoPrev) {
+        // Swiping right (going to prev) - show black on left
+        swipeOffset = -Math.max(accumulatedDelta * 0.4, -150);
+      } else {
+        // Can't navigate, no offset
+        swipeOffset = 0;
+      }
+      
+      // Clear existing timeout
+      if (resetTimeout) clearTimeout(resetTimeout);
+      
+      // Check if we crossed threshold - switch immediately!
+      if (Math.abs(accumulatedDelta) > SWIPE_THRESHOLD) {
+        if (accumulatedDelta > 0 && canGoNext) {
+          currentGridIndex++;
+        } else if (accumulatedDelta < 0 && canGoPrev) {
+          currentGridIndex--;
+        }
+        // Reset immediately after switch
+        swipeOffset = 0;
+        accumulatedDelta = 0;
+        isSwiping = false;
+        return;
+      }
+      
+      // Reset after gesture ends
+      resetTimeout = setTimeout(() => {
+        isSwiping = false;
+        swipeOffset = 0;
+        accumulatedDelta = 0;
+      }, 100);
+    }
+  }
+
+  // Reference for cleanup
+  let mainContainer: HTMLElement;
+
+  onMount(() => {
+    window.addEventListener('keydown', handleKeydown);
+    document.addEventListener('wheel', handleWheel, { passive: false });
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeydown);
+      document.removeEventListener('wheel', handleWheel);
+      if (resetTimeout) clearTimeout(resetTimeout);
+    };
+  });
+
   function getPrinterForPosition(printerId: number | undefined) {
     if (!printerId) return null;
-    return data.printers.find(p => p.id === printerId);
+    // Use == for type coercion since printerId from JSON might be string
+    return data.printers.find(p => Number(p.id) === Number(printerId));
   }
 
   // Get active print job for selected printer
@@ -313,17 +483,45 @@
 
 </script>
 
-<div class="h-screen w-screen bg-black p-6 overflow-hidden">
+<div 
+  bind:this={mainContainer}
+  class="h-screen w-screen bg-black p-6 overflow-hidden"
+  ontouchstart={handleTouchStart}
+  ontouchend={handleTouchEnd}
+  role="region"
+  aria-label="Grid navigation area"
+>
   <!-- Header -->
   <div class="mb-6 flex justify-between items-center">
-    <h1 class="text-3xl font-light text-white tracking-wide">Print Farm</h1>
-    <div class="text-xs text-slate-500 font-light">
-      {data.printers.length} Printers • {data.activePrintJobs.length} Active
+    <div class="flex items-center gap-4">
+      <h1 class="text-3xl font-light text-white tracking-wide">Print Farm</h1>
+      {#if allGrids.length > 1}
+        <span class="text-sm text-slate-500 font-light">
+          {currentGrid?.name || 'Dashboard'}
+        </span>
+      {/if}
+    </div>
+    <div class="flex items-center gap-4">
+      <div class="text-xs text-slate-500 font-light">
+        {data.printers.length} Printers • {data.activePrintJobs.length} Active
+      </div>
     </div>
   </div>
 
-  <!-- 3x3 Grid -->
-  <div class="grid grid-cols-3 grid-rows-3 gap-4 h-[calc(100vh-120px)]">
+  <!-- Swipeable Grid Container -->
+  <div class="relative overflow-hidden h-[calc(100vh-120px)]">
+    <!-- Current Grid (with swipe transform) -->
+    <div 
+      class="absolute inset-0 ease-out"
+      class:transition-transform={!isSwiping}
+      class:duration-300={!isSwiping}
+      style="transform: translateX({swipeOffset}px);"
+    >
+      <!-- Dynamic Grid -->
+      <div 
+        class="grid gap-4 h-full"
+        style="grid-template-columns: repeat({gridCols}, minmax(0, 1fr)); grid-template-rows: repeat({gridRows}, minmax(0, 1fr));"
+      >
     
     {#each gridLayout as cell, i}
       
@@ -335,12 +533,12 @@
           <button
             onclick={() => selectPrinter(printer)}
             class="group relative bg-slate-900/50 border border-slate-800 
-                   rounded-xl p-4 hover:border-slate-700 hover:bg-slate-900/80 
+                   rounded-xl p-2 hover:border-slate-700 hover:bg-slate-900/80 
                    transition-all duration-300 hover:scale-[1.02]
-                   flex flex-col items-center justify-center"
+                   flex flex-col items-center justify-center overflow-hidden min-h-0"
           >
             <!-- Status Indicator -->
-            <div class="absolute top-3 right-3">
+            <div class="absolute top-2 right-2">
               {#if printer.status === 'printing'}
                 {@const activePrintForDot = getActivePrintJob(Number(printer.id))}
                 {@const progressForDot = activePrintForDot ? getProgress(Number(activePrintForDot.start_time), Number(activePrintForDot.expected_time)) : 0}
@@ -353,41 +551,50 @@
                 {/if}
               {:else if printer.status === 'IDLE'}
                 {@const loadedSpoolForDot = printer.loaded_spool_id ? getLoadedSpool(printer.loaded_spool_id) : null}
-                {@const canPrintAnyModule = loadedSpoolForDot && (loadedSpoolForDot as any).remaining_weight > 0 && data.printModules.length > 0 && data.printModules.some((m: any) => {
-                  const hasEnoughWeight = m.expected_weight <= (loadedSpoolForDot as any).remaining_weight;
+                {@const remainingWeight = loadedSpoolForDot ? (loadedSpoolForDot as any).remaining_weight : 0}
+                {@const compatibleModules = data.printModules.filter((m: any) => {
                   const moduleHasPresetPreference = m.default_spool_preset_id !== null;
-                  const presetMatches = (loadedSpoolForDot as any).preset_id === m.default_spool_preset_id;
-                  // Module is printable if: (no preset preference OR preset matches) AND has enough weight
-                  return hasEnoughWeight && (!moduleHasPresetPreference || presetMatches);
+                  const presetMatches = loadedSpoolForDot && (loadedSpoolForDot as any).preset_id === m.default_spool_preset_id;
+                  // Module is compatible if: no preset preference OR preset matches
+                  return !moduleHasPresetPreference || presetMatches;
                 })}
+                {@const minModuleWeight = compatibleModules.length > 0 
+                  ? Math.min(...compatibleModules.map((m: any) => m.expected_weight)) 
+                  : Infinity}
+                {@const maxPrintsPossible = minModuleWeight > 0 && minModuleWeight !== Infinity 
+                  ? Math.floor(remainingWeight / minModuleWeight) 
+                  : 0}
                 {#if !loadedSpoolForDot}
-                  <!-- No spool loaded - yellow indicator -->
+                  <!-- No spool loaded - red indicator -->
+                  <div class="w-2 h-2 bg-red-500 rounded-full"></div>
+                {:else if maxPrintsPossible === 0}
+                  <!-- No prints possible - red indicator -->
+                  <div class="w-2 h-2 bg-red-500 rounded-full"></div>
+                {:else if maxPrintsPossible === 1}
+                  <!-- Only 1 print possible - yellow indicator -->
                   <div class="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                {:else if canPrintAnyModule}
-                  <!-- Has enough filament for a compatible module - green indicator -->
-                  <div class="w-2 h-2 bg-green-500 rounded-full"></div>
                 {:else}
-                  <!-- Spool loaded but not enough for any compatible module - yellow indicator -->
-                  <div class="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                  <!-- 2+ prints possible - green indicator -->
+                  <div class="w-2 h-2 bg-green-500 rounded-full"></div>
                 {/if}
               {:else}
                 <div class="w-2 h-2 bg-slate-600 rounded-full"></div>
               {/if}
             </div>
 
-            <!-- Printer Image -->
-            <div class="mb-3 group-hover:scale-105 transition-transform flex-1 flex items-center justify-center">
+            <!-- Printer Image - scales with container -->
+            <div class="flex-1 flex items-center justify-center min-h-0 w-full group-hover:scale-105 transition-transform">
               <img 
                 src={getPrinterImage(printer.model)} 
                 alt="Printer"
-                class="w-42 h-42 object-contain opacity-90 group-hover:opacity-100 transition-opacity"
+                class="max-h-full max-w-full object-contain opacity-90 group-hover:opacity-100 transition-opacity"
               />
             </div>
 
-            <!-- Printer Name & Progress -->
-            <div class="w-full text-center space-y-1 border-t border-slate-800/50 pt-3">
-              <h3 class="text-sm font-medium text-white">{printer.name}</h3>
-              <p class="text-xs text-slate-500 font-light">
+            <!-- Printer Name & Progress - compact for smaller cells -->
+            <div class="w-full text-center border-t border-slate-800/50 pt-1 mt-1 min-h-0 flex-shrink-0">
+              <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white truncate px-1">{printer.name}</h3>
+              <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">
                 {#if printer.status === 'printing'}
                   <span class="text-blue-400">Printing</span>
                 {:else if printer.status === 'IDLE'}
@@ -402,14 +609,13 @@
                 {@const activePrint = getActivePrintJob(Number(printer.id))}
                 {#if activePrint}
                   {@const progress = getProgress(Number(activePrint.start_time), Number(activePrint.expected_time))}
-                  <div class="mt-2 px-1">
-                    <div class="w-full bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
+                  <div class="mt-1 px-1">
+                    <div class="w-full bg-slate-700/50 rounded-full h-1 overflow-hidden">
                       <div 
                         class="{progress >= 100 ? 'bg-violet-500' : 'bg-blue-500'} h-full rounded-full transition-all duration-300" 
-                        style="width: {progress}%"
+                        style="width: {Math.min(progress, 100)}%"
                       ></div>
                     </div>
-                
                   </div>
                 {/if}
               {/if}
@@ -418,10 +624,10 @@
         {:else}
           <!-- Empty Printer Slot -->
           <div class="bg-slate-950/30 border border-slate-900/50 border-dashed
-                      rounded-xl p-4 flex items-center justify-center">
+                      rounded-xl p-2 flex items-center justify-center overflow-hidden">
             <div class="text-center text-slate-700">
-              <div class="text-3xl mb-2 opacity-30">📦</div>
-              <p class="text-xs font-light">Empty</p>
+              <div class="text-[clamp(1rem,3vw,2rem)] opacity-30">📦</div>
+              <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] font-light">Empty</p>
             </div>
           </div>
         {/if}
@@ -431,15 +637,15 @@
         <a
           href="/settings"
           class="group bg-slate-900/50 border border-slate-800 
-                 rounded-xl p-4 hover:border-violet-900/50 hover:bg-slate-900/80
+                 rounded-xl p-2 hover:border-violet-900/50 hover:bg-slate-900/80
                  transition-all duration-300 hover:scale-[1.02]
-                 flex flex-col items-center justify-center"
+                 flex flex-col items-center justify-center overflow-hidden"
         >
-          <div class="text-5xl mb-3 opacity-70 group-hover:opacity-100 group-hover:rotate-90 transition-all duration-500">
+          <div class="text-[clamp(1.5rem,4vw,3rem)] opacity-70 group-hover:opacity-100 group-hover:rotate-90 transition-all duration-500">
             ⚙️
           </div>
-          <h3 class="text-sm font-medium text-white">Settings</h3>
-          <p class="text-xs text-slate-500 mt-1 font-light">Configure</p>
+          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white mt-1">Settings</h3>
+          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">Configure</p>
         </a>
 
       {:else if cell.type === 'stats'}
@@ -447,15 +653,15 @@
         <a
           href="/stats"
           class="group bg-slate-900/50 border border-slate-800 
-                 rounded-xl p-4 hover:border-emerald-900/50 hover:bg-slate-900/80
+                 rounded-xl p-2 hover:border-emerald-900/50 hover:bg-slate-900/80
                  transition-all duration-300 hover:scale-[1.02]
-                 flex flex-col items-center justify-center"
+                 flex flex-col items-center justify-center overflow-hidden"
         >
-          <div class="text-5xl mb-3 opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
+          <div class="text-[clamp(1.5rem,4vw,3rem)] opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
             📈
           </div>
-          <h3 class="text-sm font-medium text-white">Stats</h3>
-          <p class="text-xs text-slate-500 mt-1 font-light">Inspect Data</p>
+          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white mt-1">Stats</h3>
+          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">Inspect Data</p>
         </a>
 
       {:else if cell.type === 'spools'}
@@ -463,31 +669,73 @@
         <a
           href="/spools"
           class="group bg-slate-900/50 border border-slate-800 
-                 rounded-xl p-4 hover:border-orange-900/50 hover:bg-slate-900/80
+                 rounded-xl p-2 hover:border-orange-900/50 hover:bg-slate-900/80
                  transition-all duration-300 hover:scale-[1.02]
-                 flex flex-col items-center justify-center"
+                 flex flex-col items-center justify-center overflow-hidden"
         >
-          <div class="text-5xl mb-3 opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
+          <div class="text-[clamp(1.5rem,4vw,3rem)] opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
             🎨
           </div>
-          <h3 class="text-sm font-medium text-white">Materials</h3>
-          <p class="text-xs text-slate-500 mt-1 font-light">{data.spools.length} spools</p>
+          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white mt-1">Materials</h3>
+          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">{data.spools.length} spools</p>
         </a>
 
       {:else}
         <!-- Empty/Unknown Slot -->
         <div class="bg-slate-950/30 border border-slate-900/50 border-dashed
-                    rounded-xl p-4 flex items-center justify-center">
+                    rounded-xl p-2 flex items-center justify-center overflow-hidden">
           <div class="text-center text-slate-700">
-            <div class="text-3xl mb-2 opacity-30">❓</div>
-            <p class="text-xs font-light">Empty</p>
+            <div class="text-[clamp(1rem,3vw,2rem)] opacity-30">❓</div>
+            <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] font-light">Empty</p>
           </div>
         </div>
       {/if}
 
     {/each}
 
+      </div>
+    </div>
   </div>
+
+  <!-- Grid Navigation Indicators -->
+  {#if allGrids.length > 1}
+    <div class="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 px-4 py-2">
+      <!-- Left Arrow -->
+      <button 
+        onclick={prevGrid}
+        disabled={currentGridIndex === 0}
+        class="p-1.5 rounded-full text-slate-600 hover:text-slate-400 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+        aria-label="Previous grid"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+        </svg>
+      </button>
+
+      <!-- Dots -->
+      <div class="flex items-center gap-1.5">
+        {#each allGrids as grid, i}
+          <button
+            onclick={() => goToGrid(i)}
+            class="w-1.5 h-1.5 rounded-full transition-all duration-300 {i === currentGridIndex ? 'bg-slate-400 scale-125' : 'bg-slate-700 hover:bg-slate-600'}"
+            aria-label="Go to grid {grid.name}"
+          ></button>
+        {/each}
+      </div>
+
+      <!-- Right Arrow -->
+      <button 
+        onclick={nextGrid}
+        disabled={currentGridIndex === allGrids.length - 1}
+        class="p-1.5 rounded-full text-slate-600 hover:text-slate-400 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+        aria-label="Next grid"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+        </svg>
+      </button>
+    </div>
+  {/if}
 </div>
 
 <!-- Printer Detail Modal -->
@@ -924,7 +1172,7 @@
             >
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+            </svg>
             </button>
           </div>
 

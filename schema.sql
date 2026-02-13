@@ -1,5 +1,3 @@
-
-
 CREATE TABLE IF NOT EXISTS spool_presets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -72,3 +70,17 @@ CREATE INDEX IF NOT EXISTS idx_printers_spool ON printers(loaded_spool_id);
 CREATE INDEX IF NOT EXISTS idx_print_jobs_printer ON print_jobs(printer_id);
 CREATE INDEX IF NOT EXISTS idx_print_jobs_spool ON print_jobs(spool_id);
 CREATE INDEX IF NOT EXISTS idx_print_jobs_module ON print_jobs(module_id);
+
+-- Grid Presets table - stores configurable grid layouts
+CREATE TABLE IF NOT EXISTS grid_presets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  is_default INTEGER DEFAULT 0,
+  grid_config TEXT NOT NULL,  -- JSON array of cells
+  rows INTEGER NOT NULL DEFAULT 3,
+  cols INTEGER NOT NULL DEFAULT 3,
+  created_at INTEGER DEFAULT (unixepoch() * 1000)
+);
+
+-- Index for quick default lookup
+CREATE INDEX IF NOT EXISTS idx_grid_presets_default ON grid_presets(is_default);

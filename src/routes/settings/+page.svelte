@@ -1,7 +1,9 @@
 <script lang="ts">
   import type { PageData, ActionData } from './$types';
+  import type { GridCell } from '$lib/types';
   import { goto } from '$app/navigation';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
+  import { enhance } from '$app/forms';
   
   export let data: PageData;
   export let form: ActionData;
@@ -16,6 +18,118 @@
   // ✅ Image selection
   let selectedImagePath = '';
   let imagePreviewUrl = '';
+
+  // ✅ Grid Preset Editor
+  let showGridEditor = false;
+  let gridPresetName = '';
+  let gridPresetIsDefault = false;
+  let editingGridId: number | null = null; // null = creating new, number = editing existing
+  let gridRows = 3;
+  let gridCols = 3;
+  let editingGridConfig: GridCell[] = [];
+
+  // Cell types available for selection
+  const cellTypes = ['printer', 'stats', 'settings', 'empty'] as const;
+
+  // Generate empty grid config based on dimensions
+  function generateEmptyGrid(rows: number, cols: number): GridCell[] {
+    return Array(rows * cols).fill(null).map(() => ({ type: 'empty' as const }));
+  }
+
+  // Handle dimension changes - resize the grid
+  function updateGridDimensions() {
+    const totalCells = gridRows * gridCols;
+    const currentLength = editingGridConfig.length;
+    
+    if (totalCells > currentLength) {
+      // Add empty cells
+      editingGridConfig = [
+        ...editingGridConfig,
+        ...Array(totalCells - currentLength).fill(null).map(() => ({ type: 'empty' as const }))
+      ];
+    } else if (totalCells < currentLength) {
+      // Trim cells
+      editingGridConfig = editingGridConfig.slice(0, totalCells);
+    }
+  }
+
+  function openGridEditor(preset?: any) {
+    showGridEditor = true;
+    
+    if (preset) {
+      // Edit existing preset
+      editingGridId = preset.id;
+      gridPresetName = preset.name;
+      gridPresetIsDefault = preset.is_default === 1;
+      gridRows = preset.rows || 3;
+      gridCols = preset.cols || 3;
+      editingGridConfig = parseGridConfig(preset.grid_config);
+    } else {
+      // Create new preset
+      editingGridId = null;
+      gridPresetName = '';
+      gridPresetIsDefault = data.gridPresets.length === 0; // Default if first preset
+      gridRows = 3;
+      gridCols = 3;
+      editingGridConfig = generateEmptyGrid(3, 3);
+    }
+  }
+
+  function closeGridEditor() {
+    showGridEditor = false;
+    editingGridId = null;
+  }
+
+  function setCellType(index: number, type: GridCell['type']) {
+    editingGridConfig[index] = { type };
+    editingGridConfig = [...editingGridConfig]; // Trigger reactivity
+  }
+
+  function setCellPrinter(index: number, printerId: number) {
+    editingGridConfig[index] = { type: 'printer', printerId };
+    editingGridConfig = [...editingGridConfig]; // Trigger reactivity
+  }
+
+  function getGridConfigJson(): string {
+    return JSON.stringify(editingGridConfig);
+  }
+
+  // Reactive grid config JSON for form submission
+  $: gridConfigJson = JSON.stringify(editingGridConfig);
+
+  function parseGridConfig(jsonString: string): GridCell[] {
+    try {
+      return JSON.parse(jsonString);
+    } catch {
+      return [];
+    }
+  }
+
+  function getPrinterName(printerId: number | undefined): string {
+    if (!printerId) return 'Unknown';
+    const printer = data.printers?.find((p: any) => p.id === printerId);
+    return printer?.name || `Printer #${printerId}`;
+  }
+
+  // ✅ Printer Editor
+  let showPrinterEditor = false;
+  let editingPrinter: any = null;
+  let printerName = '';
+  let printerModel = '';
+
+  function openEditPrinter(printer: any) {
+    editingPrinter = printer;
+    printerName = printer.name;
+    printerModel = printer.model || '';
+    showPrinterEditor = true;
+  }
+
+  function closePrinterEditor() {
+    showPrinterEditor = false;
+    editingPrinter = null;
+    printerName = '';
+    printerModel = '';
+  }
   
   // Sync local variable with store
   $: fileHandlerToken = fileHandlerState.token;
@@ -160,6 +274,236 @@
                 cd local-file-handler && bun run start
               </code>
             </div>
+          </div>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Grid Presets Section - Full Width -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
+      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+        <div>
+          <h2 class="text-xl font-medium flex items-center gap-2">
+            <span class="text-2xl">🎛️</span>
+            Dashboard Grid Presets
+          </h2>
+          <p class="text-sm text-slate-500 mt-1">Configure your dashboard layouts with custom dimensions</p>
+        </div>
+        <button 
+          onclick={() => openGridEditor()}
+          class="bg-blue-500 hover:bg-blue-600 text-white font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          New Grid Preset
+        </button>
+      </div>
+      
+      <div class="p-6">
+        {#if data.gridPresets && data.gridPresets.length > 0}
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {#each data.gridPresets as preset}
+              {@const gridConfig = parseGridConfig(preset.grid_config)}
+              {@const presetRows = preset.rows || 3}
+              {@const presetCols = preset.cols || 3}
+              <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4 {preset.is_default ? 'ring-2 ring-blue-500' : ''}">
+                <div class="flex justify-between items-start mb-3">
+                  <div>
+                    <h3 class="text-white font-medium flex items-center gap-2">
+                      {preset.name}
+                      {#if preset.is_default}
+                        <span class="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full">Default</span>
+                      {/if}
+                    </h3>
+                    <p class="text-xs text-slate-500 mt-1">{presetRows}×{presetCols} grid</p>
+                  </div>
+                  <div class="flex gap-1">
+                    <!-- Edit Button -->
+                    <button 
+                      onclick={() => openGridEditor(preset)}
+                      class="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-700 rounded transition-colors"
+                      title="Edit preset"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    {#if !preset.is_default}
+                      <form method="POST" action="?/setDefaultGridPreset" use:enhance>
+                        <input type="hidden" name="presetId" value={preset.id} />
+                        <button 
+                          type="submit"
+                          class="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-700 rounded transition-colors"
+                          title="Set as default"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                      </form>
+                    {/if}
+                    <form method="POST" action="?/deleteGridPreset" use:enhance>
+                      <input type="hidden" name="presetId" value={preset.id} />
+                      <button 
+                        type="submit"
+                        class="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded transition-colors"
+                        title="Delete preset"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </form>
+                  </div>
+                </div>
+                
+                <!-- Mini Grid Preview (dynamic based on rows/cols) -->
+                <div class="grid gap-1" style="grid-template-columns: repeat({presetCols}, minmax(0, 1fr));">
+                  {#each gridConfig as cell, i}
+                    <div class="aspect-square rounded flex items-center justify-center text-xs
+                      {cell.type === 'printer' ? 'bg-blue-500/30 text-blue-300' : ''}
+                      {cell.type === 'stats' ? 'bg-green-500/30 text-green-300' : ''}
+                      {cell.type === 'settings' ? 'bg-purple-500/30 text-purple-300' : ''}
+                      {cell.type === 'spools' ? 'bg-orange-500/30 text-orange-300' : ''}
+                      {cell.type === 'empty' ? 'bg-slate-700/30 text-slate-500' : ''}
+                    ">
+                      {#if cell.type === 'printer'}
+                        🖨️
+                      {:else if cell.type === 'stats'}
+                        📊
+                      {:else if cell.type === 'settings'}
+                        ⚙️
+                      {:else if cell.type === 'spools'}
+                        🎨
+                      {:else}
+                        ∅
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="text-center py-8">
+            <p class="text-slate-500 mb-4">No grid presets yet. Create your first one!</p>
+            <button 
+              onclick={() => openGridEditor()}
+              class="bg-blue-500 hover:bg-blue-600 text-white font-medium px-6 py-2 rounded-lg transition-colors"
+            >
+              Create Grid Preset
+            </button>
+          </div>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Printer Management Section - Full Width -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
+      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+        <div>
+          <h2 class="text-xl font-medium flex items-center gap-2">
+            <span class="text-2xl">🖨️</span>
+            Printer Management
+          </h2>
+          <p class="text-sm text-slate-500 mt-1">Add, edit, and manage your 3D printers</p>
+        </div>
+        <button 
+          onclick={() => showPrinterEditor = true}
+          class="bg-blue-500 hover:bg-blue-600 text-white font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add Printer
+        </button>
+      </div>
+      
+      <div class="p-6">
+        {#if data.printers && data.printers.length > 0}
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {#each data.printers as printer}
+              <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4 hover:border-slate-600 transition-colors">
+                <div class="flex justify-between items-start mb-3">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                      <span class="text-xl">🖨️</span>
+                    </div>
+                    <div>
+                      <h3 class="text-white font-medium">{printer.name}</h3>
+                      <p class="text-xs text-slate-500">{printer.model || 'No model specified'}</p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="flex items-center justify-between text-sm">
+                  <div class="flex items-center gap-2">
+                    <span class="text-slate-400">ID:</span>
+                    <span class="text-blue-400 font-mono">#{printer.id}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="px-2 py-0.5 rounded text-xs {
+                      printer.status === 'printing' ? 'bg-blue-500/20 text-blue-400' :
+                      printer.status === 'IDLE' ? 'bg-green-500/20 text-green-400' :
+                      'bg-slate-500/20 text-slate-400'
+                    }">
+                      {printer.status}
+                    </span>
+                  </div>
+                </div>
+                
+                <div class="mt-3 pt-3 border-t border-slate-700 flex justify-between items-center">
+                  <span class="text-xs text-slate-500">{printer.total_hours?.toFixed(1) || 0}h total</span>
+                  <div class="flex gap-1">
+                    <button 
+                      onclick={() => openEditPrinter(printer)}
+                      class="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-700 rounded transition-colors"
+                      title="Edit printer"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <form method="POST" action="?/deletePrinter" use:enhance={() => {
+                      return async ({ result, update }) => {
+                        if (result.type === 'success' || result.type === 'redirect') {
+                          await update();
+                        } else if (result.type === 'failure') {
+                          alert(result.data?.error || 'Failed to delete printer');
+                        }
+                      };
+                    }}>
+                      <input type="hidden" name="printerId" value={printer.id} />
+                      <button 
+                        type="submit"
+                        class="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded transition-colors"
+                        title="Delete printer"
+                        onclick={(e) => {
+                          if (!confirm(`Delete ${printer.name}? This cannot be undone.`)) {
+                            e.preventDefault();
+                          }
+                        }}
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="text-center py-8">
+            <p class="text-slate-500 mb-4">No printers yet. Add your first printer!</p>
+            <button 
+              onclick={() => showPrinterEditor = true}
+              class="bg-blue-500 hover:bg-blue-600 text-white font-medium px-6 py-2 rounded-lg transition-colors"
+            >
+              Add Printer
+            </button>
           </div>
         {/if}
       </div>
@@ -530,6 +874,314 @@
     </div>
   </div>
 </div>
+
+<!-- Grid Editor Modal -->
+{#if showGridEditor}
+  <div
+    class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-6"
+    onclick={closeGridEditor}
+    onkeydown={(e) => e.key === 'Escape' && closeGridEditor()}
+    role="button"
+    tabindex="0"
+    aria-label="Close grid editor"
+  >
+    <!-- svelte-ignore a11y_interactive_supports_focus -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div 
+      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+    >
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center sticky top-0 z-10">
+        <div>
+          <h2 class="text-xl font-medium">{editingGridId ? 'Edit Grid Preset' : 'Create Grid Preset'}</h2>
+          <p class="text-sm text-slate-500 mt-1">Configure your dashboard layout with custom dimensions</p>
+        </div>
+        <button 
+          onclick={closeGridEditor}
+          class="text-slate-400 hover:text-white transition-colors p-2"
+          aria-label="Close"
+        >
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <form method="POST" action={editingGridId ? '?/updateGridPreset' : '?/addGridPreset'} use:enhance={() => {
+        return async ({ result, update }) => {
+          if (result.type === 'success') {
+            closeGridEditor();
+          }
+          await update();
+        };
+      }}>
+        <div class="p-6 space-y-6">
+          <!-- Hidden ID for updates -->
+          {#if editingGridId}
+            <input type="hidden" name="presetId" value={editingGridId} />
+          {/if}
+
+          <!-- Preset Name -->
+          <div>
+            <label for="gridPresetName" class="block text-sm text-slate-400 mb-2">Preset Name</label>
+            <input 
+              type="text" 
+              id="gridPresetName"
+              name="name"
+              bind:value={gridPresetName}
+              required
+              placeholder="e.g., Main Dashboard, Large Grid, Secondary View"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
+
+          <!-- Grid Dimensions -->
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label for="gridRows" class="block text-sm text-slate-400 mb-2">Rows</label>
+              <input 
+                type="number" 
+                id="gridRows"
+                name="rows"
+                bind:value={gridRows}
+                onchange={updateGridDimensions}
+                min="1"
+                max="10"
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label for="gridCols" class="block text-sm text-slate-400 mb-2">Columns</label>
+              <input 
+                type="number" 
+                id="gridCols"
+                name="cols"
+                bind:value={gridCols}
+                onchange={updateGridDimensions}
+                min="1"
+                max="10"
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+          </div>
+
+          <p class="text-xs text-slate-500">Grid: {gridRows}×{gridCols} = {gridRows * gridCols} cells</p>
+
+          <!-- Set as Default -->
+          <div class="flex items-center gap-3">
+            <input 
+              type="checkbox" 
+              id="gridIsDefault"
+              name="isDefault"
+              bind:checked={gridPresetIsDefault}
+              value="true"
+              class="w-5 h-5 rounded bg-slate-800 border-slate-700 text-blue-500 focus:ring-blue-500"
+            />
+            <label for="gridIsDefault" class="text-sm text-slate-300">Set as default dashboard grid</label>
+          </div>
+
+          <!-- Hidden field for grid config -->
+          <input type="hidden" name="gridConfig" value={gridConfigJson} />
+
+          <!-- Grid Editor -->
+          <div>
+            <p class="text-sm text-slate-400 mb-3">Grid Layout ({gridRows}×{gridCols})</p>
+            <div class="grid gap-2" style="grid-template-columns: repeat({gridCols}, minmax(0, 1fr));">
+              {#each editingGridConfig as cell, index}
+                <div class="bg-slate-800 border border-slate-700 rounded-lg p-2 flex flex-col min-h-[120px]">
+                  <div class="text-xs text-slate-500 mb-1">Cell {index + 1}</div>
+                  
+                  <!-- Cell Type Selector -->
+                  <select
+                    class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white mb-1 focus:outline-none focus:border-blue-500"
+                    value={cell.type}
+                    onchange={(e) => setCellType(index, e.currentTarget.value as GridCell['type'])}
+                  >
+                    <option value="empty">Empty</option>
+                    <option value="printer">Printer</option>
+                    <option value="stats">Stats</option>
+                    <option value="settings">Settings</option>
+                    <option value="spools">Materials</option>
+                  </select>
+
+                  <!-- Printer Selector (if printer type) -->
+                  {#if cell.type === 'printer'}
+                    <select
+                      class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+                      value={cell.printerId || ''}
+                      onchange={(e) => setCellPrinter(index, Number(e.currentTarget.value))}
+                    >
+                      <option value="">Select Printer</option>
+                      {#each data.printers as printer}
+                        <option value={printer.id}>{printer.name}</option>
+                      {/each}
+                    </select>
+                  {/if}
+
+                  <!-- Visual Preview -->
+                  <div class="flex-1 flex items-center justify-center mt-1">
+                    {#if cell.type === 'printer'}
+                      <div class="text-center">
+                        <span class="text-lg">🖨️</span>
+                        {#if cell.printerId}
+                          <p class="text-[10px] text-blue-400 truncate max-w-full">{getPrinterName(cell.printerId)}</p>
+                        {/if}
+                      </div>
+                    {:else if cell.type === 'stats'}
+                      <span class="text-lg">📊</span>
+                    {:else if cell.type === 'settings'}
+                      <span class="text-lg">⚙️</span>
+                    {:else if cell.type === 'spools'}
+                      <span class="text-lg">🎨</span>
+                    {:else}
+                      <span class="text-slate-600 text-xs">Empty</span>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-slate-800 bg-slate-900/50 flex justify-end gap-3 sticky bottom-0">
+          <button 
+            type="button"
+            onclick={closeGridEditor}
+            class="px-6 py-2.5 text-slate-400 hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button 
+            type="submit"
+            disabled={!gridPresetName.trim()}
+            class="bg-green-500 hover:bg-green-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-medium px-6 py-2.5 rounded-lg transition-colors"
+          >
+            {editingGridId ? 'Save Changes' : 'Create Grid Preset'}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
+
+<!-- Printer Editor Modal -->
+{#if showPrinterEditor}
+  <div
+    class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-6"
+    onclick={closePrinterEditor}
+    onkeydown={(e) => e.key === 'Escape' && closePrinterEditor()}
+    role="button"
+    tabindex="0"
+    aria-label="Close printer editor"
+  >
+    <!-- svelte-ignore a11y_interactive_supports_focus -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div 
+      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-md w-full"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+    >
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+        <div>
+          <h2 class="text-xl font-medium">{editingPrinter ? 'Edit Printer' : 'Add Printer'}</h2>
+          <p class="text-sm text-slate-500 mt-1">
+            {editingPrinter ? `Editing ${editingPrinter.name}` : 'Add a new 3D printer'}
+          </p>
+        </div>
+        <button 
+          onclick={closePrinterEditor}
+          class="text-slate-400 hover:text-white transition-colors p-2"
+          aria-label="Close"
+        >
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <form 
+        method="POST" 
+        action={editingPrinter ? '?/updatePrinter' : '?/addPrinter'} 
+        use:enhance={() => {
+          return async ({ result, update }) => {
+            if (result.type === 'success') {
+              closePrinterEditor();
+            }
+            await update();
+          };
+        }}
+      >
+        <div class="p-6 space-y-4">
+          {#if editingPrinter}
+            <input type="hidden" name="printerId" value={editingPrinter.id} />
+          {/if}
+          
+          <!-- Printer Name -->
+          <div>
+            <label for="printerName" class="block text-sm text-slate-400 mb-2">Printer Name *</label>
+            <input 
+              type="text" 
+              id="printerName"
+              name="name"
+              bind:value={printerName}
+              required
+              placeholder="e.g., P1S #1, Bambu Lab X1C"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
+
+          <!-- Printer Model -->
+          <div>
+            <label for="printerModel" class="block text-sm text-slate-400 mb-2">Model (Optional)</label>
+            <input 
+              type="text" 
+              id="printerModel"
+              name="model"
+              bind:value={printerModel}
+              placeholder="e.g., P1S, X1 Carbon, A1 Mini"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+            <p class="text-xs text-slate-600 mt-1">Used to display the correct printer image</p>
+          </div>
+
+          {#if editingPrinter}
+            <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-slate-400">Printer ID:</span>
+                <span class="text-blue-400 font-mono">#{editingPrinter.id}</span>
+              </div>
+              <p class="text-xs text-slate-600 mt-2">Use this ID when configuring grid presets</p>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-slate-800 bg-slate-900/50 flex justify-end gap-3">
+          <button 
+            type="button"
+            onclick={closePrinterEditor}
+            class="px-6 py-2.5 text-slate-400 hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button 
+            type="submit"
+            disabled={!printerName.trim()}
+            class="bg-green-500 hover:bg-green-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-medium px-6 py-2.5 rounded-lg transition-colors"
+          >
+            {editingPrinter ? 'Save Changes' : 'Add Printer'}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
 
 <style>
   label {

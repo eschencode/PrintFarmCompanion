@@ -7,7 +7,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   
   if (!database) {
     console.log('⚠️ Database not available.');
-    return { printers: [], spools: [], printModules: [], activePrintJobs: [], printJobs: [], spoolPresets: [] };
+    return { printers: [], spools: [], printModules: [], activePrintJobs: [], printJobs: [], spoolPresets: [], gridPresets: [] };
   }
 
   const printers = await db.getAllPrinters(database);
@@ -16,8 +16,9 @@ export const load: PageServerLoad = async ({ platform }) => {
   const activePrintJobs = await db.getActivePrintJobs(database);
   const printJobs = await db.getAllPrintJobs(database);
   const spoolPresets = await db.getAllSpoolPresets(database);
+  const gridPresets = await db.getAllGridPresets(database);
 
-  return { printers, spools, printModules, activePrintJobs, printJobs, spoolPresets };
+  return { printers, spools, printModules, activePrintJobs, printJobs, spoolPresets, gridPresets };
 };
 
 export const actions: Actions = {

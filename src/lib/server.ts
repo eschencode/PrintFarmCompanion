@@ -11,7 +11,10 @@ import type {
   NewSpoolPreset,
   LoadSpoolResponse,
   StartPrintResponse,
-  ServerResponse
+  ServerResponse,
+  GridPreset,
+  NewGridPreset,
+  GridCell
 } from './types';
 
 // Printers
@@ -34,6 +37,89 @@ export async function updatePrinterStatus(db: D1Database, id: number | null, sta
   } else {
     await db.prepare('UPDATE printers SET status = ? WHERE id = ?')
       .bind(status, id).run();
+  }
+}
+
+// Create a new printer
+export async function createPrinter(db: D1Database, printer: {
+  name: string;
+  model?: string | null;
+}): Promise<ServerResponse> {
+  try {
+    const result = await db.prepare(`
+      INSERT INTO printers (name, model, status, total_hours)
+      VALUES (?, ?, 'IDLE', 0)
+    `).bind(
+      printer.name,
+      printer.model ?? null
+    ).run();
+    
+    return { 
+      success: true, 
+      message: 'Printer created successfully',
+      data: { id: result.meta.last_row_id }
+    };
+  } catch (error) {
+    console.error('Error creating printer:', error);
+    return { success: false, error: 'Failed to create printer' };
+  }
+}
+
+// Update a printer
+export async function updatePrinter(db: D1Database, id: number, printer: {
+  name?: string;
+  model?: string | null;
+}): Promise<ServerResponse> {
+  try {
+    const updates: string[] = [];
+    const values: any[] = [];
+    
+    if (printer.name !== undefined) {
+      updates.push('name = ?');
+      values.push(printer.name);
+    }
+    
+    if (printer.model !== undefined) {
+      updates.push('model = ?');
+      values.push(printer.model);
+    }
+    
+    if (updates.length === 0) {
+      return { success: false, error: 'No updates provided' };
+    }
+    
+    values.push(id);
+    
+    await db.prepare(`UPDATE printers SET ${updates.join(', ')} WHERE id = ?`)
+      .bind(...values).run();
+    
+    return { success: true, message: 'Printer updated successfully' };
+  } catch (error) {
+    console.error('Error updating printer:', error);
+    return { success: false, error: 'Failed to update printer' };
+  }
+}
+
+// Delete a printer
+export async function deletePrinter(db: D1Database, id: number): Promise<ServerResponse> {
+  try {
+    // Check if printer has active print jobs
+    const activeJobs = await db.prepare(`
+      SELECT COUNT(*) as count FROM print_jobs 
+      WHERE printer_id = ? AND status = 'printing'
+    `).bind(id).first() as { count: number };
+    
+    if (activeJobs && activeJobs.count > 0) {
+      return { success: false, error: 'Cannot delete printer with active print jobs' };
+    }
+    
+    // Delete the printer
+    await db.prepare('DELETE FROM printers WHERE id = ?').bind(id).run();
+    
+    return { success: true, message: 'Printer deleted successfully' };
+  } catch (error) {
+    console.error('Error deleting printer:', error);
+    return { success: false, error: 'Failed to delete printer' };
   }
 }
 
@@ -442,5 +528,140 @@ export async function updatePrinterHours(db: D1Database, printerId: number | nul
   
   await db.prepare('UPDATE printers SET total_hours = total_hours + ? WHERE id = ?')
     .bind(hoursToAdd, printerId).run();
+}
+
+// Grid Presets
+export async function getAllGridPresets(db: D1Database): Promise<GridPreset[]> {
+  const result = await db.prepare('SELECT * FROM grid_presets ORDER BY is_default DESC, created_at DESC').all();
+  return (result.results || []) as unknown as GridPreset[];
+}
+
+export async function getDefaultGridPreset(db: D1Database): Promise<GridPreset | null> {
+  const result = await db.prepare('SELECT * FROM grid_presets WHERE is_default = 1 LIMIT 1').first();
+  return result as GridPreset | null;
+}
+
+export async function getGridPresetById(db: D1Database, id: number): Promise<GridPreset | null> {
+  const result = await db.prepare('SELECT * FROM grid_presets WHERE id = ?').bind(id).first();
+  return result as GridPreset | null;
+}
+
+export async function createGridPreset(db: D1Database, preset: NewGridPreset): Promise<ServerResponse> {
+  try {
+    const gridConfigJson = JSON.stringify(preset.grid_config);
+    
+    // If this is being set as default, unset other defaults first
+    if (preset.is_default) {
+      await db.prepare('UPDATE grid_presets SET is_default = 0').run();
+    }
+    
+    const result = await db.prepare(`
+      INSERT INTO grid_presets (name, is_default, grid_config, rows, cols)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(
+      preset.name,
+      preset.is_default ? 1 : 0,
+      gridConfigJson,
+      preset.rows,
+      preset.cols
+    ).run();
+    
+    return { 
+      success: true, 
+      message: 'Grid preset created successfully',
+      data: { id: result.meta.last_row_id }
+    };
+  } catch (error) {
+    console.error('Error creating grid preset:', error);
+    return { success: false, error: 'Failed to create grid preset' };
+  }
+}
+
+export async function updateGridPreset(db: D1Database, id: number, preset: Partial<NewGridPreset>): Promise<ServerResponse> {
+  try {
+    // If this is being set as default, unset other defaults first
+    if (preset.is_default) {
+      await db.prepare('UPDATE grid_presets SET is_default = 0').run();
+    }
+    
+    const updates: string[] = [];
+    const values: any[] = [];
+    
+    if (preset.name !== undefined) {
+      updates.push('name = ?');
+      values.push(preset.name);
+    }
+    
+    if (preset.is_default !== undefined) {
+      updates.push('is_default = ?');
+      values.push(preset.is_default ? 1 : 0);
+    }
+    
+    if (preset.grid_config !== undefined) {
+      updates.push('grid_config = ?');
+      values.push(JSON.stringify(preset.grid_config));
+    }
+    
+    if (preset.rows !== undefined) {
+      updates.push('rows = ?');
+      values.push(preset.rows);
+    }
+    
+    if (preset.cols !== undefined) {
+      updates.push('cols = ?');
+      values.push(preset.cols);
+    }
+    
+    if (updates.length === 0) {
+      return { success: false, error: 'No updates provided' };
+    }
+    
+    values.push(id);
+    
+    await db.prepare(`UPDATE grid_presets SET ${updates.join(', ')} WHERE id = ?`)
+      .bind(...values).run();
+    
+    return { success: true, message: 'Grid preset updated successfully' };
+  } catch (error) {
+    console.error('Error updating grid preset:', error);
+    return { success: false, error: 'Failed to update grid preset' };
+  }
+}
+
+export async function setDefaultGridPreset(db: D1Database, id: number): Promise<ServerResponse> {
+  try {
+    // Unset all defaults
+    await db.prepare('UPDATE grid_presets SET is_default = 0').run();
+    
+    // Set the new default
+    await db.prepare('UPDATE grid_presets SET is_default = 1 WHERE id = ?').bind(id).run();
+    
+    return { success: true, message: 'Default grid preset updated' };
+  } catch (error) {
+    console.error('Error setting default grid preset:', error);
+    return { success: false, error: 'Failed to set default grid preset' };
+  }
+}
+
+export async function deleteGridPreset(db: D1Database, id: number): Promise<ServerResponse> {
+  try {
+    // Check if this is the default - if so, don't allow deletion unless it's the only one
+    const preset = await getGridPresetById(db, id);
+    if (!preset) {
+      return { success: false, error: 'Grid preset not found' };
+    }
+    
+    const allPresets = await getAllGridPresets(db);
+    if (preset.is_default && allPresets.length > 1) {
+      return { success: false, error: 'Cannot delete the default preset. Set another preset as default first.' };
+    }
+    
+    await db.prepare('DELETE FROM grid_presets WHERE id = ?').bind(id).run();
+    
+    return { success: true, message: 'Grid preset deleted successfully' };
+  } catch (error) {
+    console.error('Error deleting grid preset:', error);
+    return { success: false, error: 'Failed to delete grid preset' };
+  }
 }
 

@@ -1,3 +1,8 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+
+/* Disable browser back/forward gesture on horizontal overscroll (Mac trackpad) */
+html, body {
+  overscroll-behavior-x: none;
+}

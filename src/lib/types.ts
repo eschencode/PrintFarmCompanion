@@ -208,6 +208,46 @@ export interface NewSpoolPreset {
 }
 
 /**
+ * New Printer - For creating printers
+ */
+export interface NewPrinter {
+  name: string;
+  model?: string | null;
+}
+
+/**
+ * Grid Cell - Represents a single cell in the 3x3 grid
+ */
+export interface GridCell {
+  type: 'printer' | 'stats' | 'settings' | 'spools' | 'empty';
+  printerId?: number;
+}
+
+/**
+ * Grid Preset - Represents a saved grid configuration with configurable dimensions
+ */
+export interface GridPreset {
+  id: number;
+  name: string;
+  is_default: number; // 0 or 1
+  grid_config: string; // JSON stringified GridCell[]
+  rows: number;
+  cols: number;
+  created_at: number;
+}
+
+/**
+ * New Grid Preset - For creating grid presets
+ */
+export interface NewGridPreset {
+  name: string;
+  is_default?: boolean;
+  grid_config: GridCell[];
+  rows: number;
+  cols: number;
+}
+
+/**
  * Enum-like types for better type safety
  */
 export type PrinterStatus = 'WAITING' | 'IDLE' | 'PRINTING' | 'ERROR' | 'MAINTENANCE';
