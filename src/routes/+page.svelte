@@ -2,6 +2,7 @@
   import type { PageData } from './$types';
   import type { GridCell } from '$lib/types';
   import p1sImage from '$lib/assets/p1s.png';
+  import h2sImgae from '$lib/assets/H2S.png';
   import { enhance } from '$app/forms';
   import { onMount } from 'svelte';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
@@ -64,10 +65,13 @@
   }
 
   function getPrinterImage(model: any) {
-    if (!model) return p1sImage;
-    const modelLower = model.toLowerCase();
-    if (modelLower.includes('p1s'))
-      return p1sImage;
+    if (!model){
+		const modelLower = model.toLowerCase();
+		if(modelLower.includes('h2s'))
+			return h2sImgae;
+		if (modelLower.includes('p1s'))
+      		return p1sImage;
+	}
     return p1sImage;
   }
 
