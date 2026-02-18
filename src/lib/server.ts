@@ -16,6 +16,7 @@ import type {
   NewGridPreset,
   GridCell
 } from './types';
+import { addStockBySlug } from './inventory_handler';
 
 // Printers
 export async function getAllPrinters(db: D1Database) {
@@ -374,26 +375,21 @@ export async function completePrintJob(
   actualWeight: number,
   failureReason: string | null = null
 ): Promise<void> {
-  const status = success ? 'success' : 'failed'; // ✅ Convert boolean to status string
+  const status = success ? 'success' : 'failed';
 
-
-   
   const job = await getPrintJobById(db, jobId);
   
   if (!job) {
     throw new Error('Print job not found');
   }
   
-  
   let endTime: number;
   
   if (job.status == 'failed' && job.expected_time > (job.start_time - actualEndTime)) {
     endTime = actualEndTime;
-    
   } else {
-    const expectedDurationMs = (job.expected_time || 0) * 60 * 1000; // Convert minutes to ms
+    const expectedDurationMs = (job.expected_time || 0) * 60 * 1000;
     endTime = job.start_time + expectedDurationMs;
-    
   }
 
   await db
@@ -407,6 +403,21 @@ export async function completePrintJob(
     `)
     .bind(endTime, status, actualWeight, failureReason, jobId)
     .run();
+
+  // ✅ Auto-add to inventory if print succeeded and module has inventory_slug
+  if (success && job.module_id) {
+    const module = await getPrintModuleById(db, job.module_id) as PrintModule | null;
+    
+    if (module?.inventory_slug) {
+      const quantity = module.objects_per_print || 1;
+      await addStockBySlug(
+        db, 
+        module.inventory_slug, 
+        quantity, 
+        `Print job #${jobId} completed - ${module.name}`
+      );
+    }
+  }
 }
 
 // Spool Presets

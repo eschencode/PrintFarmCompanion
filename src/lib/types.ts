@@ -34,6 +34,7 @@ export interface PrintModule {
   expected_time: number | null;
   objects_per_print: number;
   default_spool_preset_id: number | null;
+  inventory_slug: string | null;  // Text reference to inventory item
   path: string;
   image_path: string | null;
 }
@@ -284,4 +285,36 @@ export interface StartPrintResponse extends ServerResponse {
  */
 export function getPrintJobStatus(job: PrintJob): 'printing' | 'success' | 'failed' {
   return job.status;
+}
+
+
+// Inventory types
+export interface InventoryItem {
+  id: number;
+  name: string;
+  slug: string;  // Unique text identifier
+  sku: string | null;
+  description: string | null;
+  image_path: string | null;
+  stock_count: number;
+  min_threshold: number;
+  total_added: number;
+  total_sold: number;
+  total_sold_b2c: number;
+  total_sold_b2b: number;
+  total_removed_manually: number;
+  last_count_date: number | null;
+  last_count_expected: number | null;
+  last_count_actual: number | null;
+}
+
+export type InventoryChangeType = 'add' | 'remove' | 'sold_b2c' | 'sold_b2b' | 'defect' | 'count_adjust';
+
+export interface InventoryLog {
+  id: number;
+  inventory_id: number;
+  change_type: InventoryChangeType;
+  quantity: number;
+  reason: string | null;
+  created_at: number;
 }
