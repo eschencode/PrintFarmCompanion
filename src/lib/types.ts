@@ -221,7 +221,7 @@ export interface NewPrinter {
  * Grid Cell - Represents a single cell in the 3x3 grid
  */
 export interface GridCell {
-  type: 'printer' | 'stats' | 'settings' | 'spools' | 'storage' | 'empty';
+  type: 'printer' | 'stats' | 'settings' | 'spools' | 'storage' | 'empty' | 'inventory';
   printerId?: number;
 }
 

@@ -700,6 +700,22 @@
           <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">{data.spools.length} spools</p>
         </a>
 
+      {:else if cell.type === 'inventory'}
+        <!-- Inventory Card -->
+        <a
+          href="/inventory"
+          class="group bg-slate-900/50 border border-slate-800 
+                 rounded-xl p-2 hover:border-green-900/50 hover:bg-slate-900/80
+                 transition-all duration-300 hover:scale-[1.02]
+                 flex flex-col items-center justify-center overflow-hidden"
+        >
+          <div class="text-[clamp(1.5rem,4vw,3rem)] opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
+            🛒
+          </div>
+          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white mt-1">Inventory</h3>
+          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">Products</p>
+        </a>
+
       {:else}
         <!-- Empty/Unknown Slot -->
         <div class="bg-slate-950/30 border border-slate-900/50 border-dashed

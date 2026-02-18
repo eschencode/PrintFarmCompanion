@@ -15,6 +15,10 @@
   let testingConnection = false;
   let connectionStatus: 'untested' | 'success' | 'failed' = 'untested';
   
+  // Shopify sync state
+  let syncingShopify = false;
+  let shopifySyncResult: { success: boolean; ordersProcessed?: number; itemsDeducted?: number; skippedOrders?: number; error?: string; errors?: string[] } | null = null;
+  
   // ✅ Image selection
   let selectedImagePath = '';
   let imagePreviewUrl = '';
@@ -379,6 +383,8 @@
                         🎨
                       {:else if cell.type === 'storage'}
                         📦
+					  {:else if cell.type === 'inventory'}
+                        🛒
                       {:else}
                         ∅
                       {/if}
@@ -508,6 +514,133 @@
               Add Printer
             </button>
           </div>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Shopify Integration Section - Full Width -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
+      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+        <div>
+          <h2 class="text-xl font-medium flex items-center gap-2">
+            <span class="text-2xl">🛒</span>
+            Shopify Integration
+          </h2>
+          <p class="text-sm text-slate-500 mt-1">Sync orders to auto-deduct inventory</p>
+        </div>
+        {#if data.shopifyConfigured}
+          <form method="POST" action="?/syncShopify" use:enhance={() => {
+            syncingShopify = true;
+            return async ({ result, update }) => {
+              syncingShopify = false;
+              if (result.type === 'success' && result.data) {
+                shopifySyncResult = result.data as typeof shopifySyncResult;
+              } else {
+                shopifySyncResult = null;
+              }
+              await update();
+            };
+          }}>
+            <button 
+              type="submit"
+              disabled={syncingShopify}
+              class="bg-green-600 hover:bg-green-700 disabled:bg-slate-700 text-white font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+            >
+              {#if syncingShopify}
+                <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Syncing...
+              {:else}
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Sync Now
+              {/if}
+            </button>
+          </form>
+        {/if}
+      </div>
+      
+      <div class="p-6">
+        {#if !data.shopifyConfigured}
+          <div class="text-center py-8">
+            <div class="text-4xl mb-4">⚠️</div>
+            <p class="text-slate-400 mb-2">Shopify not configured</p>
+            <p class="text-sm text-slate-500 mb-4">
+              Set <code class="bg-slate-800 px-2 py-0.5 rounded">SHOPIFY_STORE_DOMAIN</code> and 
+              <code class="bg-slate-800 px-2 py-0.5 rounded">SHOPIFY_ACCESS_TOKEN</code> in your environment
+            </p>
+            <a href="https://admin.shopify.com/store/dilemma-studio/settings/apps/development" 
+               target="_blank" 
+               class="text-blue-400 hover:text-blue-300 text-sm">
+              Create API credentials in Shopify Admin →
+            </a>
+          </div>
+        {:else}
+          {#if shopifySyncResult}
+            <div class="mb-4 p-4 rounded-lg {shopifySyncResult.success ? 'bg-green-900/30 border border-green-800' : 'bg-red-900/30 border border-red-800'}">
+              {#if shopifySyncResult.success}
+                <p class="text-green-400 font-medium">Sync Complete</p>
+                <p class="text-sm text-slate-400">
+                  {shopifySyncResult.ordersProcessed} orders processed, 
+                  {shopifySyncResult.itemsDeducted} items deducted
+                  {#if (shopifySyncResult.skippedOrders ?? 0) > 0}
+                    ({shopifySyncResult.skippedOrders} skipped)
+                  {/if}
+                </p>
+              {:else}
+                <p class="text-red-400 font-medium">Sync Failed</p>
+                <p class="text-sm text-slate-400">{shopifySyncResult.error}</p>
+              {/if}
+              {#if shopifySyncResult.errors?.length}
+                <div class="mt-2 text-sm text-amber-400">
+                  {#each shopifySyncResult.errors as error}
+                    <p>• {error}</p>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+              <p class="text-sm text-slate-500">Last Sync</p>
+              <p class="text-lg font-medium">
+                {#if data.shopifySyncState?.last_sync_at}
+                  {new Date(data.shopifySyncState.last_sync_at).toLocaleString()}
+                {:else}
+                  Never
+                {/if}
+              </p>
+            </div>
+            <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+              <p class="text-sm text-slate-500">Orders Processed</p>
+              <p class="text-lg font-medium">{data.shopifySyncState?.orders_processed ?? 0}</p>
+            </div>
+            <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+              <p class="text-sm text-slate-500">Items Deducted</p>
+              <p class="text-lg font-medium">{data.shopifySyncState?.items_deducted ?? 0}</p>
+            </div>
+          </div>
+          
+          {#if data.shopifyRecentOrders?.length > 0}
+            <h3 class="text-sm font-medium text-slate-400 mb-3">Recent Orders</h3>
+            <div class="space-y-2">
+              {#each data.shopifyRecentOrders as order}
+                <div class="flex justify-between items-center bg-slate-800/30 border border-slate-700 rounded-lg px-4 py-2">
+                  <span class="text-slate-200">#{order.shopify_order_number}</span>
+                  <span class="text-sm text-slate-400">{order.total_items} items</span>
+                  <span class="text-xs text-slate-500">
+                    {new Date(order.processed_at).toLocaleString()}
+                  </span>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <p class="text-center text-slate-500 py-4">No orders synced yet</p>
+          {/if}
         {/if}
       </div>
     </div>
@@ -1009,6 +1142,7 @@
                     <option value="settings">Settings</option>
                     <option value="storage">Storage</option>
                     <option value="spools">Materials</option>
+                    <option value="inventory">Inventory</option>
                   </select>
 
                   <!-- Printer Selector (if printer type) -->
@@ -1042,6 +1176,8 @@
                       <span class="text-lg">📦</span>
                     {:else if cell.type === 'spools'}
                       <span class="text-lg">🎨</span>
+					{:else if cell.type === 'inventory'}
+                      <span class="text-lg">🛒</span>
                     {:else}
                       <span class="text-slate-600 text-xs">Empty</span>
                     {/if}

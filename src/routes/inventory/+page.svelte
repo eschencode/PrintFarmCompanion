@@ -56,9 +56,10 @@
     if (name.includes('vase fluid') || slug.includes('vase-fluid')) {
       return { category: 'Vase', subcategory: 'Fluid', color };
     }
-    if (name.includes('vase shrunk') || slug.includes('vase-shrunk')) {
-      return { category: 'Vase', subcategory: 'Shrunk', color };
-    }
+    // Commented out - not needed yet
+    // if (name.includes('vase shrunk') || slug.includes('vase-shrunk')) {
+    //   return { category: 'Vase', subcategory: 'Shrunk', color };
+    // }
     
     // Klorolle products
     if (name.includes('klohalter') || slug.includes('klohalter')) {
@@ -99,6 +100,13 @@
   const groupedInventory = $derived(() => {
     let items = data.items || [];
     
+    // Filter out Vase Shrunk items for now
+    items = items.filter(item => {
+      const name = item.name.toLowerCase();
+      const slug = item.slug?.toLowerCase() || '';
+      return !(name.includes('vase shrunk') || slug.includes('vase-shrunk'));
+    });
+    
     // Apply filters
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -130,8 +138,9 @@
       }
       
       const groupedItem = { item, color };
-      const isLowStock = item.stock_count < item.min_threshold;
       const isOutOfStock = item.stock_count === 0;
+      // Low stock = below threshold BUT not out of stock
+      const isLowStock = item.stock_count > 0 && item.stock_count < item.min_threshold;
       
       groups[category].totalStock += item.stock_count;
       if (isLowStock) groups[category].lowStockCount++;
@@ -158,11 +167,20 @@
     return groups;
   });
 
-  // Summary stats
-  const totalItems = $derived((data.items || []).length);
-  const totalStock = $derived((data.items || []).reduce((sum, i) => sum + i.stock_count, 0));
-  const lowStockCount = $derived((data.items || []).filter(i => i.stock_count < i.min_threshold).length);
-  const outOfStockCount = $derived((data.items || []).filter(i => i.stock_count === 0).length);
+  // Summary stats - also exclude Vase Shrunk and fix low stock logic
+  const filteredItems = $derived(() => {
+    return (data.items || []).filter(item => {
+      const name = item.name.toLowerCase();
+      const slug = item.slug?.toLowerCase() || '';
+      return !(name.includes('vase shrunk') || slug.includes('vase-shrunk'));
+    });
+  });
+  
+  const totalItems = $derived(filteredItems().length);
+  const totalStock = $derived(filteredItems().reduce((sum, i) => sum + i.stock_count, 0));
+  // Low stock = below threshold but NOT zero
+  const lowStockCount = $derived(filteredItems().filter(i => i.stock_count > 0 && i.stock_count < i.min_threshold).length);
+  const outOfStockCount = $derived(filteredItems().filter(i => i.stock_count === 0).length);
 
   // Toggle functions
   function toggleCategory(categoryName: string) {
@@ -210,16 +228,6 @@
     }
   }
 
-  // Category emoji
-  function getCategoryEmoji(category: string): string {
-    switch (category.toLowerCase()) {
-      case 'haken': return '🪝';
-      case 'vase': return '🏺';
-      case 'klorolle': return '🧻';
-      default: return '📦';
-    }
-  }
-
   // Format timestamp
   function formatTime(timestamp: number): string {
     const date = new Date(timestamp);
@@ -260,7 +268,7 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h1 class="text-2xl font-bold text-slate-100">📦 Inventory</h1>
+        <h1 class="text-2xl font-bold text-slate-100">Inventory</h1>
         <p class="text-slate-400 text-sm mt-1">Finished goods ready for sale</p>
       </div>
       <a href="/" class="text-slate-400 hover:text-slate-300 text-sm">← Dashboard</a>
@@ -338,8 +346,15 @@
                     class="w-full px-4 py-3 flex items-center justify-between bg-slate-800/20 hover:bg-slate-800/40 transition-colors"
                   >
                     <div class="flex items-center gap-3">
-                      <div class="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-xl">
-                        {getCategoryEmoji(categoryName)}
+                      <div class="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                        <svg 
+                          class="w-5 h-5 text-blue-400 transition-transform duration-200 {isCategoryExpanded ? 'rotate-90' : ''}" 
+                          fill="none" 
+                          stroke="currentColor" 
+                          viewBox="0 0 24 24"
+                        >
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                        </svg>
                       </div>
                       <div class="text-left">
                         <h3 class="text-base font-semibold text-white">{categoryName}</h3>
@@ -364,16 +379,6 @@
                       <span class="text-lg font-bold text-emerald-400 min-w-16 text-right">
                         {categoryData.totalStock}
                       </span>
-                      
-                      <!-- Chevron -->
-                      <svg 
-                        class="w-5 h-5 text-slate-500 transition-transform duration-200 {isCategoryExpanded ? 'rotate-90' : ''}" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                      </svg>
                     </div>
                   </button>
 
@@ -411,6 +416,9 @@
                               <div class="flex items-center gap-3">
                                 {#if subcategoryData.outOfStockCount > 0}
                                   <span class="text-xs text-red-400">{subcategoryData.outOfStockCount} out</span>
+                                {/if}
+                                {#if subcategoryData.lowStockCount > 0}
+                                  <span class="text-xs text-amber-400">{subcategoryData.lowStockCount} low</span>
                                 {/if}
                                 <span class="text-base font-bold text-emerald-400">{subcategoryData.totalStock}</span>
                               </div>
@@ -549,7 +557,7 @@
               <p>No activity yet</p>
             </div>
           {:else}
-            <div class="divide-y divide-slate-800/30 max-h-150 overflow-y-auto">
+            <div class="divide-y divide-slate-800/30 max-h-[600px] overflow-y-auto">
               {#each data.logs as log}
                 {@const changeType = getChangeTypeLabel(log.change_type)}
                 <div class="px-4 py-2.5 hover:bg-slate-800/20">

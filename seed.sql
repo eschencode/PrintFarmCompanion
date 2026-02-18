@@ -139,202 +139,225 @@ INSERT INTO spools (preset_id, brand, material, color, initial_weight, remaining
   (1, 'Bambu lap', 'PLA', 'Blau', 1000, 410, 10.99),
   (5, '3dJake', 'PLA', 'Transparent', 1000, 650, 20.00);
 
--- ✅ MASSIVE TEST DATA SET (Last 90 days with ~150 prints including failures)
+-- ============================================
+-- SHOPIFY INTEGRATION SEED DATA
+-- ============================================
 
--- Last 7 days (35 prints, high activity)
-INSERT INTO print_jobs (name, module_id, printer_id, spool_id, start_time, end_time, status, planned_weight, actual_weight, failure_reason, waste_weight) VALUES
-  -- Day -1 (8 prints, 1 failure)
-  ('Kleben Haken Blau', 1, 1, 1, strftime('%s', 'now', '-1 day') * 1000, strftime('%s', 'now', '-1 day', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('Kleben Haken Pink', 10, 2, 2, strftime('%s', 'now', '-1 day') * 1000, strftime('%s', 'now', '-1 day', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4),
-  ('klohalter', 24, 3, 6, strftime('%s', 'now', '-1 day') * 1000, strftime('%s', 'now', '-1 day', '+561 minutes') * 1000, 'success', 323, 323, NULL, 8),
-  ('Schrauben Haken Blau', 2, 4, 1, strftime('%s', 'now', '-1 day') * 1000, strftime('%s', 'now', '-1 day', '+321 minutes') * 1000, 'success', 181, 181, NULL, 6),
-  ('vase', 3, 5, 1, strftime('%s', 'now', '-1 day') * 1000, strftime('%s', 'now', '-1 day', '+145 minutes') * 1000, 'failed', 752, 156, 'Spaghetti detected', 0),
-  ('stöpsel', 31, 6, 5, strftime('%s', 'now', '-1 day') * 1000, strftime('%s', 'now', '-1 day', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  ('kleben Halter Oben', 16, 7, 8, strftime('%s', 'now', '-1 day') * 1000, strftime('%s', 'now', '-1 day', '+51 minutes') * 1000, 'success', 22, 22, NULL, 2),
-  ('Kleben Haken green', 23, 1, 6, strftime('%s', 'now', '-1 day', '+6 hours') * 1000, strftime('%s', 'now', '-1 day', '+6 hours', '+256 minutes') * 1000, 'success', 190, 190, NULL, 5),
-  
-  -- Day -2 (7 prints, 2 failures)
-  ('Schrauben Haken rosa', 20, 2, 5, strftime('%s', 'now', '-2 days') * 1000, strftime('%s', 'now', '-2 days', '+331 minutes') * 1000, 'success', 192, 192, NULL, 7),
-  ('stab', 28, 3, 7, strftime('%s', 'now', '-2 days') * 1000, strftime('%s', 'now', '-2 days', '+600 minutes') * 1000, 'success', 387, 387, NULL, 12),
-  ('Kleben Haken Blau', 1, 4, 1, strftime('%s', 'now', '-2 days') * 1000, strftime('%s', 'now', '-2 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('vase', 6, 5, 7, strftime('%s', 'now', '-2 days') * 1000, strftime('%s', 'now', '-2 days', '+380 minutes') * 1000, 'failed', 801, 289, 'First layer adhesion', 0),
-  ('klohalter', 26, 6, 7, strftime('%s', 'now', '-2 days') * 1000, strftime('%s', 'now', '-2 days', '+510 minutes') * 1000, 'success', 303, 303, NULL, 9),
-  ('Kleben Haken Orange', 12, 7, 3, strftime('%s', 'now', '-2 days') * 1000, strftime('%s', 'now', '-2 days', '+190 minutes') * 1000, 'failed', 179, 134, 'Nozzle clog', 0),
-  ('schrauben Halter unten', 15, 1, 8, strftime('%s', 'now', '-2 days', '+8 hours') * 1000, strftime('%s', 'now', '-2 days', '+8 hours', '+60 minutes') * 1000, 'success', 18, 18, NULL, 2),
-  
-  -- Day -3 (6 prints)
-  ('Kleben Haken Blau', 1, 2, 1, strftime('%s', 'now', '-3 days') * 1000, strftime('%s', 'now', '-3 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('kleben Haken lila', 19, 3, 4, strftime('%s', 'now', '-3 days') * 1000, strftime('%s', 'now', '-3 days', '+259 minutes') * 1000, 'success', 193, 193, NULL, 6),
-  ('stöpsel', 32, 4, 3, strftime('%s', 'now', '-3 days') * 1000, strftime('%s', 'now', '-3 days', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  ('Kleben Haken Pink', 10, 5, 2, strftime('%s', 'now', '-3 days') * 1000, strftime('%s', 'now', '-3 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4),
-  ('Schrauben Haken green', 22, 6, 6, strftime('%s', 'now', '-3 days') * 1000, strftime('%s', 'now', '-3 days', '+317 minutes') * 1000, 'success', 192, 192, NULL, 7),
-  ('klohalter', 24, 7, 6, strftime('%s', 'now', '-3 days') * 1000, strftime('%s', 'now', '-3 days', '+561 minutes') * 1000, 'success', 323, 323, NULL, 8),
-  
-  -- Day -4 (5 prints, 1 failure)
-  ('kleben Haken rosa', 21, 1, 5, strftime('%s', 'now', '-4 days') * 1000, strftime('%s', 'now', '-4 days', '+259 minutes') * 1000, 'success', 193, 193, NULL, 6),
-  ('Kleben Haken Blau', 1, 2, 1, strftime('%s', 'now', '-4 days') * 1000, strftime('%s', 'now', '-4 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('stab', 29, 3, 5, strftime('%s', 'now', '-4 days') * 1000, strftime('%s', 'now', '-4 days', '+600 minutes') * 1000, 'success', 387, 387, NULL, 12),
-  ('vase', 8, 4, 5, strftime('%s', 'now', '-4 days') * 1000, strftime('%s', 'now', '-4 days', '+420 minutes') * 1000, 'failed', 801, 312, 'Power outage', 0),
-  ('schrauben Haken Pink', 11, 5, 2, strftime('%s', 'now', '-4 days') * 1000, strftime('%s', 'now', '-4 days', '+303 minutes') * 1000, 'success', 181, 181, NULL, 6),
-  
-  -- Day -5 (5 prints)
-  ('Kleben Haken Blau', 1, 6, 1, strftime('%s', 'now', '-5 days') * 1000, strftime('%s', 'now', '-5 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('klohalter', 27, 7, 2, strftime('%s', 'now', '-5 days') * 1000, strftime('%s', 'now', '-5 days', '+660 minutes') * 1000, 'success', 302, 302, NULL, 9),
-  ('Schrauben Haken lila', 18, 1, 4, strftime('%s', 'now', '-5 days') * 1000, strftime('%s', 'now', '-5 days', '+317 minutes') * 1000, 'success', 192, 192, NULL, 7),
-  ('stöpsel', 33, 2, 7, strftime('%s', 'now', '-5 days') * 1000, strftime('%s', 'now', '-5 days', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  ('Kleben Haken green', 23, 3, 6, strftime('%s', 'now', '-5 days') * 1000, strftime('%s', 'now', '-5 days', '+256 minutes') * 1000, 'success', 190, 190, NULL, 5),
-  
-  -- Day -6 (4 prints)
-  ('Kleben Haken Orange', 12, 4, 3, strftime('%s', 'now', '-6 days') * 1000, strftime('%s', 'now', '-6 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('kleben Halter unten', 17, 5, 8, strftime('%s', 'now', '-6 days') * 1000, strftime('%s', 'now', '-6 days', '+51 minutes') * 1000, 'success', 22, 22, NULL, 2),
-  ('Kleben Haken Blau', 1, 6, 1, strftime('%s', 'now', '-6 days') * 1000, strftime('%s', 'now', '-6 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('Kleben Haken Pink', 10, 7, 2, strftime('%s', 'now', '-6 days') * 1000, strftime('%s', 'now', '-6 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4);
+-- Initialize sync state
+INSERT INTO shopify_sync (last_order_id, last_sync_at, orders_processed, items_deducted) 
+VALUES (NULL, NULL, 0, 0);
 
--- Week 2 (days 8-14) - 28 prints
-INSERT INTO print_jobs (name, module_id, printer_id, spool_id, start_time, end_time, status, planned_weight, actual_weight, failure_reason, waste_weight) VALUES
-  ('Kleben Haken Blau', 1, 1, 1, strftime('%s', 'now', '-8 days') * 1000, strftime('%s', 'now', '-8 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('Kleben Haken Pink', 10, 2, 2, strftime('%s', 'now', '-8 days') * 1000, strftime('%s', 'now', '-8 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4),
-  ('klohalter', 24, 3, 6, strftime('%s', 'now', '-8 days') * 1000, strftime('%s', 'now', '-8 days', '+561 minutes') * 1000, 'success', 323, 323, NULL, 8),
-  ('vase', 3, 4, 1, strftime('%s', 'now', '-8 days') * 1000, strftime('%s', 'now', '-8 days', '+1146 minutes') * 1000, 'success', 752, 752, NULL, 20),
-  
-  ('Schrauben Haken rosa', 20, 5, 5, strftime('%s', 'now', '-9 days') * 1000, strftime('%s', 'now', '-9 days', '+331 minutes') * 1000, 'success', 192, 192, NULL, 7),
-  ('stab', 28, 6, 7, strftime('%s', 'now', '-9 days') * 1000, strftime('%s', 'now', '-9 days', '+600 minutes') * 1000, 'success', 387, 387, NULL, 12),
-  ('Kleben Haken Blau', 1, 7, 1, strftime('%s', 'now', '-9 days') * 1000, strftime('%s', 'now', '-9 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('stöpsel', 31, 1, 5, strftime('%s', 'now', '-9 days') * 1000, strftime('%s', 'now', '-9 days', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  
-  ('klohalter', 26, 2, 7, strftime('%s', 'now', '-10 days') * 1000, strftime('%s', 'now', '-10 days', '+510 minutes') * 1000, 'success', 303, 303, NULL, 9),
-  ('Kleben Haken Orange', 12, 3, 3, strftime('%s', 'now', '-10 days') * 1000, strftime('%s', 'now', '-10 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('kleben Haken lila', 19, 4, 4, strftime('%s', 'now', '-10 days') * 1000, strftime('%s', 'now', '-10 days', '+259 minutes') * 1000, 'success', 193, 193, NULL, 6),
-  ('Schrauben Haken green', 22, 5, 6, strftime('%s', 'now', '-10 days') * 1000, strftime('%s', 'now', '-10 days', '+120 minutes') * 1000, 'failed', 192, 89, 'Warping', 0),
-  
-  ('Kleben Haken Blau', 1, 6, 1, strftime('%s', 'now', '-11 days') * 1000, strftime('%s', 'now', '-11 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('kleben Haken rosa', 21, 7, 5, strftime('%s', 'now', '-11 days') * 1000, strftime('%s', 'now', '-11 days', '+259 minutes') * 1000, 'success', 193, 193, NULL, 6),
-  ('stab', 29, 1, 5, strftime('%s', 'now', '-11 days') * 1000, strftime('%s', 'now', '-11 days', '+600 minutes') * 1000, 'success', 387, 387, NULL, 12),
-  ('schrauben Haken Pink', 11, 2, 2, strftime('%s', 'now', '-11 days') * 1000, strftime('%s', 'now', '-11 days', '+303 minutes') * 1000, 'success', 181, 181, NULL, 6),
-  
-  ('klohalter', 24, 3, 6, strftime('%s', 'now', '-12 days') * 1000, strftime('%s', 'now', '-12 days', '+561 minutes') * 1000, 'success', 323, 323, NULL, 8),
-  ('Schrauben Haken lila', 18, 4, 4, strftime('%s', 'now', '-12 days') * 1000, strftime('%s', 'now', '-12 days', '+317 minutes') * 1000, 'success', 192, 192, NULL, 7),
-  ('stöpsel', 32, 5, 3, strftime('%s', 'now', '-12 days') * 1000, strftime('%s', 'now', '-12 days', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  ('Kleben Haken green', 23, 6, 6, strftime('%s', 'now', '-12 days') * 1000, strftime('%s', 'now', '-12 days', '+256 minutes') * 1000, 'success', 190, 190, NULL, 5),
-  
-  ('Kleben Haken Blau', 1, 7, 1, strftime('%s', 'now', '-13 days') * 1000, strftime('%s', 'now', '-13 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('kleben Halter Oben', 16, 1, 8, strftime('%s', 'now', '-13 days') * 1000, strftime('%s', 'now', '-13 days', '+51 minutes') * 1000, 'success', 22, 22, NULL, 2),
-  ('Kleben Haken Pink', 10, 2, 2, strftime('%s', 'now', '-13 days') * 1000, strftime('%s', 'now', '-13 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4),
-  ('vase', 7, 3, 4, strftime('%s', 'now', '-13 days') * 1000, strftime('%s', 'now', '-13 days', '+890 minutes') * 1000, 'failed', 801, 567, 'Filament tangle', 0),
-  
-  ('klohalter', 27, 4, 2, strftime('%s', 'now', '-14 days') * 1000, strftime('%s', 'now', '-14 days', '+660 minutes') * 1000, 'success', 302, 302, NULL, 9),
-  ('stab', 30, 5, 3, strftime('%s', 'now', '-14 days') * 1000, strftime('%s', 'now', '-14 days', '+600 minutes') * 1000, 'success', 387, 387, NULL, 12),
-  ('Kleben Haken Blau', 1, 6, 1, strftime('%s', 'now', '-14 days') * 1000, strftime('%s', 'now', '-14 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('Schrauben Haken Blau', 2, 7, 1, strftime('%s', 'now', '-14 days') * 1000, strftime('%s', 'now', '-14 days', '+321 minutes') * 1000, 'success', 181, 181, NULL, 6);
+-- ========== WANDHAKEN EINZELN (K1/S1 - OLD SKU FORMAT) ==========
+-- These are single hooks from older orders
+-- WH/K1 = Kleben single, WH/S1 = Schrauben single
 
--- Week 3 (days 15-21) - 28 prints
-INSERT INTO print_jobs (name, module_id, printer_id, spool_id, start_time, end_time, status, planned_weight, actual_weight, failure_reason, waste_weight) VALUES
-  ('Kleben Haken Blau', 1, 1, 1, strftime('%s', 'now', '-15 days') * 1000, strftime('%s', 'now', '-15 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('stöpsel', 33, 2, 7, strftime('%s', 'now', '-15 days') * 1000, strftime('%s', 'now', '-15 days', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  ('Kleben Haken Pink', 10, 3, 2, strftime('%s', 'now', '-15 days') * 1000, strftime('%s', 'now', '-15 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4),
-  ('klohalter', 24, 4, 6, strftime('%s', 'now', '-15 days') * 1000, strftime('%s', 'now', '-15 days', '+561 minutes') * 1000, 'success', 323, 323, NULL, 8),
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  -- Kleben einzeln (old format)
+  ('WH/K1/BL', 'haken-kleben-blau', 1),
+  ('WH/K1/PI', 'haken-kleben-pink', 1),
+  ('WH/K1/OR', 'haken-kleben-orange', 1),
+  ('WH/K1/LI', 'haken-kleben-lila', 1),
+  ('WH/K1/GR', 'haken-kleben-gruen', 1),
+  ('WH/K1/RO', 'haken-kleben-rosa', 1),
   
-  ('Kleben Haken Blau', 1, 5, 1, strftime('%s', 'now', '-16 days') * 1000, strftime('%s', 'now', '-16 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('kleben Haken green', 23, 6, 6, strftime('%s', 'now', '-16 days') * 1000, strftime('%s', 'now', '-16 days', '+256 minutes') * 1000, 'success', 190, 190, NULL, 5),
-  ('Schrauben Haken green', 22, 7, 6, strftime('%s', 'now', '-16 days') * 1000, strftime('%s', 'now', '-16 days', '+317 minutes') * 1000, 'success', 192, 192, NULL, 7),
-  ('stab', 28, 1, 7, strftime('%s', 'now', '-16 days') * 1000, strftime('%s', 'now', '-16 days', '+600 minutes') * 1000, 'success', 387, 387, NULL, 12),
-  
-  ('Kleben Haken Blau', 1, 2, 1, strftime('%s', 'now', '-17 days') * 1000, strftime('%s', 'now', '-17 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('Kleben Haken Orange', 12, 3, 3, strftime('%s', 'now', '-17 days') * 1000, strftime('%s', 'now', '-17 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('klohalter', 26, 4, 7, strftime('%s', 'now', '-17 days') * 1000, strftime('%s', 'now', '-17 days', '+510 minutes') * 1000, 'success', 303, 303, NULL, 9),
-  ('vase', 4, 5, 2, strftime('%s', 'now', '-17 days') * 1000, strftime('%s', 'now', '-17 days', '+1146 minutes') * 1000, 'success', 752, 752, NULL, 20),
-  
-  ('schrauben Halter Oben', 14, 6, 8, strftime('%s', 'now', '-18 days') * 1000, strftime('%s', 'now', '-18 days', '+58 minutes') * 1000, 'success', 16, 16, NULL, 2),
-  ('Kleben Haken Pink', 10, 7, 2, strftime('%s', 'now', '-18 days') * 1000, strftime('%s', 'now', '-18 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4),
-  ('kleben Haken lila', 19, 1, 4, strftime('%s', 'now', '-18 days') * 1000, strftime('%s', 'now', '-18 days', '+259 minutes') * 1000, 'success', 193, 193, NULL, 6),
-  ('stöpsel', 31, 2, 5, strftime('%s', 'now', '-18 days') * 1000, strftime('%s', 'now', '-18 days', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  
-  ('Kleben Haken Blau', 1, 3, 1, strftime('%s', 'now', '-19 days') * 1000, strftime('%s', 'now', '-19 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('kleben Haken rosa', 21, 4, 5, strftime('%s', 'now', '-19 days') * 1000, strftime('%s', 'now', '-19 days', '+259 minutes') * 1000, 'success', 193, 193, NULL, 6),
-  ('Schrauben Haken rosa', 20, 5, 5, strftime('%s', 'now', '-19 days') * 1000, strftime('%s', 'now', '-19 days', '+331 minutes') * 1000, 'success', 192, 192, NULL, 7),
-  ('klohalter', 24, 6, 6, strftime('%s', 'now', '-19 days') * 1000, strftime('%s', 'now', '-19 days', '+561 minutes') * 1000, 'success', 323, 323, NULL, 8),
-  
-  ('stab', 29, 7, 5, strftime('%s', 'now', '-20 days') * 1000, strftime('%s', 'now', '-20 days', '+600 minutes') * 1000, 'success', 387, 387, NULL, 12),
-  ('Kleben Haken Blau', 1, 1, 1, strftime('%s', 'now', '-20 days') * 1000, strftime('%s', 'now', '-20 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('schrauben Haken Pink', 11, 2, 2, strftime('%s', 'now', '-20 days') * 1000, strftime('%s', 'now', '-20 days', '+303 minutes') * 1000, 'success', 181, 181, NULL, 6),
-  ('stöpsel', 32, 3, 3, strftime('%s', 'now', '-20 days') * 1000, strftime('%s', 'now', '-20 days', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  
-  ('Kleben Haken green', 23, 4, 6, strftime('%s', 'now', '-21 days') * 1000, strftime('%s', 'now', '-21 days', '+256 minutes') * 1000, 'success', 190, 190, NULL, 5),
-  ('Kleben Haken Blau', 1, 5, 1, strftime('%s', 'now', '-21 days') * 1000, strftime('%s', 'now', '-21 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('kleben Halter unten', 17, 6, 8, strftime('%s', 'now', '-21 days') * 1000, strftime('%s', 'now', '-21 days', '+51 minutes') * 1000, 'success', 22, 22, NULL, 2),
-  ('Kleben Haken Pink', 10, 7, 2, strftime('%s', 'now', '-21 days') * 1000, strftime('%s', 'now', '-21 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4);
+  -- Schrauben einzeln (old format)
+  ('WH/S1/BL', 'haken-schrauben-blau', 1),
+  ('WH/S1/PI', 'haken-schrauben-pink', 1),
+  ('WH/S1/OR', 'haken-schrauben-orange', 1),
+  ('WH/S1/LI', 'haken-schrauben-lila', 1),
+  ('WH/S1/GR', 'haken-schrauben-gruen', 1),
+  ('WH/S1/RO', 'haken-schrauben-rosa', 1);
 
--- Week 4 (days 22-28) - 28 prints
-INSERT INTO print_jobs (name, module_id, printer_id, spool_id, start_time, end_time, status, planned_weight, actual_weight, failure_reason, waste_weight) VALUES
-  ('klohalter', 27, 1, 2, strftime('%s', 'now', '-22 days') * 1000, strftime('%s', 'now', '-22 days', '+660 minutes') * 1000, 'success', 302, 302, NULL, 9),
-  ('Schrauben Haken green', 22, 2, 6, strftime('%s', 'now', '-22 days') * 1000, strftime('%s', 'now', '-22 days', '+317 minutes') * 1000, 'success', 192, 192, NULL, 7),
-  ('Kleben Haken Blau', 1, 3, 1, strftime('%s', 'now', '-22 days') * 1000, strftime('%s', 'now', '-22 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('stab', 30, 4, 3, strftime('%s', 'now', '-22 days') * 1000, strftime('%s', 'now', '-22 days', '+600 minutes') * 1000, 'success', 387, 387, NULL, 12),
-  
-  ('Kleben Haken Pink', 10, 5, 2, strftime('%s', 'now', '-23 days') * 1000, strftime('%s', 'now', '-23 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4),
-  ('kleben Haken rosa', 21, 6, 5, strftime('%s', 'now', '-23 days') * 1000, strftime('%s', 'now', '-23 days', '+259 minutes') * 1000, 'success', 193, 193, NULL, 6),
-  ('Kleben Haken Blau', 1, 7, 1, strftime('%s', 'now', '-23 days') * 1000, strftime('%s', 'now', '-23 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('vase', 9, 1, 6, strftime('%s', 'now', '-23 days') * 1000, strftime('%s', 'now', '-23 days', '+670 minutes') * 1000, 'failed', 801, 445, 'Layer shift', 0),
-  
-  ('klohalter', 25, 2, 5, strftime('%s', 'now', '-24 days') * 1000, strftime('%s', 'now', '-24 days', '+561 minutes') * 1000, 'success', 323, 323, NULL, 8),
-  ('Schrauben Haken lila', 18, 3, 4, strftime('%s', 'now', '-24 days') * 1000, strftime('%s', 'now', '-24 days', '+317 minutes') * 1000, 'success', 192, 192, NULL, 7),
-  ('stöpsel', 33, 4, 7, strftime('%s', 'now', '-24 days') * 1000, strftime('%s', 'now', '-24 days', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  ('Kleben Haken Blau', 1, 5, 1, strftime('%s', 'now', '-24 days') * 1000, strftime('%s', 'now', '-24 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  
-  ('Kleben Haken green', 23, 6, 6, strftime('%s', 'now', '-25 days') * 1000, strftime('%s', 'now', '-25 days', '+256 minutes') * 1000, 'success', 190, 190, NULL, 5),
-  ('schrauben Halter unten', 15, 7, 8, strftime('%s', 'now', '-25 days') * 1000, strftime('%s', 'now', '-25 days', '+60 minutes') * 1000, 'success', 18, 18, NULL, 2),
-  ('Kleben Haken Pink', 10, 1, 2, strftime('%s', 'now', '-25 days') * 1000, strftime('%s', 'now', '-25 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4),
-  ('stab', 28, 2, 7, strftime('%s', 'now', '-25 days') * 1000, strftime('%s', 'now', '-25 days', '+600 minutes') * 1000, 'success', 387, 387, NULL, 12),
-  
-  ('Kleben Haken Blau', 1, 3, 1, strftime('%s', 'now', '-26 days') * 1000, strftime('%s', 'now', '-26 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('kleben Haken lila', 19, 4, 4, strftime('%s', 'now', '-26 days') * 1000, strftime('%s', 'now', '-26 days', '+259 minutes') * 1000, 'success', 193, 193, NULL, 6),
-  ('Schrauben Haken rosa', 20, 5, 5, strftime('%s', 'now', '-26 days') * 1000, strftime('%s', 'now', '-26 days', '+331 minutes') * 1000, 'success', 192, 192, NULL, 7),
-  ('klohalter', 24, 6, 6, strftime('%s', 'now', '-26 days') * 1000, strftime('%s', 'now', '-26 days', '+561 minutes') * 1000, 'success', 323, 323, NULL, 8),
-  
-  ('Kleben Haken Orange', 12, 7, 3, strftime('%s', 'now', '-27 days') * 1000, strftime('%s', 'now', '-27 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('stöpsel', 31, 1, 5, strftime('%s', 'now', '-27 days') * 1000, strftime('%s', 'now', '-27 days', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  ('Kleben Haken Blau', 1, 2, 1, strftime('%s', 'now', '-27 days') * 1000, strftime('%s', 'now', '-27 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('schrauben Haken Pink', 11, 3, 2, strftime('%s', 'now', '-27 days') * 1000, strftime('%s', 'now', '-27 days', '+303 minutes') * 1000, 'success', 181, 181, NULL, 6),
-  
-  ('kleben Haken rosa', 21, 4, 5, strftime('%s', 'now', '-28 days') * 1000, strftime('%s', 'now', '-28 days', '+259 minutes') * 1000, 'success', 193, 193, NULL, 6),
-  ('Kleben Haken Blau', 1, 5, 1, strftime('%s', 'now', '-28 days') * 1000, strftime('%s', 'now', '-28 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('kleben Halter Oben', 16, 6, 8, strftime('%s', 'now', '-28 days') * 1000, strftime('%s', 'now', '-28 days', '+51 minutes') * 1000, 'success', 22, 22, NULL, 2),
-  ('Kleben Haken green', 23, 7, 6, strftime('%s', 'now', '-28 days') * 1000, strftime('%s', 'now', '-28 days', '+256 minutes') * 1000, 'success', 190, 190, NULL, 5);
+-- ========== WANDHAKEN EINZELN (MIX PACK SINGLES) ==========
+-- These are single hooks from the "individuelles 5er pack" product
+-- WH/MXK = Mix Kleben, WH/MXS = Mix Schrauben
+-- NOTE: These are SINGLE hooks, no Hakenhalter included (halter only in 5-packs)
 
--- Days 30-90 (sparse older data) - 35 prints
-INSERT INTO print_jobs (name, module_id, printer_id, spool_id, start_time, end_time, status, planned_weight, actual_weight, failure_reason, waste_weight) VALUES
-  ('Kleben Haken Blau', 1, 1, 1, strftime('%s', 'now', '-35 days') * 1000, strftime('%s', 'now', '-35 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('Kleben Haken Orange', 12, 2, 3, strftime('%s', 'now', '-40 days') * 1000, strftime('%s', 'now', '-40 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('stöpsel', 31, 3, 5, strftime('%s', 'now', '-42 days') * 1000, strftime('%s', 'now', '-42 days', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  ('vase', 8, 4, 5, strftime('%s', 'now', '-45 days') * 1000, strftime('%s', 'now', '-45 days', '+1146 minutes') * 1000, 'success', 801, 801, NULL, 20),
-  ('Kleben Haken Blau', 1, 5, 1, strftime('%s', 'now', '-48 days') * 1000, strftime('%s', 'now', '-48 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('kleben Haken lila', 19, 1, 4, strftime('%s', 'now', '-50 days') * 1000, strftime('%s', 'now', '-50 days', '+259 minutes') * 1000, 'success', 193, 193, NULL, 6),
-  ('Kleben Haken Pink', 10, 2, 2, strftime('%s', 'now', '-55 days') * 1000, strftime('%s', 'now', '-55 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4),
-  ('klohalter', 26, 3, 7, strftime('%s', 'now', '-58 days') * 1000, strftime('%s', 'now', '-58 days', '+510 minutes') * 1000, 'success', 303, 303, NULL, 9),
-  ('Kleben Haken Blau', 1, 4, 1, strftime('%s', 'now', '-65 days') * 1000, strftime('%s', 'now', '-65 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('stab', 28, 5, 7, strftime('%s', 'now', '-70 days') * 1000, strftime('%s', 'now', '-70 days', '+600 minutes') * 1000, 'success', 387, 387, NULL, 12),
-  ('Kleben Haken Pink', 10, 1, 2, strftime('%s', 'now', '-72 days') * 1000, strftime('%s', 'now', '-72 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4),
-  ('kleben Haken green', 23, 2, 6, strftime('%s', 'now', '-75 days') * 1000, strftime('%s', 'now', '-75 days', '+256 minutes') * 1000, 'success', 190, 190, NULL, 5),
-  ('Schrauben Haken Blau', 2, 3, 1, strftime('%s', 'now', '-78 days') * 1000, strftime('%s', 'now', '-78 days', '+321 minutes') * 1000, 'success', 181, 181, NULL, 6),
-  ('Kleben Haken Orange', 12, 4, 3, strftime('%s', 'now', '-80 days') * 1000, strftime('%s', 'now', '-80 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('klohalter', 24, 5, 6, strftime('%s', 'now', '-85 days') * 1000, strftime('%s', 'now', '-85 days', '+561 minutes') * 1000, 'success', 323, 323, NULL, 8),
-  ('Kleben Haken Blau', 1, 1, 1, strftime('%s', 'now', '-88 days') * 1000, strftime('%s', 'now', '-88 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('stöpsel', 32, 2, 3, strftime('%s', 'now', '-36 days') * 1000, strftime('%s', 'now', '-36 days', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  ('Kleben Haken Blau', 1, 3, 1, strftime('%s', 'now', '-38 days') * 1000, strftime('%s', 'now', '-38 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('Schrauben Haken green', 22, 4, 6, strftime('%s', 'now', '-43 days') * 1000, strftime('%s', 'now', '-43 days', '+317 minutes') * 1000, 'success', 192, 192, NULL, 7),
-  ('kleben Haken rosa', 21, 5, 5, strftime('%s', 'now', '-47 days') * 1000, strftime('%s', 'now', '-47 days', '+259 minutes') * 1000, 'success', 193, 193, NULL, 6),
-  ('stab', 29, 6, 5, strftime('%s', 'now', '-52 days') * 1000, strftime('%s', 'now', '-52 days', '+600 minutes') * 1000, 'success', 387, 387, NULL, 12),
-  ('Kleben Haken Blau', 1, 7, 1, strftime('%s', 'now', '-56 days') * 1000, strftime('%s', 'now', '-56 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('klohalter', 27, 1, 2, strftime('%s', 'now', '-60 days') * 1000, strftime('%s', 'now', '-60 days', '+660 minutes') * 1000, 'success', 302, 302, NULL, 9),
-  ('Schrauben Haken lila', 18, 2, 4, strftime('%s', 'now', '-63 days') * 1000, strftime('%s', 'now', '-63 days', '+317 minutes') * 1000, 'success', 192, 192, NULL, 7),
-  ('Kleben Haken Pink', 10, 3, 2, strftime('%s', 'now', '-67 days') * 1000, strftime('%s', 'now', '-67 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 4),
-  ('stöpsel', 33, 4, 7, strftime('%s', 'now', '-71 days') * 1000, strftime('%s', 'now', '-71 days', '+660 minutes') * 1000, 'success', 308, 308, NULL, 10),
-  ('Kleben Haken green', 23, 5, 6, strftime('%s', 'now', '-74 days') * 1000, strftime('%s', 'now', '-74 days', '+256 minutes') * 1000, 'success', 190, 190, NULL, 5),
-  ('Kleben Haken Blau', 1, 6, 1, strftime('%s', 'now', '-77 days') * 1000, strftime('%s', 'now', '-77 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('schrauben Haken Pink', 11, 7, 2, strftime('%s', 'now', '-81 days') * 1000, strftime('%s', 'now', '-81 days', '+303 minutes') * 1000, 'success', 181, 181, NULL, 6),
-  ('Kleben Haken Orange', 12, 1, 3, strftime('%s', 'now', '-83 days') * 1000, strftime('%s', 'now', '-83 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('stab', 30, 2, 3, strftime('%s', 'now', '-86 days') * 1000, strftime('%s', 'now', '-86 days', '+600 minutes') * 1000, 'success', 387, 387, NULL, 12),
-  ('kleben Haken lila', 19, 3, 4, strftime('%s', 'now', '-89 days') * 1000, strftime('%s', 'now', '-89 days', '+259 minutes') * 1000, 'success', 193, 193, NULL, 6),
-  ('Kleben Haken Blau', 1, 4, 1, strftime('%s', 'now', '-32 days') * 1000, strftime('%s', 'now', '-32 days', '+256 minutes') * 1000, 'success', 179, 179, NULL, 5),
-  ('klohalter', 25, 5, 5, strftime('%s', 'now', '-44 days') * 1000, strftime('%s', 'now', '-44 days', '+561 minutes') * 1000, 'success', 323, 323, NULL, 8),
-  ('vase', 5, 6, 3, strftime('%s', 'now', '-62 days') * 1000, strftime('%s', 'now', '-62 days', '+950 minutes') * 1000, 'failed', 752, 623, 'Stringing', 0);
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  -- Kleben einzeln
+  ('WH/MXK/BL', 'haken-kleben-blau', 1),
+  ('WH/MXK/PI', 'haken-kleben-pink', 1),
+  ('WH/MXK/OR', 'haken-kleben-orange', 1),
+  ('WH/MXK/LI', 'haken-kleben-lila', 1),
+  ('WH/MXK/GR', 'haken-kleben-gruen', 1),
+  ('WH/MXK/RO', 'haken-kleben-rosa', 1),
+  
+  -- Schrauben einzeln
+  ('WH/MXS/BL', 'haken-schrauben-blau', 1),
+  ('WH/MXS/PI', 'haken-schrauben-pink', 1),
+  ('WH/MXS/OR', 'haken-schrauben-orange', 1),
+  ('WH/MXS/LI', 'haken-schrauben-lila', 1),
+  ('WH/MXS/GR', 'haken-schrauben-gruen', 1),
+  ('WH/MXS/RO', 'haken-schrauben-rosa', 1);
+
+-- ========== WANDHAKEN 5ER PACK KLEBEN (SAME COLOR) ==========
+-- WH/K5 = Kleben 5er pack
+-- Each includes: 5x hooks + 1x Hakenhalter Oben Kleben + 1x Hakenhalter Unten Kleben
+
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  -- Blau
+  ('WH/K5/BL', 'haken-kleben-blau', 5),
+  ('WH/K5/BL', 'hakenhalter-oben-kleben', 1),
+  ('WH/K5/BL', 'hakenhalter-unten-kleben', 1),
+  
+  -- Pink
+  ('WH/K5/PI', 'haken-kleben-pink', 5),
+  ('WH/K5/PI', 'hakenhalter-oben-kleben', 1),
+  ('WH/K5/PI', 'hakenhalter-unten-kleben', 1),
+  
+  -- Orange
+  ('WH/K5/OR', 'haken-kleben-orange', 5),
+  ('WH/K5/OR', 'hakenhalter-oben-kleben', 1),
+  ('WH/K5/OR', 'hakenhalter-unten-kleben', 1),
+  
+  -- Lila
+  ('WH/K5/LI', 'haken-kleben-lila', 5),
+  ('WH/K5/LI', 'hakenhalter-oben-kleben', 1),
+  ('WH/K5/LI', 'hakenhalter-unten-kleben', 1),
+  
+  -- Grün
+  ('WH/K5/GR', 'haken-kleben-gruen', 5),
+  ('WH/K5/GR', 'hakenhalter-oben-kleben', 1),
+  ('WH/K5/GR', 'hakenhalter-unten-kleben', 1),
+  
+  -- Rosa
+  ('WH/K5/RO', 'haken-kleben-rosa', 5),
+  ('WH/K5/RO', 'hakenhalter-oben-kleben', 1),
+  ('WH/K5/RO', 'hakenhalter-unten-kleben', 1);
+
+-- ========== WANDHAKEN 5ER PACK SCHRAUBEN (SAME COLOR) ==========
+-- WH/S5 = Schrauben 5er pack
+-- Each includes: 5x hooks + 1x Hakenhalter Oben Schrauben + 1x Hakenhalter Unten Schrauben
+
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  -- Blau
+  ('WH/S5/BL', 'haken-schrauben-blau', 5),
+  ('WH/S5/BL', 'hakenhalter-oben-schrauben', 1),
+  ('WH/S5/BL', 'hakenhalter-unten-schrauben', 1),
+  
+  -- Pink
+  ('WH/S5/PI', 'haken-schrauben-pink', 5),
+  ('WH/S5/PI', 'hakenhalter-oben-schrauben', 1),
+  ('WH/S5/PI', 'hakenhalter-unten-schrauben', 1),
+  
+  -- Orange
+  ('WH/S5/OR', 'haken-schrauben-orange', 5),
+  ('WH/S5/OR', 'hakenhalter-oben-schrauben', 1),
+  ('WH/S5/OR', 'hakenhalter-unten-schrauben', 1),
+  
+  -- Lila
+  ('WH/S5/LI', 'haken-schrauben-lila', 5),
+  ('WH/S5/LI', 'hakenhalter-oben-schrauben', 1),
+  ('WH/S5/LI', 'hakenhalter-unten-schrauben', 1),
+  
+  -- Grün
+  ('WH/S5/GR', 'haken-schrauben-gruen', 5),
+  ('WH/S5/GR', 'hakenhalter-oben-schrauben', 1),
+  ('WH/S5/GR', 'hakenhalter-unten-schrauben', 1),
+  
+  -- Rosa
+  ('WH/S5/RO', 'haken-schrauben-rosa', 5),
+  ('WH/S5/RO', 'hakenhalter-oben-schrauben', 1),
+  ('WH/S5/RO', 'hakenhalter-unten-schrauben', 1);
+
+-- ========== WANDHAKEN 5ER PACK KLEBEN (MIXED COLORS) ==========
+-- These bundles map to multiple hook colors + hakenhalter
+
+-- Blau (3) / Lila (2) - Kleben
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('WH/K5/BLLI', 'haken-kleben-blau', 3),
+  ('WH/K5/BLLI', 'haken-kleben-lila', 2),
+  ('WH/K5/BLLI', 'hakenhalter-oben-kleben', 1),
+  ('WH/K5/BLLI', 'hakenhalter-unten-kleben', 1);
+
+-- Lila (3) / Rosa (2) - Kleben
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('WH/K5/LIRO', 'haken-kleben-lila', 3),
+  ('WH/K5/LIRO', 'haken-kleben-rosa', 2),
+  ('WH/K5/LIRO', 'hakenhalter-oben-kleben', 1),
+  ('WH/K5/LIRO', 'hakenhalter-unten-kleben', 1);
+
+-- Pink (3) / Blau (2) - Kleben
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('WH/K5/PIBL', 'haken-kleben-pink', 3),
+  ('WH/K5/PIBL', 'haken-kleben-blau', 2),
+  ('WH/K5/PIBL', 'hakenhalter-oben-kleben', 1),
+  ('WH/K5/PIBL', 'hakenhalter-unten-kleben', 1);
+
+-- ========== WANDHAKEN 5ER PACK SCHRAUBEN (MIXED COLORS) ==========
+
+-- Blau (3) / Lila (2) - Schrauben
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('WH/S5/BLLI', 'haken-schrauben-blau', 3),
+  ('WH/S5/BLLI', 'haken-schrauben-lila', 2),
+  ('WH/S5/BLLI', 'hakenhalter-oben-schrauben', 1),
+  ('WH/S5/BLLI', 'hakenhalter-unten-schrauben', 1);
+
+-- Lila (3) / Rosa (2) - Schrauben
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('WH/S5/LIRO', 'haken-schrauben-lila', 3),
+  ('WH/S5/LIRO', 'haken-schrauben-rosa', 2),
+  ('WH/S5/LIRO', 'hakenhalter-oben-schrauben', 1),
+  ('WH/S5/LIRO', 'hakenhalter-unten-schrauben', 1);
+
+-- Pink (3) / Blau (2) - Schrauben
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('WH/S5/PIBL', 'haken-schrauben-pink', 3),
+  ('WH/S5/PIBL', 'haken-schrauben-blau', 2),
+  ('WH/S5/PIBL', 'hakenhalter-oben-schrauben', 1),
+  ('WH/S5/PIBL', 'hakenhalter-unten-schrauben', 1);
+
+-- ========== KLOPAPIERHALTER BUNDLES ==========
+-- Format: KLH/{HALTER_COLOR}{STAB_COLOR}
+-- Each contains: 1x Klohalter, 1x Stab, 2x Stöpsel (Stöpsel color matches Stab)
+
+-- KLH/GRRO = Grün Halter, Rosa Stab/Stöpsel
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('KLH/GRRO', 'klohalter-gruen', 1),
+  ('KLH/GRRO', 'stab-rosa', 1),
+  ('KLH/GRRO', 'stoepsel-rosa', 2);
+
+-- KLH/LIRO = Lila Halter, Rosa Stab/Stöpsel
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('KLH/LIRO', 'klohalter-lila', 1),
+  ('KLH/LIRO', 'stab-rosa', 1),
+  ('KLH/LIRO', 'stoepsel-rosa', 2);
+
+-- KLH/PIBL = Pink Halter, Blau Stab/Stöpsel
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('KLH/PIBL', 'klohalter-pink', 1),
+  ('KLH/PIBL', 'stab-blau', 1),
+  ('KLH/PIBL', 'stoepsel-blau', 2);
+
+-- KLH/ROBL = Rosa Halter, Blau Stab/Stöpsel
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('KLH/ROBL', 'klohalter-rosa', 1),
+  ('KLH/ROBL', 'stab-blau', 1),
+  ('KLH/ROBL', 'stoepsel-blau', 2);
+
+-- KLH/BLOR = Blau Halter, Orange Stab/Stöpsel
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('KLH/BLOR', 'klohalter-blau', 1),
+  ('KLH/BLOR', 'stab-orange', 1),
+  ('KLH/BLOR', 'stoepsel-orange', 2);
+
+-- ========== VASEN FLUID (Simple 1:1) ==========
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('VAS/FL/BL', 'vase-fluid-blau', 1),
+  ('VAS/FL/PI', 'vase-fluid-pink', 1),
+  ('VAS/FL/OR', 'vase-fluid-orange', 1),
+  ('VAS/FL/LI', 'vase-fluid-lila', 1),
+  ('VAS/FL/GR', 'vase-fluid-gruen', 1),
+  ('VAS/FL/RO', 'vase-fluid-rosa', 1),
+  ('VAS/FL/SW', 'vase-fluid-schwarz', 1);
+
+-- ========== VASEN SHRUNK (Simple 1:1) ==========
+INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+  ('VAS/SH/BL', 'vase-shrunk-blau', 1),
+  ('VAS/SH/PI', 'vase-shrunk-pink', 1),
+  ('VAS/SH/OR', 'vase-shrunk-orange', 1),
+  ('VAS/SH/LI', 'vase-shrunk-lila', 1),
+  ('VAS/SH/GR', 'vase-shrunk-gruen', 1),
+  ('VAS/SH/RO', 'vase-shrunk-rosa', 1),
+  ('VAS/SH/SW', 'vase-shrunk-schwarz', 1);
+

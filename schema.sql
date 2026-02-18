@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS inventory (
   
   -- Basic Info
   name TEXT NOT NULL,
+  slug TEXT UNIQUE NOT NULL,
   sku TEXT UNIQUE,
   description TEXT,
   image_path TEXT,
@@ -33,7 +34,7 @@ CREATE TABLE IF NOT EXISTS inventory (
   -- Manual Count Tracking
   last_count_date INTEGER,
   last_count_expected INTEGER,
-  last_count_actual INTEGER,
+  last_count_actual INTEGER
 );
 
 -- Inventory Log - tracks all stock movements
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS inventory_log (
 
 -- Indexes for inventory
 CREATE INDEX IF NOT EXISTS idx_inventory_sku ON inventory(sku);
+CREATE INDEX IF NOT EXISTS idx_inventory_slug ON inventory(slug);
 CREATE INDEX IF NOT EXISTS idx_inventory_low_stock ON inventory(stock_count, min_threshold);
 CREATE INDEX IF NOT EXISTS idx_inventory_log_inventory ON inventory_log(inventory_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_log_type ON inventory_log(change_type);
@@ -85,11 +87,15 @@ CREATE TABLE IF NOT EXISTS print_modules (
   expected_time INTEGER,
   objects_per_print INTEGER DEFAULT 1,
   default_spool_preset_id INTEGER,
+  inventory_slug TEXT,
   path TEXT NOT NULL,
   image_path TEXT,
   FOREIGN KEY (default_spool_preset_id) REFERENCES spool_presets(id),
-  FOREIGN KEY (inventory_id) REFERENCES inventory(id)
+  FOREIGN KEY (inventory_slug) REFERENCES inventory(slug)
 );
+
+-- Index for print_modules inventory link
+CREATE INDEX IF NOT EXISTS idx_print_modules_inventory_slug ON print_modules(inventory_slug);
 
 -- Print Jobs table
 CREATE TABLE IF NOT EXISTS print_jobs (
@@ -130,3 +136,42 @@ CREATE TABLE IF NOT EXISTS grid_presets (
 
 -- Index for quick default lookup
 CREATE INDEX IF NOT EXISTS idx_grid_presets_default ON grid_presets(is_default);
+
+-- ============================================
+-- SHOPIFY INTEGRATION TABLES
+-- ============================================
+
+-- Shopify SKU to Inventory mapping (for bundles)
+-- One Shopify SKU can map to multiple inventory items!
+CREATE TABLE IF NOT EXISTS shopify_sku_mapping (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shopify_sku TEXT NOT NULL,
+  inventory_slug TEXT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY (inventory_slug) REFERENCES inventory(slug)
+);
+
+-- Track sync state
+CREATE TABLE IF NOT EXISTS shopify_sync (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  last_order_id TEXT,
+  last_sync_at INTEGER,
+  orders_processed INTEGER DEFAULT 0,
+  items_deducted INTEGER DEFAULT 0
+);
+
+-- Track which orders we've processed (avoid duplicates)
+CREATE TABLE IF NOT EXISTS shopify_orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shopify_order_id TEXT UNIQUE NOT NULL,
+  shopify_order_number TEXT,
+  processed_at INTEGER,
+  total_items INTEGER,
+  status TEXT DEFAULT 'processed'
+);
+
+-- Shopify indexes
+CREATE INDEX IF NOT EXISTS idx_shopify_sku_mapping_sku ON shopify_sku_mapping(shopify_sku);
+CREATE INDEX IF NOT EXISTS idx_shopify_sku_mapping_slug ON shopify_sku_mapping(inventory_slug);
+CREATE INDEX IF NOT EXISTS idx_shopify_orders_order_id ON shopify_orders(shopify_order_id);
+CREATE INDEX IF NOT EXISTS idx_shopify_orders_processed_at ON shopify_orders(processed_at);
