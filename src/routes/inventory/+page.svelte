@@ -12,30 +12,94 @@
   // Edit state
   let editingItemId = $state<number | null>(null);
   let editCount = $state(0);
-  let editReason = $state('');
 
   // Filter/search
   let searchQuery = $state('');
   let showLowStockOnly = $state(false);
 
+  // Expansion state
+  let expandedCategories = $state<Record<string, boolean>>({});
+  let expandedSubcategories = $state<Record<string, boolean>>({});
+
   // Start editing an item's stock
   function startEdit(item: InventoryItem) {
     editingItemId = item.id;
     editCount = item.stock_count;
-    editReason = '';
   }
 
   function cancelEdit() {
     editingItemId = null;
     editCount = 0;
-    editReason = '';
   }
 
-  // Filtered items
-  const filteredItems = $derived(() => {
+  // Parse item name to get category structure
+  function getItemCategory(item: InventoryItem): { category: string; subcategory: string | null; color: string } {
+    const name = item.name.toLowerCase();
+    const slug = item.slug?.toLowerCase() || '';
+    
+    // Extract color (last word in name usually)
+    const nameParts = item.name.split(' ');
+    const color = nameParts[nameParts.length - 1];
+    
+    // Haken products
+    if (name.includes('haken kleben') || slug.includes('haken-kleben')) {
+      return { category: 'Haken', subcategory: 'Kleben', color };
+    }
+    if (name.includes('haken schrauben') || slug.includes('haken-schrauben')) {
+      return { category: 'Haken', subcategory: 'Schrauben', color };
+    }
+    if (name.includes('hakenhalter') || slug.includes('hakenhalter')) {
+      return { category: 'Haken', subcategory: 'Halter', color };
+    }
+    
+    // Vase products
+    if (name.includes('vase fluid') || slug.includes('vase-fluid')) {
+      return { category: 'Vase', subcategory: 'Fluid', color };
+    }
+    if (name.includes('vase shrunk') || slug.includes('vase-shrunk')) {
+      return { category: 'Vase', subcategory: 'Shrunk', color };
+    }
+    
+    // Klorolle products
+    if (name.includes('klohalter') || slug.includes('klohalter')) {
+      return { category: 'Klorolle', subcategory: 'Klohalter', color };
+    }
+    if (name.includes('stab') || slug.includes('stab')) {
+      return { category: 'Klorolle', subcategory: 'Stab', color };
+    }
+    if (name.includes('stöpsel') || slug.includes('stoepsel')) {
+      return { category: 'Klorolle', subcategory: 'Stöpsel', color };
+    }
+    
+    // Fallback
+    return { category: 'Other', subcategory: null, color };
+  }
+
+  // Build grouped structure
+  interface GroupedItem {
+    item: InventoryItem;
+    color: string;
+  }
+  
+  interface SubcategoryGroup {
+    items: GroupedItem[];
+    totalStock: number;
+    lowStockCount: number;
+    outOfStockCount: number;
+  }
+  
+  interface CategoryGroup {
+    subcategories: Record<string, SubcategoryGroup>;
+    items: GroupedItem[]; // Items without subcategory
+    totalStock: number;
+    lowStockCount: number;
+    outOfStockCount: number;
+  }
+
+  const groupedInventory = $derived(() => {
     let items = data.items || [];
     
-    // Search filter
+    // Apply filters
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       items = items.filter(item => 
@@ -45,12 +109,53 @@
       );
     }
     
-    // Low stock filter
     if (showLowStockOnly) {
       items = items.filter(item => item.stock_count < item.min_threshold);
     }
     
-    return items;
+    // Group items
+    const groups: Record<string, CategoryGroup> = {};
+    
+    items.forEach(item => {
+      const { category, subcategory, color } = getItemCategory(item);
+      
+      if (!groups[category]) {
+        groups[category] = {
+          subcategories: {},
+          items: [],
+          totalStock: 0,
+          lowStockCount: 0,
+          outOfStockCount: 0
+        };
+      }
+      
+      const groupedItem = { item, color };
+      const isLowStock = item.stock_count < item.min_threshold;
+      const isOutOfStock = item.stock_count === 0;
+      
+      groups[category].totalStock += item.stock_count;
+      if (isLowStock) groups[category].lowStockCount++;
+      if (isOutOfStock) groups[category].outOfStockCount++;
+      
+      if (subcategory) {
+        if (!groups[category].subcategories[subcategory]) {
+          groups[category].subcategories[subcategory] = {
+            items: [],
+            totalStock: 0,
+            lowStockCount: 0,
+            outOfStockCount: 0
+          };
+        }
+        groups[category].subcategories[subcategory].items.push(groupedItem);
+        groups[category].subcategories[subcategory].totalStock += item.stock_count;
+        if (isLowStock) groups[category].subcategories[subcategory].lowStockCount++;
+        if (isOutOfStock) groups[category].subcategories[subcategory].outOfStockCount++;
+      } else {
+        groups[category].items.push(groupedItem);
+      }
+    });
+    
+    return groups;
   });
 
   // Summary stats
@@ -58,6 +163,37 @@
   const totalStock = $derived((data.items || []).reduce((sum, i) => sum + i.stock_count, 0));
   const lowStockCount = $derived((data.items || []).filter(i => i.stock_count < i.min_threshold).length);
   const outOfStockCount = $derived((data.items || []).filter(i => i.stock_count === 0).length);
+
+  // Toggle functions
+  function toggleCategory(categoryName: string) {
+    if (expandedCategories[categoryName]) {
+      const newExpanded = { ...expandedCategories };
+      delete newExpanded[categoryName];
+      expandedCategories = newExpanded;
+      
+      // Clean up children
+      const newSubcategories = { ...expandedSubcategories };
+      Object.keys(newSubcategories).forEach(key => {
+        if (key.startsWith(`${categoryName}:`)) {
+          delete newSubcategories[key];
+        }
+      });
+      expandedSubcategories = newSubcategories;
+    } else {
+      expandedCategories = { ...expandedCategories, [categoryName]: true };
+    }
+  }
+
+  function toggleSubcategory(categoryName: string, subcategoryName: string) {
+    const key = `${categoryName}:${subcategoryName}`;
+    if (expandedSubcategories[key]) {
+      const newSubcategories = { ...expandedSubcategories };
+      delete newSubcategories[key];
+      expandedSubcategories = newSubcategories;
+    } else {
+      expandedSubcategories = { ...expandedSubcategories, [key]: true };
+    }
+  }
 
   // Stock level indicator
   function getStockLevel(item: InventoryItem): 'ok' | 'low' | 'out' {
@@ -74,23 +210,30 @@
     }
   }
 
+  // Category emoji
+  function getCategoryEmoji(category: string): string {
+    switch (category.toLowerCase()) {
+      case 'haken': return '🪝';
+      case 'vase': return '🏺';
+      case 'klorolle': return '🧻';
+      default: return '📦';
+    }
+  }
+
   // Format timestamp
   function formatTime(timestamp: number): string {
     const date = new Date(timestamp);
     const now = new Date();
     const diff = now.getTime() - timestamp;
     
-    // Less than 1 hour ago
     if (diff < 60 * 60 * 1000) {
       const mins = Math.floor(diff / 60000);
       return `${mins}m ago`;
     }
-    // Less than 24 hours ago
     if (diff < 24 * 60 * 60 * 1000) {
       const hours = Math.floor(diff / 3600000);
       return `${hours}h ago`;
     }
-    // Otherwise show date
     return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
   }
 
@@ -145,7 +288,7 @@
 
     <!-- Filters -->
     <div class="flex flex-wrap items-center gap-3 mb-4">
-      <div class="flex-1 min-w-[200px]">
+      <div class="flex-1 min-w-50">
         <input
           type="text"
           placeholder="Search items..."
@@ -170,10 +313,10 @@
         <div class="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
           <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
             <h2 class="text-sm font-medium text-slate-400">Stock Levels</h2>
-            <span class="text-xs text-slate-500">{filteredItems().length} items</span>
+            <span class="text-xs text-slate-500">{totalItems} items</span>
           </div>
 
-          {#if filteredItems().length === 0}
+          {#if Object.keys(groupedInventory()).length === 0}
             <div class="p-8 text-center text-slate-500">
               {#if searchQuery || showLowStockOnly}
                 <p>No items match your filters</p>
@@ -183,97 +326,208 @@
             </div>
           {:else}
             <div class="divide-y divide-slate-800/50">
-              {#each filteredItems() as item}
-                {@const stockLevel = getStockLevel(item)}
-                <div class="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/30 transition-colors">
-                  <!-- Stock indicator dot -->
-                  <div class="w-2 h-2 rounded-full shrink-0 {stockLevel === 'out' ? 'bg-red-500' : stockLevel === 'low' ? 'bg-amber-500' : 'bg-emerald-500'}"></div>
-                  
-                  <!-- Item info -->
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2">
-                      <span class="font-medium text-slate-100 truncate">{item.name}</span>
+              {#each Object.entries(groupedInventory()).sort(([,a], [,b]) => b.totalStock - a.totalStock) as [categoryName, categoryData]}
+                {@const isCategoryExpanded = !!expandedCategories[categoryName]}
+                {@const hasSubcategories = Object.keys(categoryData.subcategories).length > 0}
+                {@const itemCount = Object.values(categoryData.subcategories).reduce((sum, sub) => sum + sub.items.length, 0) + categoryData.items.length}
+                
+                <!-- Level 1: Category -->
+                <div class="border-b border-slate-800/30 last:border-b-0">
+                  <button
+                    onclick={() => toggleCategory(categoryName)}
+                    class="w-full px-4 py-3 flex items-center justify-between bg-slate-800/20 hover:bg-slate-800/40 transition-colors"
+                  >
+                    <div class="flex items-center gap-3">
+                      <div class="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-xl">
+                        {getCategoryEmoji(categoryName)}
+                      </div>
+                      <div class="text-left">
+                        <h3 class="text-base font-semibold text-white">{categoryName}</h3>
+                        <p class="text-xs text-slate-500">{itemCount} items</p>
+                      </div>
                     </div>
-                    <div class="text-xs text-slate-500 truncate">
-                      {item.sku || item.slug}
-                      {#if item.min_threshold}
-                        • min: {item.min_threshold}
+                    
+                    <div class="flex items-center gap-4">
+                      <!-- Status indicators -->
+                      {#if categoryData.outOfStockCount > 0}
+                        <span class="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-400">
+                          {categoryData.outOfStockCount} out
+                        </span>
                       {/if}
-                    </div>
-                  </div>
-
-                  <!-- Stock count / Edit -->
-                  {#if editingItemId === item.id}
-                    <form 
-                      method="POST" 
-                      action="?/setStock"
-                      use:enhance={() => {
-                        return async ({ update }) => {
-                          await update();
-                          cancelEdit();
-                        };
-                      }}
-                      class="flex items-center gap-2"
-                    >
-                      <input type="hidden" name="id" value={item.id} />
-                      <input 
-                        type="number" 
-                        name="count" 
-                        bind:value={editCount}
-                        min="0"
-                        class="w-20 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-center text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
-                      <input type="hidden" name="reason" value={editReason || 'Manual count'} />
-                      <button type="submit" class="p-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded" title="Save">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                        </svg>
-                      </button>
-                      <button type="button" onclick={cancelEdit} class="p-1.5 text-slate-400 hover:text-slate-300 hover:bg-slate-700 rounded" title="Cancel">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                      </button>
-                    </form>
-                  {:else}
-                    <div class="flex items-center gap-1">
-                      <!-- Quick decrement -->
-                      <form method="POST" action="?/removeStock" use:enhance>
-                        <input type="hidden" name="id" value={item.id} />
-                        <input type="hidden" name="quantity" value="1" />
-                        <input type="hidden" name="reason" value="Quick remove" />
-                        <button 
-                          type="submit"
-                          disabled={item.stock_count === 0}
-                          class="w-8 h-8 flex items-center justify-center rounded text-slate-400 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                          title="Remove 1"
-                        >
-                          −
-                        </button>
-                      </form>
+                      {#if categoryData.lowStockCount > 0}
+                        <span class="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400">
+                          {categoryData.lowStockCount} low
+                        </span>
+                      {/if}
                       
-                      <!-- Stock count (click to edit) -->
-                      <button 
-                        onclick={() => startEdit(item)}
-                        class="min-w-[4rem] px-3 py-1.5 rounded-lg text-lg font-bold transition-colors {getStockColor(stockLevel)}"
-                        title="Click to edit"
+                      <!-- Total stock -->
+                      <span class="text-lg font-bold text-emerald-400 min-w-16 text-right">
+                        {categoryData.totalStock}
+                      </span>
+                      
+                      <!-- Chevron -->
+                      <svg 
+                        class="w-5 h-5 text-slate-500 transition-transform duration-200 {isCategoryExpanded ? 'rotate-90' : ''}" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
                       >
-                        {item.stock_count}
-                      </button>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                  </button>
+
+                  {#if isCategoryExpanded}
+                    <div class="bg-slate-900/30 border-t border-slate-800/50">
                       
-                      <!-- Quick increment -->
-                      <form method="POST" action="?/addStock" use:enhance>
-                        <input type="hidden" name="id" value={item.id} />
-                        <input type="hidden" name="quantity" value="1" />
-                        <input type="hidden" name="reason" value="Quick add" />
-                        <button 
-                          type="submit"
-                          class="w-8 h-8 flex items-center justify-center rounded text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-                          title="Add 1"
-                        >
-                          +
-                        </button>
-                      </form>
+                      <!-- Level 2: Subcategories -->
+                      {#if hasSubcategories}
+                        {#each Object.entries(categoryData.subcategories).sort(([,a], [,b]) => b.totalStock - a.totalStock) as [subcategoryName, subcategoryData]}
+                          {@const subcategoryKey = `${categoryName}:${subcategoryName}`}
+                          {@const isSubcategoryExpanded = !!expandedSubcategories[subcategoryKey]}
+                          
+                          <div class="border-b border-slate-800/30 last:border-b-0">
+                            <button
+                              onclick={() => toggleSubcategory(categoryName, subcategoryName)}
+                              class="w-full px-6 py-2.5 flex items-center justify-between hover:bg-slate-800/30 transition-colors"
+                            >
+                              <div class="flex items-center gap-3">
+                                <div class="w-7 h-7 rounded-md bg-indigo-500/10 flex items-center justify-center">
+                                  <svg 
+                                    class="w-4 h-4 text-indigo-400 transition-transform duration-200 {isSubcategoryExpanded ? 'rotate-90' : ''}" 
+                                    fill="none" 
+                                    stroke="currentColor" 
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </div>
+                                <div class="text-left">
+                                  <h4 class="text-sm font-medium text-slate-200">{subcategoryName}</h4>
+                                  <p class="text-xs text-slate-600">{subcategoryData.items.length} colors</p>
+                                </div>
+                              </div>
+                              
+                              <div class="flex items-center gap-3">
+                                {#if subcategoryData.outOfStockCount > 0}
+                                  <span class="text-xs text-red-400">{subcategoryData.outOfStockCount} out</span>
+                                {/if}
+                                <span class="text-base font-bold text-emerald-400">{subcategoryData.totalStock}</span>
+                              </div>
+                            </button>
+
+                            <!-- Level 3: Items -->
+                            {#if isSubcategoryExpanded}
+                              <div class="bg-slate-900/50 border-t border-slate-800/30 divide-y divide-slate-800/20">
+                                {#each subcategoryData.items.sort((a, b) => a.color.localeCompare(b.color)) as { item, color }}
+                                  {@const stockLevel = getStockLevel(item)}
+                                  <div class="flex items-center gap-3 px-8 py-2 hover:bg-slate-800/20 transition-colors">
+                                    <!-- Color dot -->
+                                    <div class="w-2 h-2 rounded-full shrink-0 {stockLevel === 'out' ? 'bg-red-500' : stockLevel === 'low' ? 'bg-amber-500' : 'bg-emerald-500'}"></div>
+                                    
+                                    <!-- Item info -->
+                                    <div class="flex-1 min-w-0">
+                                      <span class="text-sm text-slate-300">{color}</span>
+                                      <span class="text-xs text-slate-600 ml-2">min: {item.min_threshold}</span>
+                                    </div>
+
+                                    <!-- Stock count / Edit -->
+                                    {#if editingItemId === item.id}
+                                      <form 
+                                        method="POST" 
+                                        action="?/setStock"
+                                        use:enhance={() => {
+                                          return async ({ update }) => {
+                                            await update();
+                                            cancelEdit();
+                                          };
+                                        }}
+                                        class="flex items-center gap-1"
+                                      >
+                                        <input type="hidden" name="id" value={item.id} />
+                                        <input 
+                                          type="number" 
+                                          name="count" 
+                                          bind:value={editCount}
+                                          min="0"
+                                          class="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-center text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                        />
+                                        <input type="hidden" name="reason" value="Manual count" />
+                                        <button type="submit" class="p-1 text-emerald-400 hover:text-emerald-300 rounded" title="Save">
+                                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                          </svg>
+                                        </button>
+                                        <button type="button" onclick={cancelEdit} class="p-1 text-slate-400 hover:text-slate-300 rounded" title="Cancel">
+                                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                          </svg>
+                                        </button>
+                                      </form>
+                                    {:else}
+                                      <div class="flex items-center gap-0.5">
+                                        <!-- Quick decrement -->
+                                        <form method="POST" action="?/removeStock" use:enhance>
+                                          <input type="hidden" name="id" value={item.id} />
+                                          <input type="hidden" name="quantity" value="1" />
+                                          <input type="hidden" name="reason" value="Quick remove" />
+                                          <button 
+                                            type="submit"
+                                            disabled={item.stock_count === 0}
+                                            class="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm"
+                                            title="Remove 1"
+                                          >
+                                            −
+                                          </button>
+                                        </form>
+                                        
+                                        <!-- Stock count -->
+                                        <button 
+                                          onclick={() => startEdit(item)}
+                                          class="min-w-12 px-2 py-1 rounded text-sm font-bold transition-colors {getStockColor(stockLevel)}"
+                                          title="Click to edit"
+                                        >
+                                          {item.stock_count}
+                                        </button>
+                                        
+                                        <!-- Quick increment -->
+                                        <form method="POST" action="?/addStock" use:enhance>
+                                          <input type="hidden" name="id" value={item.id} />
+                                          <input type="hidden" name="quantity" value="1" />
+                                          <input type="hidden" name="reason" value="Quick add" />
+                                          <button 
+                                            type="submit"
+                                            class="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors text-sm"
+                                            title="Add 1"
+                                          >
+                                            +
+                                          </button>
+                                        </form>
+                                      </div>
+                                    {/if}
+                                  </div>
+                                {/each}
+                              </div>
+                            {/if}
+                          </div>
+                        {/each}
+                      {/if}
+                      
+                      <!-- Direct items (no subcategory) -->
+                      {#if categoryData.items.length > 0}
+                        <div class="divide-y divide-slate-800/20">
+                          {#each categoryData.items as { item, color }}
+                            {@const stockLevel = getStockLevel(item)}
+                            <div class="flex items-center gap-3 px-6 py-2 hover:bg-slate-800/20 transition-colors">
+                              <div class="w-2 h-2 rounded-full shrink-0 {stockLevel === 'out' ? 'bg-red-500' : stockLevel === 'low' ? 'bg-amber-500' : 'bg-emerald-500'}"></div>
+                              <div class="flex-1 min-w-0">
+                                <span class="text-sm text-slate-300">{item.name}</span>
+                              </div>
+                              <span class="text-sm font-bold {getStockColor(stockLevel).split(' ')[0]}">{item.stock_count}</span>
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
                     </div>
                   {/if}
                 </div>
@@ -295,7 +549,7 @@
               <p>No activity yet</p>
             </div>
           {:else}
-            <div class="divide-y divide-slate-800/30 max-h-[600px] overflow-y-auto">
+            <div class="divide-y divide-slate-800/30 max-h-150 overflow-y-auto">
               {#each data.logs as log}
                 {@const changeType = getChangeTypeLabel(log.change_type)}
                 <div class="px-4 py-2.5 hover:bg-slate-800/20">
