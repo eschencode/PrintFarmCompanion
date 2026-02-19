@@ -1,16 +1,19 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
-	"name": "3dtracker0-3",
-	"compatibility_date": "2026-01-16",
+	"name": "3dtracker",
+	"compatibility_date": "2024-11-01",
 	"compatibility_flags": [
-		"nodejs_als"
+		"nodejs_compat"
 	],
 	"pages_build_output_dir": ".svelte-kit/cloudflare",
 	"d1_databases": [
 		{
 			"binding": "DB",
 			"database_name": "3dtracker-db",
-			"database_id": "21972452-33d3-47bd-a1a3-63fd4957358e"
+			"database_id": "e09a98c3-823f-4908-b6f4-67639ce9f22b"
 		}
-	]
+	],
+	"ai": {
+		"binding": "AI"
+	}
 }

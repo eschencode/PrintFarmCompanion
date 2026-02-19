@@ -21,6 +21,7 @@ export interface Printer {
   model: string | null;
   status: string; // 'WAITING' | 'IDLE' | 'PRINTING' | etc.
   loaded_spool_id: number | null;
+  suggested_queue?: SuggestedPrintJob[];
   total_hours: number;
 }
 
@@ -317,4 +318,98 @@ export interface InventoryLog {
   quantity: number;
   reason: string | null;
   created_at: number;
+}
+
+export interface InventoryWithVelocity {
+  slug: string;
+  name: string;
+  stock_count: number;
+  min_threshold: number;
+  stock_above_min: number;
+  sold_7d: number;
+  sold_14d: number;
+  sold_30d: number;
+  daily_velocity: number;
+  days_until_stockout: number;
+}
+
+export interface SpoolContext {
+  id: number;
+  preset_id: number;
+  preset_name: string;
+  color: string;
+  remaining_weight: number;
+  printer_id: number | null;
+  printer_name: string | null;
+}
+
+export interface ModuleContext {
+  id: number;
+  name: string;
+  inventory_slug: string | null;
+  expected_weight: number;
+  expected_time: number;
+  objects_per_print: number;
+  preset_id: number | null;
+  preset_name: string | null;
+}
+
+export interface SuggestedPrintJob {
+  module_id: number;
+  module_name: string;
+  fillament_left: number;
+}
+
+export interface PrinterContext {
+  id: number;
+  name: string;
+  status: string;
+  loaded_spool: SpoolContext | null;
+  suggested_queue: SuggestedPrintJob[];
+}
+
+export interface AIRecommendationContext {
+  type: 'spool_selection' | 'module_selection';
+  printer: PrinterContext;
+  available_spools: SpoolContext[];
+  available_modules: ModuleContext[];
+  inventory: InventoryWithVelocity[];
+  other_printers: PrinterContext[]; // To avoid duplicate recommendations
+}
+
+export interface SpoolRecommendation {
+  spool_id: number;
+  preset_name: string;
+  color: string;
+  remaining_weight: number;
+  reason: string;
+  urgency: 'critical' | 'high' | 'medium' | 'low';
+  print_plan: {
+    module_name: string;
+    prints_possible: number;
+    will_produce: number;
+    inventory_impact: string;
+  }[];
+  waste_estimate: number; // Estimated leftover grams
+}
+
+export interface ModuleRecommendation {
+  module_id: number;
+  module_name: string;
+  reason: string;
+  urgency: 'critical' | 'high' | 'medium' | 'low';
+  prints_recommended: number;
+  inventory_slug: string | null;
+  current_stock: number | null;
+  days_until_stockout: number | null;
+  will_produce: number;
+  filament_needed: number;
+  filament_remaining_after: number;
+}
+
+export interface AIRecommendationResult {
+  type: 'spool_selection' | 'module_selection';
+  recommendations: SpoolRecommendation[] | ModuleRecommendation[];
+  summary: string;
+  waste_optimization_note: string;
 }
