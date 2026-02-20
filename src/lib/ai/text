@@ -12,6 +12,11 @@ if print fail call again the get suggestions thing
 if sucessful mark as done and like suggest next one 
 
 
+when triger calc best order;
+load spool
+when click on model and no queue there yet 
+change model make it so i can see suggestd queue or atleat next and have print the suggested 
+---> should also triger if commplete print that is not in suggested 
 
 
 
