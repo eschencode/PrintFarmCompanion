@@ -11,7 +11,8 @@ import type {
 import {
   getPrinterById,
   getSpoolById,
-  getAllPrintModules
+  getAllPrintModules,
+  updatePrinter
 } from '../server';
 
 export class AIRecommendationService {

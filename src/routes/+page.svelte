@@ -434,11 +434,19 @@
     selectedPresetId = presetId;
   }
 
-  function handleStartPrint() {
+  async function handleStartPrint() {
     if (!selectedPrinter?.loaded_spool_id) {
       alert('Please load a spool first');
       return;
     }
+	// Trigger queue generation for this printer///api/ai-recommendations?type=queue&printerId=2"
+    const response = await fetch(`/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`);
+    const result = await response.json();
+	// Update the local state so the modal shows the new queue immediately
+  if (result && Array.isArray(result)) {
+    selectedPrinter.suggested_queue = result;
+  }
+
     showModuleSelector = true;
   }
 
@@ -1212,42 +1220,48 @@
             </button>
           </div>
 
-          <!-- Optimal Combination Calculator -->
-          {#if optimalCombination && optimalCombination.combination.length > 0}
-            <div class="mb-6 bg-gradient-to-r from-green-500/10 to-blue-500/10 border border-green-500/20 rounded-xl p-4">
-              <div class="flex items-start gap-3">
-                <div class="text-2xl">💡</div>
-                <div class="flex-1">
-                  <h3 class="text-white font-medium mb-2 flex items-center gap-2">
-                    Optimal Combination
-                    <span class="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">
-                      {optimalCombination.wastePercentage}% waste
-                    </span>
-                  </h3>
-                  <div class="space-y-2">
-                    {#each optimalCombination.combination as item}
-                      <div class="flex items-center justify-between text-sm">
-                        <span class="text-slate-300">
-                          {item.count}× {item.module.name}
-                        </span>
-                        <span class="text-slate-500">
-                          {item.count * item.module.expected_weight}g
-                        </span>
-                      </div>
-                    {/each}
-                    <div class="pt-2 border-t border-slate-700/50 flex justify-between text-sm">
-                      <span class="text-slate-400">Total Usage:</span>
-                      <span class="text-white font-medium">{optimalCombination.totalWeight}g / {loadedSpool?.remaining_weight}g</span>
-                    </div>
-                    <div class="flex justify-between text-sm">
-                      <span class="text-slate-400">Remaining:</span>
-                      <span class="text-green-400">{optimalCombination.waste.toFixed(1)}g</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+          {#if selectedPrinter?.suggested_queue && selectedPrinter.suggested_queue.length > 0}
+  <div class="mb-6 bg-gradient-to-r from-green-500/10 to-blue-500/10 border border-green-500/20 rounded-xl p-4">
+    <div class="flex items-start gap-3">
+      <div class="text-2xl">📝</div>
+      <div class="flex-1">
+        <h3 class="text-white font-medium mb-2 flex items-center gap-2">
+          Saved Print Queue
+        </h3>
+        <div class="space-y-2">
+          {#each selectedPrinter.suggested_queue as item, i}
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-slate-300">
+                {i + 1}. {item.module_name}
+                {#if item.status === 'DONE'}
+                  <span class="ml-2 text-green-400 text-xs">✓ Done</span>
+                {/if}
+              </span>
+              <span class="text-slate-500">
+                {item.weight_of_print}g ({item.priority})
+              </span>
             </div>
-          {/if}
+          {/each}
+        </div>
+        <!-- Waste/leftover display -->
+        {#if selectedPrinter.suggested_queue.length > 0 && loadedSpool}
+          {@const lastPrint = selectedPrinter.suggested_queue[selectedPrinter.suggested_queue.length - 1]}
+          <div class="mt-4 text-xs text-slate-400">
+            <span>
+              Waste after queue: 
+              <span class="text-orange-400 font-semibold">
+                {lastPrint.spool_weight_after_print}g
+              </span>
+              / Start: {loadedSpool.remaining_weight}g
+            </span>
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+                 
+					
 
           <!-- Module Categories -->
           <div class="space-y-6">

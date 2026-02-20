@@ -14,7 +14,8 @@ import type {
   ServerResponse,
   GridPreset,
   NewGridPreset,
-  GridCell
+  GridCell,
+  SuggestedPrintQueueItem
 } from './types';
 import { addStockBySlug } from './inventory_handler';
 
@@ -732,3 +733,55 @@ export async function deleteGridPreset(db: D1Database, id: number): Promise<Serv
   }
 }
 
+
+export async function markSuggestedQueueItemDone(
+  db: D1Database,
+  printerId: number,
+  moduleIdentifier: { module_id?: number; module_name?: string }
+): Promise<ServerResponse> {
+  const printer = await getPrinterById(db, printerId);
+  if (!printer || !printer.suggested_queue) {
+    return { success: false, error: 'Printer or queue not found' };
+  }
+
+  // Parse queue if it's a string
+  let queue: SuggestedPrintQueueItem[] = Array.isArray(printer.suggested_queue)
+    ? printer.suggested_queue
+    : JSON.parse(printer.suggested_queue);
+
+  // Find first matching item not already DONE
+  const idx = queue.findIndex(item =>
+    item.status !== 'DONE' &&
+    (
+      (moduleIdentifier.module_id !== undefined && item.module_id === moduleIdentifier.module_id) ||
+      (moduleIdentifier.module_name !== undefined && item.module_name === moduleIdentifier.module_name)
+    )
+  );
+
+  if (idx === -1) {
+    return { success: false, error: 'No matching queue item found or already DONE' };
+  }
+
+  queue[idx].status = 'DONE';
+
+  // Save updated queue
+  await updatePrinter(db, printerId, {
+    suggested_queue: JSON.stringify(queue)
+  });
+
+  return { success: true, message: `Marked queue item as DONE: ${queue[idx].module_name}` };
+}
+
+export async function getSuggestedQueueByPrinterId(
+  db: D1Database,
+  printerId: number
+): Promise<SuggestedPrintQueueItem[] | null> {
+  const printer = await getPrinterById(db, printerId);
+  if (!printer || !printer.suggested_queue) {
+    return null;
+  }
+  // Parse queue if it's a string (for DB storage as TEXT/JSON)
+  return Array.isArray(printer.suggested_queue)
+    ? printer.suggested_queue
+    : JSON.parse(printer.suggested_queue);
+}

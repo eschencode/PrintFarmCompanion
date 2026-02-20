@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { AIRecommendationService, testPrioritization, getSuggestedPrintQueue, prioritizeInventoryFromContext } from '$lib/ai';
+import { AIRecommendationService, generateAndSaveSuggestedQueue, getSuggestedPrintQueue, prioritizeInventoryFromContext } from '$lib/ai';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
   const db = platform?.env?.DB;
@@ -18,12 +18,15 @@ export const GET: RequestHandler = async ({ url, platform }) => {
   const printerId = url.searchParams.get('printerId');
 
   try {
-    if (type === 'test') {
-      const prioritized = await testPrioritization(db);
-      return json(prioritized);
+    
+	 if (type === 'queue') {
+      if (!printerId) {
+        return json({ error: 'Missing printerId' }, { status: 400 });
+      }
+      const queue = await generateAndSaveSuggestedQueue(db, Number(printerId));
+      return json(queue);
     }
-
-    if (type === 'queue') {
+    if (type === 'test') {
       if (!printerId) {
         return json({ error: 'Missing printerId' }, { status: 400 });
       }
@@ -43,16 +46,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     if (!type || !printerId) {
       return json({ error: 'Missing type or printerId' }, { status: 400 });
     }
-
-    const service = new AIRecommendationService(db, ai);
-
-    if (type === 'spool') {
-      const result = await service.getSpoolRecommendations(Number(printerId));
-      return json(result);
-    } else if (type === 'module') {
-      const result = await service.getModuleRecommendations(Number(printerId));
-      return json(result);
-    } else {
+    else {
       return json({ error: 'Invalid type' }, { status: 400 });
     }
   } catch (err) {

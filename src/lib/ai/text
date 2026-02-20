@@ -8,7 +8,8 @@ Problem i get a Prio rating for all items nice
 
 
 solved with knapsack algo 
-
+if print fail call again the get suggestions thing 
+if sucessful mark as done and like suggest next one 
 
 
 
