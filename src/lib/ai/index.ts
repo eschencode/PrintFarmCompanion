@@ -1,5 +1,6 @@
 export { AIRecommendationService } from './recommendation-service';
 export { AIContextBuilder } from './context-builder';
+export {testPrioritization} from './recommendation-service';
 export type {
   InventoryWithVelocity,
   SpoolContext,
@@ -10,3 +11,5 @@ export type {
   SpoolRecommendation,
   ModuleRecommendation
 } from '../types';
+
+export * from './recommendation-service';

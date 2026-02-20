@@ -21,7 +21,7 @@ export interface Printer {
   model: string | null;
   status: string; // 'WAITING' | 'IDLE' | 'PRINTING' | etc.
   loaded_spool_id: number | null;
-  suggested_queue?: SuggestedPrintJob[];
+  suggested_queue?: SuggestedPrintQueueItem[];
   total_hours: number;
 }
 
@@ -38,6 +38,7 @@ export interface PrintModule {
   inventory_slug: string | null;  // Text reference to inventory item
   path: string;
   image_path: string | null;
+  printer_model?: string;
 }
 
 /**
@@ -51,7 +52,7 @@ export interface PrintJob {
   spool_id: number | null;
   start_time: number;
   end_time: number | null;
-  status: 'printing' | 'success' | 'failed'; // ✅ Changed from success: number | null
+  status: 'printing' | 'success' | 'failed'; 
   failure_reason: string | null;
   planned_weight: number;
   actual_weight: number | null;
@@ -298,7 +299,7 @@ export interface InventoryItem {
   description: string | null;
   image_path: string | null;
   stock_count: number;
-  min_threshold: number;
+  min_threshold: number; //not used maybe implemt if ai recomendations fail
   total_added: number;
   total_sold: number;
   total_sold_b2c: number;
@@ -333,15 +334,7 @@ export interface InventoryWithVelocity {
   days_until_stockout: number;
 }
 
-export interface SpoolContext {
-  id: number;
-  preset_id: number;
-  preset_name: string;
-  color: string;
-  remaining_weight: number;
-  printer_id: number | null;
-  printer_name: string | null;
-}
+
 
 export interface ModuleContext {
   id: number;
@@ -352,64 +345,47 @@ export interface ModuleContext {
   objects_per_print: number;
   preset_id: number | null;
   preset_name: string | null;
+  printer_model: string | null;
 }
 
-export interface SuggestedPrintJob {
+
+
+export interface SuggestedPrintQueueItem {
   module_id: number;
   module_name: string;
-  fillament_left: number;
+  status: string;
+  inventory_slug: string;
+  priority: InventoryPriority;
+  weight_of_print: number;
+  spool_weight_after_print:number;
 }
 
-export interface PrinterContext {
-  id: number;
-  name: string;
-  status: string;
-  loaded_spool: SpoolContext | null;
-  suggested_queue: SuggestedPrintJob[];
+
+
+export interface SalesVelocity {
+  slug: string;
+  daily_velocity: number;
 }
 
 export interface AIRecommendationContext {
-  type: 'spool_selection' | 'module_selection';
-  printer: PrinterContext;
-  available_spools: SpoolContext[];
-  available_modules: ModuleContext[];
-  inventory: InventoryWithVelocity[];
-  other_printers: PrinterContext[]; // To avoid duplicate recommendations
+  adjustedInventory: InventoryWithVelocity[];
+  salesVelocity: SalesVelocity[];
 }
 
-export interface SpoolRecommendation {
-  spool_id: number;
-  preset_name: string;
-  color: string;
-  remaining_weight: number;
-  reason: string;
-  urgency: 'critical' | 'high' | 'medium' | 'low';
-  print_plan: {
-    module_name: string;
-    prints_possible: number;
-    will_produce: number;
-    inventory_impact: string;
-  }[];
-  waste_estimate: number; // Estimated leftover grams
+export type InventoryPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW';
+
+export interface PrioritizedInventoryItem {
+  slug: string;
+  name: string;
+  stock_count: number;
+  daily_velocity: number;
+  priority: InventoryPriority;
 }
 
-export interface ModuleRecommendation {
-  module_id: number;
-  module_name: string;
-  reason: string;
-  urgency: 'critical' | 'high' | 'medium' | 'low';
-  prints_recommended: number;
-  inventory_slug: string | null;
-  current_stock: number | null;
-  days_until_stockout: number | null;
-  will_produce: number;
-  filament_needed: number;
-  filament_remaining_after: number;
-}
-
-export interface AIRecommendationResult {
-  type: 'spool_selection' | 'module_selection';
-  recommendations: SpoolRecommendation[] | ModuleRecommendation[];
-  summary: string;
-  waste_optimization_note: string;
+export interface PrioritizedInventory {
+  CRITICAL: PrioritizedInventoryItem[];
+  HIGH: PrioritizedInventoryItem[];
+  MEDIUM: PrioritizedInventoryItem[];
+  LOW: PrioritizedInventoryItem[];
+  VERY_LOW: PrioritizedInventoryItem[];
 }

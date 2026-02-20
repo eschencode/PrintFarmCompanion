@@ -1,3 +1,23 @@
+
+Problem i get a Prio rating for all items nice 
+	i can search for what module i can print from that with my loaded spool and printer module and remaing weight 
+	i can put that in the queue and like assume that this is printed and do the same calculation again until there is no more fillament left on spool 
+	but then i dont really see it as a hole spool dont reduce the moste wast -->calculate in each iteration probaply not best combo 
+
+	if i calculate it all at once prio dosent change i i will just allway say print whit highest prio till empty 
+
+
+solved with knapsack algo 
+
+
+
+
+
+
+
+
+
+
 ### ROLE
 You are a 3D Print Farm Optimization Engine. 
 

@@ -1,9 +1,10 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type {
   InventoryWithVelocity,
+  Printer,
   ModuleContext,
-  PrinterContext,
-  AIRecommendationContext
+  AIRecommendationContext,
+  SalesVelocity
 } from '../types';
 
 export class AIContextBuilder {
@@ -71,76 +72,87 @@ export class AIContextBuilder {
     return result.results;
   }
 
-  /**
-   * Get all printers with their loaded spools and suggested queue
-   */
-  async getPrintersContext(): Promise<PrinterContext[]> {
-    const result = await this.db.prepare(`
-      SELECT 
-        p.id,
-        p.name,
-        p.status,
-        p.suggested_queue,
-        s.id as spool_id,
-        s.preset_id,
-        sp.name as preset_name,
-        sp.color,
-        s.remaining_weight
-      FROM printers p
-      LEFT JOIN spools s ON s.id = p.loaded_spool_id
-      LEFT JOIN spool_presets sp ON s.preset_id = sp.id
-    `).all();
 
-    return result.results.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      status: row.status,
-      loaded_spool: row.spool_id ? {
-        id: row.spool_id,
-        preset_id: row.preset_id,
-        preset_name: row.preset_name,
-        color: row.color,
-        remaining_weight: row.remaining_weight,
-        printer_id: row.id,
-        printer_name: row.name
-      } : null,
-      suggested_queue: row.suggested_queue ? JSON.parse(row.suggested_queue) : []
-    }));
+/**
+ * Get all printers with their suggested queue (queued jobs)
+ */
+async getAllPrintersWithQueuedJobs(): Promise<Printer[]> {
+  const result = await this.db.prepare(`
+    SELECT 
+      p.*,
+      pj.module_id,
+      pm.name as module_name,
+      pj.status as job_status
+    FROM printers p
+    LEFT JOIN print_jobs pj ON pj.printer_id = p.id AND pj.status = 'queued'
+    LEFT JOIN print_modules pm ON pj.module_id = pm.id
+    ORDER BY p.id, pj.id
+  `).all();
+
+  // Group jobs by printer
+  const printersMap = new Map<number, Printer>();
+  for (const row of result.results || []) {
+    if (!printersMap.has(row.id)) {
+      printersMap.set(row.id, {
+        id: row.id,
+        name: row.name,
+        model: row.model,
+        status: row.status,
+        loaded_spool_id: row.loaded_spool_id,
+        total_hours: row.total_hours,
+        suggested_queue: []
+      });
+    }
+    if (row.module_id) {
+      printersMap.get(row.id)!.suggested_queue!.push({
+        module_id: row.module_id,
+        module_name: row.module_name,
+        status: row.job_status,
+        fillament_left: row.filament_left
+      });
+    }
+  }
+  return Array.from(printersMap.values());
+}
+
+/**
+ * Get adjusted inventory context for AI recommendation.
+ * Adds queued jobs from all printers to inventory.
+ */
+async getAdjustedInventoryContext(modules: ModuleContext[]): Promise<AIRecommendationContext> {
+  // 1. Get inventory with velocity
+  const inventory = await this.getInventoryWithVelocity();
+
+  // 2. Get all printers with their queued jobs
+  const printers = await this.getAllPrintersWithQueuedJobs();
+
+  // 3. Build a map of inventory_slug to inventory item
+  const inventoryMap = new Map<string, InventoryWithVelocity>();
+  inventory.forEach(item => inventoryMap.set(item.slug, { ...item }));
+
+  // 4. For each printer's suggested_queue, add the planned objects to inventory
+  for (const printer of printers) {
+    if (!printer.suggested_queue) continue;
+    for (const job of printer.suggested_queue) {
+      // Find the module for this job
+      const module = modules.find(m => m.id === job.module_id);
+      if (!module || !module.inventory_slug) continue;
+      const inv = inventoryMap.get(module.inventory_slug);
+      if (inv) {
+        // Add the objects_per_print to stock_count
+        inv.stock_count += module.objects_per_print;
+      }
+    }
   }
 
-  /**
-   * Build full context for AI recommendation
-   */
-  async buildContext(
-    printerId: number,
-    type: 'spool_selection' | 'module_selection'
-  ): Promise<AIRecommendationContext> {
-    const [inventory, modules, printers] = await Promise.all([
-      this.getInventoryWithVelocity(),
-      this.getModulesContext(),
-      this.getPrintersContext()
-    ]);
+  // 5. Return context
+  return {
+    adjustedInventory: Array.from(inventoryMap.values()),
+    salesVelocity: Array.from(inventoryMap.values()).map(i => ({
+      slug: i.slug,
+      daily_velocity: i.daily_velocity
+    }))
+  } as AIRecommendationContext ; 
+	}
 
-    const currentPrinter = printers.find(p => p.id === printerId);
-    if (!currentPrinter) {
-      throw new Error(`Printer ${printerId} not found`);
-    }
-
-    // For module_selection, filter modules compatible with loaded spool
-    let availableModules = modules;
-    if (type === 'module_selection' && currentPrinter.loaded_spool) {
-      availableModules = modules.filter(
-        m => !m.preset_id || m.preset_id === currentPrinter.loaded_spool!.preset_id
-      );
-    }
-
-    return {
-      type,
-      printer: currentPrinter,
-      available_spools: [], // Not needed here, but keep for type compatibility
-      available_modules: availableModules,
-      inventory,
-      other_printers: printers.filter(p => p.id !== printerId)
-    };
-  }
 }

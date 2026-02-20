@@ -3,11 +3,16 @@ import type { Ai } from '@cloudflare/workers-types';
 import { AIContextBuilder } from './context-builder';
 import type {
   AIRecommendationContext,
-  AIRecommendationResult,
-  SpoolRecommendation,
-  ModuleRecommendation,
-  SuggestedPrintJob
+  InventoryPriority,
+  PrioritizedInventory,
+  PrioritizedInventoryItem,
+  ModuleContext
 } from '../types';
+import {
+  getPrinterById,
+  getSpoolById,
+  getAllPrintModules
+} from '../server';
 
 export class AIRecommendationService {
   private db: D1Database;
@@ -19,259 +24,237 @@ export class AIRecommendationService {
     this.ai = ai;
     this.contextBuilder = new AIContextBuilder(db);
   }
-
-  /**
-   * Build the prompt for spool selection
-   */
-  private buildSpoolSelectionPrompt(context: AIRecommendationContext): string {
-    // Filter inventory to only items that can be printed with available spools
-    const relevantInventory = context.inventory.filter(inv => {
-      return context.available_modules.some(m => m.inventory_slug === inv.slug);
-    });
-
-    // Sort by urgency (days until stockout, below min threshold)
-    const urgentItems = relevantInventory
-      .filter(i => i.days_until_stockout < 14 || i.stock_above_min < 0)
-      .sort((a, b) => a.days_until_stockout - b.days_until_stockout);
-
-    return `You are a 3D print farm optimization assistant. Your goal is to recommend which spool to load to:
-1. MINIMIZE WASTE - Use up spools efficiently, avoid leftover filament
-2. MEET DEMAND - Print items that are selling well or running low
-3. PRIORITIZE URGENCY - Critical stock issues first
-
-CURRENT SITUATION:
-- Printer: ${context.printer.name} (${context.printer.status})
-- Currently no spool loaded
-
-AVAILABLE SPOOLS (not loaded in any printer):
-${context.available_spools.map(s => 
-  `- ${s.preset_name} (${s.color}): ${s.remaining_weight}g remaining`
-).join('\n')}
-
-URGENT INVENTORY ITEMS (low stock or high demand):
-${urgentItems.slice(0, 10).map(i => 
-  `- ${i.name}: ${i.stock_count} in stock (min: ${i.min_threshold}), selling ${i.daily_velocity}/day, ~${i.days_until_stockout} days until stockout`
-).join('\n')}
-
-MODULES AVAILABLE (what can be printed):
-${context.available_modules.slice(0, 15).map(m => {
-  const inv = context.inventory.find(i => i.slug === m.inventory_slug);
-  return `- ${m.name}: ${m.expected_weight}g, makes ${m.objects_per_print} items, needs ${m.preset_name || 'any spool'}${inv ? `, current stock: ${inv.stock_count}` : ''}`;
-}).join('\n')}
-
-OTHER PRINTERS (to avoid duplicating work):
-${context.other_printers.map(p => 
-  `- ${p.name}: ${p.loaded_spool ? `${p.loaded_spool.preset_name} (${p.loaded_spool.color})` : 'no spool'}`
-).join('\n')}
-
-Respond with a JSON object containing:
-{
-  "recommendations": [
-    {
-      "spool_preset_name": "exact name from available spools",
-      "reason": "brief explanation",
-      "urgency": "critical|high|medium|low",
-      "print_plan": [
-        {"module_name": "...", "prints_recommended": N, "will_produce": N}
-      ],
-      "waste_estimate_grams": N
-    }
-  ],
-  "summary": "One sentence summary of recommendation",
-  "waste_optimization_note": "How this minimizes waste"
 }
 
-Return ONLY valid JSON, no other text.`;
-  }
+/**
+ * Assigns a priority to each inventory item and groups them.
+ */
+export function prioritizeInventoryFromContext(
+  context: AIRecommendationContext
+): PrioritizedInventory {
+  const prioritized: PrioritizedInventory = {
+    CRITICAL: [],
+    HIGH: [],
+    MEDIUM: [],
+    LOW: [],
+    VERY_LOW: []
+  };
 
-  /**
-   * Build the prompt for module selection
-   */
-  private buildModuleSelectionPrompt(context: AIRecommendationContext): string {
-    const loadedSpool = context.printer.loaded_spool!;
-    const modulesWithInventory = context.available_modules.map(m => {
-      const inv = context.inventory.find(i => i.slug === m.inventory_slug);
-      return { ...m, inventory: inv };
+  for (const item of context.adjustedInventory) {
+    let priority: InventoryPriority;
+
+    // Example logic (adjust thresholds as needed)
+    if (item.days_until_stockout <= 2 ){//|| item.stock_count <= item.min_threshold) {
+      priority = 'CRITICAL';
+    } else if (item.days_until_stockout <= 10) {
+      priority = 'HIGH';
+    } else if (item.days_until_stockout <= 25) {
+      priority = 'MEDIUM';
+    } else if (item.days_until_stockout <= 35) {
+      priority = 'LOW';
+    } else {
+      priority = 'VERY_LOW';
+    }
+
+    prioritized[priority].push({
+      slug: item.slug,
+      name: item.name,
+      stock_count: item.stock_count,
+      daily_velocity: item.daily_velocity,
+      priority
     });
-
-    return `
-### ROLE
-You are a 3D Print Farm Optimization Engine. 
-
-### OBJECTIVE
-Generate a print queue for ONE printer with spool remaining_weight ${loadedSpool.remaining_weight}g that:
-1. Minimizes filament waste (target < 50g remaining).
-2. Prioritizes items based on "Stock Stress" (Stock Stress = Velocity / (Current Stock + 1)).
-3. Does not duplicate work already handled by other printers.
-
-### CONSTRAINTS
-- Spool: ${loadedSpool.remaining_weight}g.
-- Maximum Jobs: 5.
-- Stop Condition: When no available module's weight fits in the remaining "filament_left".
-- OUTPUT: Return ONLY a JSON array. No thinking tags, no prose.
-
-### DATA
-Modules you can print:
-${modulesWithInventory.map(m => 
-  `- ${m.id}: ${m.name} (${m.expected_weight}g per print, ${m.objects_per_print} objects, inventory_slug: ${m.inventory_slug})`
-).join('\n')}
-
-Inventory (with sales velocity):
-${context.inventory.map(i => 
-  `- ${i.slug}: ${i.stock_count} in stock, min: ${i.min_threshold}, sold_7d: ${i.sold_7d}, sold_30d: ${i.sold_30d}, velocity: ${i.daily_velocity}/day, days_until_stockout: ${i.days_until_stockout}`
-).join('\n')}
-
-Other Printers (DO NOT DUPLICATE THESE SLUGS):
-Other printers and their planned queues:
-${context.other_printers.map(p =>
-  `- ${p.name}: ${p.suggested_queue.map(q => `${q.module_name} (module_id: ${q.module_id})`).join(', ')}`
-).join('\n')}
-
-### EXECUTION STEPS (Think before answering)
-1. Calculate the Stock Stress for all "Blau" modules.
-2. Identify the highest priority module.
-3. Check if it fits the spool.
-4. If it fits, add to queue and subtract (Weight + 2g for purge/brim).
-5. If it doesn't fit, try the next highest priority module that fits.
-6. Repeat until the spool is effectively empty.
-
-### OUTPUT FORMAT
-[
-  { "module_id": 0, "module_name": "name", "filament_left": 0}
-]
-Return ONLY valid JSON, no other text.
-`;
   }
 
-  /**
-   * Get spool recommendations using AI
-   */
- /* async getSpoolRecommendations(printerId: number): Promise<AIRecommendationResult> {
-    const context = await this.contextBuilder.buildContext(printerId, 'spool_selection');
-    const prompt = this.buildSpoolSelectionPrompt(context);
-	console.log('TEST');
-    try {
-		console.log('PROMT:',prompt);
-      const response = await this.ai.run('@cf/meta/llama-3.1-8b-instruct', {
-        prompt,
-        max_tokens: 1000,
-        temperature: 0.3 // Lower temperature for more consistent output
-      });
-	  console.log('PROMT:',prompt);
+  return prioritized;
+}
 
-	  console.log('RAW AI OUTPUT:',response);
-      // Parse the AI response
-      const responseText = (response as any).response || '';
-      
-      // Extract JSON from response (handle potential markdown wrapping)
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No valid JSON in AI response');
+export async function testPrioritization(db: D1Database) {
+  const contextBuilder = new AIContextBuilder(db);
+  const modules = await contextBuilder.getModulesContext();
+  const aiContext = await contextBuilder.getAdjustedInventoryContext(modules);
+
+  const prioritized = prioritizeInventoryFromContext(aiContext);
+
+  // Log the prioritized inventory
+  for (const [priority, items] of Object.entries(prioritized)) {
+    console.log(`\n=== ${priority} ===`);
+    for (const item of items) {
+      console.log(
+        `- ${item.name} (slug: ${item.slug}): stock=${item.stock_count}, velocity=${item.daily_velocity}`
+      );
+    }
+  }
+   return prioritized;
+}
+
+
+export interface SuggestedPrintQueueItem {
+  module_id: number;
+  module_name: string;
+  inventory_slug: string;
+  priority: InventoryPriority;
+  weight_of_print: number;
+  spool_weight_after_print: number;
+}
+// Define scores to heavily favor priority, but use weight as a tie-breaker
+const PRIORITY_SCORES: Record<InventoryPriority, number> = {
+  'CRITICAL': 100000,
+  'HIGH':     10000,
+  'MEDIUM':   1000,
+  'LOW':      100,
+  'VERY_LOW': 10
+};
+
+type UnrolledItem = {
+  module: any; // Use your Module type here
+  weight: number;
+  score: number;
+  priority: InventoryPriority;
+};
+
+export async function getSuggestedPrintQueue(
+  db: D1Database,
+  printerId: number,
+  prioritized: PrioritizedInventory
+): Promise<SuggestedPrintQueueItem[]> {
+  const contextBuilder = new AIContextBuilder(db);
+  const printer = await getPrinterById(db, printerId);
+  if (!printer || !printer.loaded_spool_id) return [];
+
+  const loadedSpool = await getSpoolById(db, printer.loaded_spool_id);
+  if (!loadedSpool) return [];
+
+  const modules = await contextBuilder.getModulesContext();
+
+  const printableModules = modules.filter(m =>
+    m.preset_id === loadedSpool.preset_id &&
+    (!m.printer_model || m.printer_model === printer.model) &&
+    m.inventory_slug
+  );
+
+  const remainingWeight = Math.floor(loadedSpool.remaining_weight);
+  if (remainingWeight <= 0) return [];
+
+  // Helper to clone and find an item
+  const getSimulatedItem = (inventory: PrioritizedInventory, slug: string) => {
+    for (const items of Object.values(inventory)) {
+      const found = items.find(i => i.slug === slug);
+      if (found) return found;
+    }
+    return undefined;
+  };
+
+  // --- STEP 1: UNROLL THE PRINTS ---
+  // We figure out the value of the 1st print, 2nd print, 3rd print of each module
+  const unrolledItems: UnrolledItem[] = [];
+
+  for (const module of printableModules) {
+    // Deep clone the inventory so we can simulate for this specific module
+    let simInventory = JSON.parse(JSON.stringify(prioritized)); 
+    let accumulatedWeight = module.expected_weight;
+
+    while (accumulatedWeight <= remainingWeight) {
+      // Find the current priority of this item in our simulation
+      let currentPriority: InventoryPriority = 'VERY_LOW';
+      for (const [prio, items] of Object.entries(simInventory)) {
+        if (items.some((i: any) => i.slug === module.inventory_slug)) {
+          currentPriority = prio as InventoryPriority;
+          break;
+        }
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
+      // Calculate score: Massive points for priority + small points for weight (to minimize waste)
+      const baseScore = PRIORITY_SCORES[currentPriority] || 0;
+      const score = baseScore + (module.expected_weight * 0.01); 
 
-      // Map to our expected format
-      const recommendations: SpoolRecommendation[] = parsed.recommendations.map((rec: any) => {
-        const spool = context.available_spools.find(
-          s => s.preset_name.toLowerCase() === rec.spool_preset_name?.toLowerCase()
-        );
-        
-        return {
-          spool_id: spool?.id || 0,
-          preset_name: rec.spool_preset_name,
-          color: spool?.color || '',
-          remaining_weight: spool?.remaining_weight || 0,
-          reason: rec.reason,
-          urgency: rec.urgency || 'medium',
-          print_plan: rec.print_plan || [],
-          waste_estimate: rec.waste_estimate_grams || 0
-        };
+      unrolledItems.push({
+        module,
+        weight: Math.round(module.expected_weight), // DP requires integer weights
+        score,
+        priority: currentPriority
       });
 
-      // Store for debugging/caching
-      await this.storeRecommendation(printerId, 'spool_selection', context, responseText, recommendations);
+      // Simulate the inventory increasing so the next iteration naturally drops in priority
+      const invItem = getSimulatedItem(simInventory, module.inventory_slug!);
+      if (invItem) {
+        invItem.stock_count += module.objects_per_print ?? 1;
+      }
+      
+      // Re-run your prioritization logic on the simulated inventory here
+      simInventory = prioritizeInventoryFromContext({
+        adjustedInventory: Object.values(simInventory).flat() as any,
+        salesVelocity: [] 
+      });
 
-      return {
-        type: 'spool_selection',
-        recommendations,
-        summary: parsed.summary || '',
-        waste_optimization_note: parsed.waste_optimization_note || ''
-      };
-    } catch (error) {
-      console.error('AI recommendation error:', error);
-      // Return empty result on error
-      return {
-        type: 'spool_selection',
-        recommendations: [],
-        summary: 'Unable to generate recommendations',
-        waste_optimization_note: ''
-      };
+      accumulatedWeight += module.expected_weight;
     }
   }
 
-  /**
-   * Get module recommendations using AI
-   */
-  async getModuleRecommendations(printerId: number): Promise<AIRecommendationResult> {
-    const context = await this.contextBuilder.buildContext(printerId, 'module_selection');
-    
-    if (!context.printer.loaded_spool) {
-      return {
-        type: 'module_selection',
-        recommendations: [],
-        summary: 'No spool loaded - load a spool first',
-        waste_optimization_note: ''
-      };
+  // --- STEP 2: 0/1 KNAPSACK ALGORITHM ---
+  // Find the absolute best combination of unrolled items to maximize score
+  const dp = new Array(remainingWeight + 1).fill(0);
+  const selectedItems: UnrolledItem[][] = Array.from({ length: remainingWeight + 1 }, () => []);
+
+  for (const item of unrolledItems) {
+    for (let w = remainingWeight; w >= item.weight; w--) {
+      if (dp[w - item.weight] + item.score > dp[w]) {
+        dp[w] = dp[w - item.weight] + item.score;
+        selectedItems[w] = [...selectedItems[w - item.weight], item];
+      }
     }
-
-    const prompt = this.buildModuleSelectionPrompt(context);
-	console.log('promt',prompt);
-    try {
-      const response = await this.ai.run('@cf/deepseek-ai/deepseek-r1-distill-qwen-32b', {
-        prompt,
-        max_tokens: 2000,
-        temperature: 0.3
-      });
-	  console.log('RAW AI OUTPUT:',response);
-      const responseText = (response as any).response || '';
-      let parsedQueue: SuggestedPrintJob[] = [];
-
-      try {
-	// Try to parse as JSON array directly
-		parsedQueue = JSON.parse(responseText);
-	} catch {
-		// If that fails, try to extract array from within the string
-		const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-		if (!jsonMatch) {
-			throw new Error('No valid JSON array in AI response');
-		}
-		parsedQueue = JSON.parse(jsonMatch[0]);
-	}
-
-
-		// Clear old queue
-	await this.db.prepare(`
-	UPDATE printers SET suggested_queue = NULL WHERE id = ?
-	`).bind(printerId).run();
-
-
-	   await this.db.prepare(`
-		UPDATE printers SET suggested_queue = ? WHERE id = ?
-		`).bind(
-		JSON.stringify(parsedQueue),
-		printerId
-		).run();
-
-	}
-  catch {
-    // On error, return empty result
-    return {
-      type: 'module_selection',
-      recommendations: [],
-      summary: 'Unable to generate recommendations',
-      waste_optimization_note: ''
-    };
   }
+
+  // Find the max score achieved
+  let bestWeight = 0;
+  let maxScore = -1;
+  for (let w = 0; w <= remainingWeight; w++) {
+    if (dp[w] > maxScore) {
+      maxScore = dp[w];
+      bestWeight = w;
+    }
   }
+
+  // --- STEP 3: FORMAT THE OUTPUT ---
+  // The DP algorithm gives us the best items, but not in order. 
+  // We sort them by priority so the printer prints CRITICAL stuff first.
+  let optimalPrints = selectedItems[bestWeight];
+  optimalPrints.sort((a, b) => PRIORITY_SCORES[b.priority] - PRIORITY_SCORES[a.priority]);
+
+  const queue: SuggestedPrintQueueItem[] = [];
+  let currentSpoolWeight = loadedSpool.remaining_weight;
+
+  for (const print of optimalPrints) {
+    currentSpoolWeight -= print.weight;
+    queue.push({
+      module_id: print.module.id,
+      module_name: print.module.name,
+      inventory_slug: print.module.inventory_slug!,
+      priority: print.priority,
+      weight_of_print: print.weight,
+      spool_weight_after_print: currentSpoolWeight
+    });
+  }
+
+  return queue;
+}
+
+export async function generateAndSaveSuggestedQueue(
+  db: D1Database,
+  printerId: number
+): Promise<SuggestedPrintQueueItem[]> {
+  // Build context and prioritized inventory
+  const contextBuilder = new AIContextBuilder(db);
+  const modules = await contextBuilder.getModulesContext();
+  const aiContext = await contextBuilder.getAdjustedInventoryContext(modules);
+  const prioritized = prioritizeInventoryFromContext(aiContext);
+
+  // Generate queue
+  const queue = await getSuggestedPrintQueue(db, printerId, prioritized);
+
+  // Save queue to printer
+  await updatePrinter(db, printerId, {
+    suggested_queue: JSON.stringify(queue)
+  });
+
+  return queue;
 }

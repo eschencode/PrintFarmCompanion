@@ -66,34 +66,43 @@ export async function createPrinter(db: D1Database, printer: {
   }
 }
 
-// Update a printer
-export async function updatePrinter(db: D1Database, id: number, printer: {
-  name?: string;
-  model?: string | null;
-}): Promise<ServerResponse> {
+export async function updatePrinter(
+  db: D1Database,
+  id: number,
+  printer: {
+    name?: string;
+    model?: string | null;
+    suggested_queue?: string | null;
+  }
+): Promise<ServerResponse> {
   try {
     const updates: string[] = [];
     const values: any[] = [];
-    
+
     if (printer.name !== undefined) {
       updates.push('name = ?');
       values.push(printer.name);
     }
-    
+
     if (printer.model !== undefined) {
       updates.push('model = ?');
       values.push(printer.model);
     }
-    
+
+    if (printer.suggested_queue !== undefined) {
+      updates.push('suggested_queue = ?');
+      values.push(printer.suggested_queue);
+    }
+
     if (updates.length === 0) {
       return { success: false, error: 'No updates provided' };
     }
-    
+
     values.push(id);
-    
+
     await db.prepare(`UPDATE printers SET ${updates.join(', ')} WHERE id = ?`)
       .bind(...values).run();
-    
+
     return { success: true, message: 'Printer updated successfully' };
   } catch (error) {
     console.error('Error updating printer:', error);
