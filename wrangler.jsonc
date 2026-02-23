@@ -9,8 +9,8 @@
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "3dtracker-db",
-			"database_id": "e09a98c3-823f-4908-b6f4-67639ce9f22b"
+			"database_name": "3dtracker-db_new",
+			"database_id": "67e78701-39fb-4473-a264-1fcf1b6e9a52"
 		}
 	],
 	"ai": {
