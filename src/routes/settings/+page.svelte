@@ -15,6 +15,10 @@
   let testingConnection = false;
   let connectionStatus: 'untested' | 'success' | 'failed' = 'untested';
   
+  // Shopify sync state
+  let syncingShopify = false;
+  let shopifySyncResult: { success: boolean; ordersProcessed?: number; itemsDeducted?: number; skippedOrders?: number; error?: string; errors?: string[] } | null = null;
+  
   // ✅ Image selection
   let selectedImagePath = '';
   let imagePreviewUrl = '';
@@ -30,6 +34,45 @@
 
   // Cell types available for selection
   const cellTypes = ['printer', 'stats', 'settings', 'storage', 'empty'] as const;
+
+  let moduleSearch = '';
+
+  // computed array that we actually render
+  $: filteredModules = data.printModules
+    ? data.printModules.filter(m =>
+        m.name.toLowerCase().includes(moduleSearch.toLowerCase()) ||
+        (m.printer_model ?? '').toLowerCase().includes(moduleSearch.toLowerCase())
+      )
+    : [];
+
+
+	let showModuleEditor = false;
+let editingModule: any = null; // module being edited
+
+
+let moduleName = '';
+let modulePath = '';
+let moduleImage = '';
+let modulePrinterModel = '';
+let modulePresetId: number | '' = '';
+let moduleWeight = '';
+let moduleTime = '';
+let moduleObjects = 1;
+
+$: populateFields();
+function populateFields() {
+  if (editingModule) {
+    moduleName = editingModule.name;
+    modulePath = editingModule.path;
+    moduleImage = editingModule.image_path || '';
+    modulePrinterModel = editingModule.printer_model || '';
+    modulePresetId = editingModule.default_spool_preset_id || '';
+    moduleWeight = editingModule.expected_weight ?? '';
+    moduleTime = editingModule.expected_time ?? '';
+    moduleObjects = editingModule.objects_per_print || 1;
+  }
+}
+
 
   // Generate empty grid config based on dimensions
   function generateEmptyGrid(rows: number, cols: number): GridCell[] {
@@ -379,6 +422,8 @@
                         🎨
                       {:else if cell.type === 'storage'}
                         📦
+					  {:else if cell.type === 'inventory'}
+                        🛒
                       {:else}
                         ∅
                       {/if}
@@ -512,8 +557,135 @@
       </div>
     </div>
 
+    <!-- Shopify Integration Section - Full Width -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
+      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+        <div>
+          <h2 class="text-xl font-medium flex items-center gap-2">
+            <span class="text-2xl">🛒</span>
+            Shopify Integration
+          </h2>
+          <p class="text-sm text-slate-500 mt-1">Sync orders to auto-deduct inventory</p>
+        </div>
+        {#if data.shopifyConfigured}
+          <form method="POST" action="?/syncShopify" use:enhance={() => {
+            syncingShopify = true;
+            return async ({ result, update }) => {
+              syncingShopify = false;
+              if (result.type === 'success' && result.data) {
+                shopifySyncResult = result.data as typeof shopifySyncResult;
+              } else {
+                shopifySyncResult = null;
+              }
+              await update();
+            };
+          }}>
+            <button 
+              type="submit"
+              disabled={syncingShopify}
+              class="bg-green-600 hover:bg-green-700 disabled:bg-slate-700 text-white font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+            >
+              {#if syncingShopify}
+                <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Syncing...
+              {:else}
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Sync Now
+              {/if}
+            </button>
+          </form>
+        {/if}
+      </div>
+      
+      <div class="p-6">
+        {#if !data.shopifyConfigured}
+          <div class="text-center py-8">
+            <div class="text-4xl mb-4">⚠️</div>
+            <p class="text-slate-400 mb-2">Shopify not configured</p>
+            <p class="text-sm text-slate-500 mb-4">
+              Set <code class="bg-slate-800 px-2 py-0.5 rounded">SHOPIFY_STORE_DOMAIN</code> and 
+              <code class="bg-slate-800 px-2 py-0.5 rounded">SHOPIFY_ACCESS_TOKEN</code> in your environment
+            </p>
+            <a href="https://admin.shopify.com/store/dilemma-studio/settings/apps/development" 
+               target="_blank" 
+               class="text-blue-400 hover:text-blue-300 text-sm">
+              Create API credentials in Shopify Admin →
+            </a>
+          </div>
+        {:else}
+          {#if shopifySyncResult}
+            <div class="mb-4 p-4 rounded-lg {shopifySyncResult.success ? 'bg-green-900/30 border border-green-800' : 'bg-red-900/30 border border-red-800'}">
+              {#if shopifySyncResult.success}
+                <p class="text-green-400 font-medium">Sync Complete</p>
+                <p class="text-sm text-slate-400">
+                  {shopifySyncResult.ordersProcessed} orders processed, 
+                  {shopifySyncResult.itemsDeducted} items deducted
+                  {#if (shopifySyncResult.skippedOrders ?? 0) > 0}
+                    ({shopifySyncResult.skippedOrders} skipped)
+                  {/if}
+                </p>
+              {:else}
+                <p class="text-red-400 font-medium">Sync Failed</p>
+                <p class="text-sm text-slate-400">{shopifySyncResult.error}</p>
+              {/if}
+              {#if shopifySyncResult.errors?.length}
+                <div class="mt-2 text-sm text-amber-400">
+                  {#each shopifySyncResult.errors as error}
+                    <p>• {error}</p>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+              <p class="text-sm text-slate-500">Last Sync</p>
+              <p class="text-lg font-medium">
+                {#if data.shopifySyncState?.last_sync_at}
+                  {new Date(data.shopifySyncState.last_sync_at).toLocaleString()}
+                {:else}
+                  Never
+                {/if}
+              </p>
+            </div>
+            <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+              <p class="text-sm text-slate-500">Orders Processed</p>
+              <p class="text-lg font-medium">{data.shopifySyncState?.orders_processed ?? 0}</p>
+            </div>
+            <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+              <p class="text-sm text-slate-500">Items Deducted</p>
+              <p class="text-lg font-medium">{data.shopifySyncState?.items_deducted ?? 0}</p>
+            </div>
+          </div>
+          
+          {#if data.shopifyRecentOrders?.length > 0}
+            <h3 class="text-sm font-medium text-slate-400 mb-3">Recent Orders</h3>
+            <div class="space-y-2">
+              {#each data.shopifyRecentOrders as order}
+                <div class="flex justify-between items-center bg-slate-800/30 border border-slate-700 rounded-lg px-4 py-2">
+                  <span class="text-slate-200">#{order.shopify_order_number}</span>
+                  <span class="text-sm text-slate-400">{order.total_items} items</span>
+                  <span class="text-xs text-slate-500">
+                    {new Date(order.processed_at).toLocaleString()}
+                  </span>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <p class="text-center text-slate-500 py-4">No orders synced yet</p>
+          {/if}
+        {/if}
+      </div>
+    </div>
+
     <!-- Rest of settings page - Print Modules and Spool Presets -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-1 gap-6">
       
       <!-- Print Modules Section -->
       <div class="space-y-6">
@@ -536,6 +708,24 @@
                 class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
               />
             </div>
+
+						<div>
+			<label for="printerModel" class="block text-sm text-slate-400 mb-2">
+			Printer Model
+			</label>
+			<input
+				type="text"
+				id="printerModel"
+				name="printerModel"
+				placeholder="e.g. P1S, H2S"
+				class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 
+					text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 
+					transition-colors"
+			/>
+			<p class="text-xs text-slate-600 mt-1">
+				Restrict this module to a specific printer model.
+			</p>
+			</div>
             
             <div>
               <label for="modulePath" class="block text-sm text-slate-400 mb-2">File Path</label>
@@ -678,74 +868,104 @@
           </form>
         </div>
 
-        <!-- Modules List -->
-        {#if data.printModules && data.printModules.length > 0}
-          <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-            <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-              <h3 class="text-lg font-medium">Existing Modules ({data.printModules.length})</h3>
-            </div>
-            <div class="divide-y divide-slate-800">
-              {#each data.printModules as module}
-                {@const linkedPreset = data.spoolPresets.find(p => p.id === module.default_spool_preset_id)}
-                <div class="p-4 hover:bg-slate-800/30 transition-colors">
-                  <div class="flex gap-4">
-                    <!-- ✅ NEW: Show module image if available -->
-                    {#if module.image_path}
-                      <div class="w-20 h-20 rounded-lg overflow-hidden bg-slate-700/50 flex-shrink-0 flex items-center justify-center">
-                        <img 
-                          src={module.image_path} 
-                          alt={module.name}
-                          class="max-w-full max-h-full object-contain"
-                          onerror={(e) => e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'} 
-                        />
-                      </div>
-                    {:else}
-                      <div class="w-20 h-20 rounded-lg overflow-hidden bg-slate-700/50 flex-shrink-0 flex items-center justify-center">
-                        <span class="text-3xl opacity-50">📦</span>
-                      </div>
-                    {/if}
+       <div class="p-6">
+  <div class="mb-4">
+    <input
+      type="text"
+      placeholder="Search modules…"
+      bind:value={moduleSearch}
+      class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+    />
+  </div>
 
-                    <div class="flex-1">
-                      <div class="flex justify-between items-start mb-2">
-                        <h4 class="text-white font-medium">{module.name}</h4>
-                        <form method="POST" action="?/deleteModule">
-                          <input type="hidden" name="moduleId" value={module.id} />
-                          <button 
-                            type="submit"
-                            class="text-red-400 hover:text-red-300 text-sm"
-                          >
-                            Delete
-                          </button>
-                        </form>
-                      </div>
-                      <div class="space-y-1 text-sm">
-                        <p class="text-slate-400 font-mono text-xs truncate">{module.path}</p>
-                        {#if module.image_path}
-                          <p class="text-slate-600 font-mono text-xs truncate">🖼️ {module.image_path}</p>
-                        {/if}
-                        {#if linkedPreset}
-                          <p class="text-blue-400 text-xs">
-                            🎯 Preset: {linkedPreset.name}
-                          </p>
-                        {:else}
-                          <p class="text-slate-600 text-xs">
-                            ✨ Any spool
-                          </p>
-                        {/if}
-                        <div class="flex gap-4 text-slate-500">
-                          <span>{module.expected_weight}g</span>
-                          <span>{module.expected_time}min</span>
-                          <span>{module.objects_per_print} objects</span>
-                        </div>
-                      </div>
-                    </div>
+  <!-- Modules List (vertical, not grid) -->
+  {#if filteredModules.length > 0}
+    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
+        <h3 class="text-lg font-medium">Existing Modules ({filteredModules.length})</h3>
+      </div>
+      <div class="divide-y divide-slate-800">
+		
+		{#each filteredModules as module}
+          {@const linkedPreset = data.spoolPresets.find(p => p.id === module.default_spool_preset_id)}
+          <div class="p-4 hover:bg-slate-800/30 transition-colors">
+            <div class="flex gap-4">
+              {#if module.image_path}
+                <div class="w-20 h-20 rounded-lg overflow-hidden bg-slate-700/50 flex-shrink-0 flex items-center justify-center">
+                  <img 
+                    src={module.image_path} 
+                    alt={module.name}
+                    class="max-w-full max-h-full object-contain"
+                    onerror={(e) => e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'} 
+                  />
+                </div>
+              {:else}
+                <div class="w-20 h-20 rounded-lg overflow-hidden bg-slate-700/50 flex-shrink-0 flex items-center justify-center">
+                  <span class="text-3xl opacity-50">📦</span>
+                </div>
+              {/if}
+
+              <div class="flex-1">
+                <div class="flex justify-between items-start mb-2">
+                  <h4 class="text-white font-medium">{module.name}</h4>
+                  <form method="POST" action="?/deleteModule">
+                    <input type="hidden" name="moduleId" value={module.id} />
+                    <button 
+                      type="submit"
+                      class="text-red-400 hover:text-red-300 text-sm"
+                    >
+                      Delete
+                    </button>
+					
+                  </form>
+
+				   <button
+				onclick={() => {
+				editingModule = module;
+				showModuleEditor = true;
+				populateFields();
+				}}
+				class="text-blue-400 hover:underline text-xs"
+			>
+				Edit
+			</button>
+
+                </div>
+
+				
+
+                <div class="space-y-1 text-sm">
+                  <p class="text-slate-400 font-mono text-xs truncate">{module.path}</p>
+                  {#if module.printer_model}
+                    <p class="text-slate-600 text-xs">🖨 Model: {module.printer_model}</p>
+                  {/if}
+                  {#if linkedPreset}
+                    <p class="text-blue-400 text-xs">
+                      🎯 Preset: {linkedPreset.name}
+                    </p>
+                  {:else}
+                    <p class="text-slate-600 text-xs">
+                      ✨ Any spool
+                    </p>
+                  {/if}
+                  <div class="flex gap-4 text-slate-500">
+                    <span>{module.expected_weight}g</span>
+                    <span>{module.expected_time} min</span>
+                    <span>{module.objects_per_print} objects</span>
                   </div>
                 </div>
-              {/each}
+              </div>
             </div>
           </div>
-        {/if}
+        {/each}
       </div>
+    </div>
+  {:else}
+    <p class="text-slate-500 py-4 text-center">No modules match your search.</p>
+  {/if}
+</div>
+
+</div>
 
       <!-- Spool Presets Section -->
       <div class="space-y-6">
@@ -844,6 +1064,7 @@
         </div>
 
         <!-- Presets List -->
+		 
         {#if data.spoolPresets && data.spoolPresets.length > 0}
           <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
             <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
@@ -1009,6 +1230,7 @@
                     <option value="settings">Settings</option>
                     <option value="storage">Storage</option>
                     <option value="spools">Materials</option>
+                    <option value="inventory">Inventory</option>
                   </select>
 
                   <!-- Printer Selector (if printer type) -->
@@ -1042,6 +1264,8 @@
                       <span class="text-lg">📦</span>
                     {:else if cell.type === 'spools'}
                       <span class="text-lg">🎨</span>
+					{:else if cell.type === 'inventory'}
+                      <span class="text-lg">🛒</span>
                     {:else}
                       <span class="text-slate-600 text-xs">Empty</span>
                     {/if}
@@ -1073,6 +1297,7 @@
     </div>
   </div>
 {/if}
+
 
 <!-- Printer Editor Modal -->
 {#if showPrinterEditor}
@@ -1188,6 +1413,210 @@
     </div>
   </div>
 {/if}
+
+<!-- Module editor modal -->
+{#if showModuleEditor}
+  <div
+    class="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6"
+    onclick={() => {
+      showModuleEditor = false;
+      editingModule = null;
+    }}
+    onkeydown={(e) => e.key === 'Escape' && (showModuleEditor = false)}
+    role="button" tabindex="0" aria-label="Close module editor"
+  >
+    <!-- stop background clicks bubbling to outer div -->
+    <div
+      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-y-auto"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog" aria-modal="true"
+    >
+      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+        <h2 class="text-xl font-medium">
+          {editingModule ? 'Edit print module' : 'Add print module'}
+        </h2>
+        <button
+          onclick={() => {
+            showModuleEditor = false;
+            editingModule = null;
+          }}
+          class="text-slate-400 hover:text-white p-2"
+          aria-label="Close"
+        >
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <form
+        method="POST"
+        action={editingModule ? '?/updateModule' : '?/addModule'}
+        class="p-6 space-y-4"
+        use:enhance={() => {
+          return async ({ result, update }) => {
+            if (result.type === 'success') {
+              showModuleEditor = false;
+              editingModule = null;
+            }
+            await update();
+          };
+        }}
+      >
+        {#if editingModule}
+          <input type="hidden" name="moduleId" value={editingModule.id} />
+        {/if}
+
+        <!-- module name -->
+        <div>
+          <label for="editModuleName" class="block text-sm text-slate-400 mb-2">Module
+            Name</label>
+          <input
+            id="editModuleName"
+            type="text"
+            name="name"
+            bind:value={moduleName}
+            required
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+          />
+        </div>
+
+        <!-- printer model -->
+        <div>
+          <label for="editPrinterModel" class="block text-sm text-slate-400 mb-2">Printer
+            Model</label>
+          <input
+            id="editPrinterModel"
+            type="text"
+            name="printerModel"
+            bind:value={modulePrinterModel}
+            placeholder="e.g. P1S, H2S"
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+          />
+          <p class="text-xs text-slate-600 mt-1">
+            Restrict this module to a specific printer model.
+          </p>
+        </div>
+
+        <!-- path -->
+        <div>
+          <label for="editModulePath" class="block text-sm text-slate-400 mb-2">File
+            Path</label>
+          <input
+            id="editModulePath"
+            type="text"
+            name="path"
+            bind:value={modulePath}
+            required
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors font-mono text-sm"
+          />
+          <p class="text-xs text-slate-600 mt-1">Must be an absolute path</p>
+        </div>
+
+        <!-- image selector -->
+        <div>
+          <label for="editImagePath" class="block text-sm text-slate-400 mb-2">
+            Module Image (Optional)
+          </label>
+          <select
+            id="editImagePath"
+            name="imagePath"
+            bind:value={moduleImage}
+            onchange={(e) => updateImagePreview(e.currentTarget.value)}
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+          >
+            <option value="">No image</option>
+            {#if data.availableImages && data.availableImages.length > 0}
+              {#each data.availableImages as img}
+                <option value={img}>{img}</option>
+              {/each}
+            {:else}
+              <option value="" disabled>No images available</option>
+            {/if}
+          </select>
+        </div>
+
+        <!-- spool preset dropdown -->
+        <div>
+          <label for="editDefaultSpoolPresetId" class="block text-sm text-slate-400 mb-2">
+            Preferred Spool Preset (Optional)
+          </label>
+          <select
+            id="editDefaultSpoolPresetId"
+            name="defaultSpoolPresetId"
+            bind:value={modulePresetId}
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+          >
+            <option value="">Any spool (no preference)</option>
+            {#if data.spoolPresets && data.spoolPresets.length > 0}
+              {#each data.spoolPresets as preset}
+                <option value={preset.id}>
+                  {preset.name} ({preset.brand} {preset.material})
+                </option>
+              {/each}
+            {/if}
+          </select>
+          <p class="text-xs text-slate-600 mt-1">
+            This module will only appear when a matching spool is loaded
+          </p>
+        </div>
+
+        <!-- weight/time/objects grid -->
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label for="editExpectedWeight" class="block text-sm text-slate-400 mb-2">Weight
+              (g)</label>
+            <input
+              id="editExpectedWeight"
+              type="number"
+              name="expectedWeight"
+              bind:value={moduleWeight}
+              required
+              min="0"
+              step="0.1"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
+          <div>
+            <label for="editExpectedTime" class="block text-sm text-slate-400 mb-2">Time
+              (min)</label>
+            <input
+              id="editExpectedTime"
+              type="number"
+              name="expectedTime"
+              bind:value={moduleTime}
+              required
+              min="0"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
+        </div>
+        <div>
+          <label for="editObjectsPerPrint" class="block text-sm text-slate-400 mb-2">
+            Objects Per Print</label>
+          <input
+            id="editObjectsPerPrint"
+            type="number"
+            name="objectsPerPrint"
+            bind:value={moduleObjects}
+            required
+            min="1"
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+          />
+        </div>
+
+        <button
+          type="submit"
+          class="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-3 rounded-lg transition-colors"
+        >
+          {editingModule ? 'Save Changes' : 'Add Module'}
+        </button>
+      </form>
+    </div>
+  </div>
+{/if}
+
 
 <style>
   label {

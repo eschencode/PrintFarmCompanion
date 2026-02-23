@@ -21,6 +21,7 @@ export interface Printer {
   model: string | null;
   status: string; // 'WAITING' | 'IDLE' | 'PRINTING' | etc.
   loaded_spool_id: number | null;
+  suggested_queue?: SuggestedPrintQueueItem[];
   total_hours: number;
 }
 
@@ -34,8 +35,10 @@ export interface PrintModule {
   expected_time: number | null;
   objects_per_print: number;
   default_spool_preset_id: number | null;
+  inventory_slug: string | null;  // Text reference to inventory item
   path: string;
   image_path: string | null;
+  printer_model?: string;
 }
 
 /**
@@ -49,7 +52,7 @@ export interface PrintJob {
   spool_id: number | null;
   start_time: number;
   end_time: number | null;
-  status: 'printing' | 'success' | 'failed'; // ✅ Changed from success: number | null
+  status: 'printing' | 'success' | 'failed'; 
   failure_reason: string | null;
   planned_weight: number;
   actual_weight: number | null;
@@ -220,7 +223,7 @@ export interface NewPrinter {
  * Grid Cell - Represents a single cell in the 3x3 grid
  */
 export interface GridCell {
-  type: 'printer' | 'stats' | 'settings' | 'spools' | 'storage' | 'empty';
+  type: 'printer' | 'stats' | 'settings' | 'spools' | 'storage' | 'empty' | 'inventory';
   printerId?: number;
 }
 
@@ -284,4 +287,105 @@ export interface StartPrintResponse extends ServerResponse {
  */
 export function getPrintJobStatus(job: PrintJob): 'printing' | 'success' | 'failed' {
   return job.status;
+}
+
+
+// Inventory types
+export interface InventoryItem {
+  id: number;
+  name: string;
+  slug: string;  // Unique text identifier
+  sku: string | null;
+  description: string | null;
+  image_path: string | null;
+  stock_count: number;
+  min_threshold: number; //not used maybe implemt if ai recomendations fail
+  total_added: number;
+  total_sold: number;
+  total_sold_b2c: number;
+  total_sold_b2b: number;
+  total_removed_manually: number;
+  last_count_date: number | null;
+  last_count_expected: number | null;
+  last_count_actual: number | null;
+}
+
+export type InventoryChangeType = 'add' | 'remove' | 'sold_b2c' | 'sold_b2b' | 'defect' | 'count_adjust';
+
+export interface InventoryLog {
+  id: number;
+  inventory_id: number;
+  change_type: InventoryChangeType;
+  quantity: number;
+  reason: string | null;
+  created_at: number;
+}
+
+export interface InventoryWithVelocity {
+  slug: string;
+  name: string;
+  stock_count: number;
+  min_threshold: number;
+  stock_above_min: number;
+  sold_7d: number;
+  sold_14d: number;
+  sold_30d: number;
+  daily_velocity: number;
+  days_until_stockout: number;
+}
+
+
+
+export interface ModuleContext {
+  id: number;
+  name: string;
+  inventory_slug: string | null;
+  expected_weight: number;
+  expected_time: number;
+  objects_per_print: number;
+  preset_id: number | null;
+  preset_name: string | null;
+  printer_model: string | null;
+}
+
+
+
+export interface SuggestedPrintQueueItem {
+  module_id: number;
+  module_name: string;
+  status: string;
+  inventory_slug: string;
+  priority: InventoryPriority;
+  weight_of_print: number;
+  spool_weight_after_print:number;
+}
+
+
+
+export interface SalesVelocity {
+  slug: string;
+  daily_velocity: number;
+}
+
+export interface AIRecommendationContext {
+  adjustedInventory: InventoryWithVelocity[];
+  salesVelocity: SalesVelocity[];
+}
+
+export type InventoryPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW';
+
+export interface PrioritizedInventoryItem {
+  slug: string;
+  name: string;
+  stock_count: number;
+  daily_velocity: number;
+  priority: InventoryPriority;
+}
+
+export interface PrioritizedInventory {
+  CRITICAL: PrioritizedInventoryItem[];
+  HIGH: PrioritizedInventoryItem[];
+  MEDIUM: PrioritizedInventoryItem[];
+  LOW: PrioritizedInventoryItem[];
+  VERY_LOW: PrioritizedInventoryItem[];
 }

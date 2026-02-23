@@ -1,6 +1,8 @@
 import type { PageServerLoad, Actions } from './$types';
 
 import * as db from '$lib/server';
+import generateAndSaveSuggestedQueue from '$lib/ai';
+import { getSuggestedQueueByPrinterId, markSuggestedQueueItemDone } from '$lib/server'; // Make sure this is imported
 
 export const load: PageServerLoad = async ({ platform }) => {
   const database = platform?.env?.DB;
@@ -11,6 +13,12 @@ export const load: PageServerLoad = async ({ platform }) => {
   }
 
   const printers = await db.getAllPrinters(database);
+
+  // Fetch and assign the suggested queue for each printer
+  for (const printer of printers) {
+    printer.suggested_queue = await getSuggestedQueueByPrinterId(database, printer.id);
+  }
+
   const spools = await db.getAllSpools(database);
   const printModules = await db.getAllPrintModules(database);
   const activePrintJobs = await db.getActivePrintJobs(database);
@@ -219,10 +227,28 @@ export const actions: Actions = {
       await db.updatePrinterHours(database, job.printer_id, hoursUsed);
     }
 
+      // Mark as done in the suggested queue if successful
+      if (success && job.printer_id && job.module_id) {
+        await markSuggestedQueueItemDone(database, job.printer_id, { module_id: job.module_id });
+      }
+
       return { success: true, message: 'Print job completed' };
     } catch (error) {
       console.error('Error completing print job:', error);
       return { error: 'Failed to complete print job' };
     }
-  }
+  },
+
+  generateQueue: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) {
+      return { success: false, error: 'Database not available' };
+    }
+    const formData = await request.formData();
+    const printerId = Number(formData.get('printerId'));
+    // Call your generateAndSaveSuggestedQueue function
+    const queue = await db.generateAndSaveSuggestedQueue(database, printerId);
+    return { success: true, queue };
+  },
+
 };

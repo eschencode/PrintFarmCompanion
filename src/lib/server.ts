@@ -14,8 +14,10 @@ import type {
   ServerResponse,
   GridPreset,
   NewGridPreset,
-  GridCell
+  GridCell,
+  SuggestedPrintQueueItem
 } from './types';
+import { addStockBySlug } from './inventory_handler';
 
 // Printers
 export async function getAllPrinters(db: D1Database) {
@@ -65,34 +67,43 @@ export async function createPrinter(db: D1Database, printer: {
   }
 }
 
-// Update a printer
-export async function updatePrinter(db: D1Database, id: number, printer: {
-  name?: string;
-  model?: string | null;
-}): Promise<ServerResponse> {
+export async function updatePrinter(
+  db: D1Database,
+  id: number,
+  printer: {
+    name?: string;
+    model?: string | null;
+    suggested_queue?: string | null;
+  }
+): Promise<ServerResponse> {
   try {
     const updates: string[] = [];
     const values: any[] = [];
-    
+
     if (printer.name !== undefined) {
       updates.push('name = ?');
       values.push(printer.name);
     }
-    
+
     if (printer.model !== undefined) {
       updates.push('model = ?');
       values.push(printer.model);
     }
-    
+
+    if (printer.suggested_queue !== undefined) {
+      updates.push('suggested_queue = ?');
+      values.push(printer.suggested_queue);
+    }
+
     if (updates.length === 0) {
       return { success: false, error: 'No updates provided' };
     }
-    
+
     values.push(id);
-    
+
     await db.prepare(`UPDATE printers SET ${updates.join(', ')} WHERE id = ?`)
       .bind(...values).run();
-    
+
     return { success: true, message: 'Printer updated successfully' };
   } catch (error) {
     console.error('Error updating printer:', error);
@@ -374,26 +385,21 @@ export async function completePrintJob(
   actualWeight: number,
   failureReason: string | null = null
 ): Promise<void> {
-  const status = success ? 'success' : 'failed'; // ✅ Convert boolean to status string
+  const status = success ? 'success' : 'failed';
 
-
-   
   const job = await getPrintJobById(db, jobId);
   
   if (!job) {
     throw new Error('Print job not found');
   }
   
-  
   let endTime: number;
   
   if (job.status == 'failed' && job.expected_time > (job.start_time - actualEndTime)) {
     endTime = actualEndTime;
-    
   } else {
-    const expectedDurationMs = (job.expected_time || 0) * 60 * 1000; // Convert minutes to ms
+    const expectedDurationMs = (job.expected_time || 0) * 60 * 1000;
     endTime = job.start_time + expectedDurationMs;
-    
   }
 
   await db
@@ -407,6 +413,21 @@ export async function completePrintJob(
     `)
     .bind(endTime, status, actualWeight, failureReason, jobId)
     .run();
+
+  // ✅ Auto-add to inventory if print succeeded and module has inventory_slug
+  if (success && job.module_id) {
+    const module = await getPrintModuleById(db, job.module_id) as PrintModule | null;
+    
+    if (module?.inventory_slug) {
+      const quantity = module.objects_per_print || 1;
+      await addStockBySlug(
+        db, 
+        module.inventory_slug, 
+        quantity, 
+        `Print job #${jobId} completed - ${module.name}`
+      );
+    }
+  }
 }
 
 // Spool Presets
@@ -489,6 +510,7 @@ export async function createPrintModule(db: D1Database, module: {
   defaultSpoolPresetId?: number | null;
   path: string;
   imagePath?: string | null;
+  printerModel?: string | null;
 }) {
   const result = await db.prepare(`
     INSERT INTO print_modules (
@@ -499,6 +521,7 @@ export async function createPrintModule(db: D1Database, module: {
       default_spool_preset_id, 
       path,
       image_path
+	  model
     )
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).bind(
@@ -508,7 +531,8 @@ export async function createPrintModule(db: D1Database, module: {
     module.objectsPerPrint ?? 1,
     module.defaultSpoolPresetId ?? null,
     module.path,
-    module.imagePath || null
+    module.imagePath || null,
+	module.printerModel ?? null
   ).run();
 
   return {
@@ -531,6 +555,69 @@ export async function deletePrintModule(db: D1Database, moduleId: number) {
     success: true,
     message: 'Print module deleted successfully (jobs using it were updated)'
   };
+}
+
+export async function updatePrintModule(
+  db: D1Database,
+  id: number,
+  module: {
+    name?: string;
+    expectedWeight?: number;
+    expectedTime?: number;
+    objectsPerPrint?: number;
+    defaultSpoolPresetId?: number | null;
+    path?: string;
+    imagePath?: string | null;
+    printerModel?: string | null;
+  }
+): Promise<ServerResponse> {
+  const updates: string[] = [];
+  const values: any[] = [];
+
+  if (module.name !== undefined) {
+    updates.push('name = ?');
+    values.push(module.name);
+  }
+  if (module.expectedWeight !== undefined) {
+    updates.push('expected_weight = ?');
+    values.push(module.expectedWeight);
+  }
+  if (module.expectedTime !== undefined) {
+    updates.push('expected_time = ?');
+    values.push(module.expectedTime);
+  }
+  if (module.objectsPerPrint !== undefined) {
+    updates.push('objects_per_print = ?');
+    values.push(module.objectsPerPrint);
+  }
+  if (module.defaultSpoolPresetId !== undefined) {
+    updates.push('default_spool_preset_id = ?');
+    values.push(module.defaultSpoolPresetId);
+  }
+  if (module.path !== undefined) {
+    updates.push('path = ?');
+    values.push(module.path);
+  }
+  if (module.imagePath !== undefined) {
+    updates.push('image_path = ?');
+    values.push(module.imagePath);
+  }
+  if (module.printerModel !== undefined) {
+    updates.push('printer_model = ?');
+    values.push(module.printerModel);
+  }
+
+  if (updates.length === 0) {
+    return { success: false, error: 'No changes provided' };
+  }
+
+  values.push(id);
+  await db
+    .prepare(`UPDATE print_modules SET ${updates.join(', ')} WHERE id = ?`)
+    .bind(...values)
+    .run();
+
+  return { success: true, message: 'Print module updated' };
 }
 
 export async function getPrintModuleById(db: D1Database, id: number) {
@@ -712,3 +799,55 @@ export async function deleteGridPreset(db: D1Database, id: number): Promise<Serv
   }
 }
 
+
+export async function markSuggestedQueueItemDone(
+  db: D1Database,
+  printerId: number,
+  moduleIdentifier: { module_id?: number; module_name?: string }
+): Promise<ServerResponse> {
+  const printer = await getPrinterById(db, printerId);
+  if (!printer || !printer.suggested_queue) {
+    return { success: false, error: 'Printer or queue not found' };
+  }
+
+  // Parse queue if it's a string
+  let queue: SuggestedPrintQueueItem[] = Array.isArray(printer.suggested_queue)
+    ? printer.suggested_queue
+    : JSON.parse(printer.suggested_queue);
+
+  // Find first matching item not already DONE
+  const idx = queue.findIndex(item =>
+    item.status !== 'DONE' &&
+    (
+      (moduleIdentifier.module_id !== undefined && item.module_id === moduleIdentifier.module_id) ||
+      (moduleIdentifier.module_name !== undefined && item.module_name === moduleIdentifier.module_name)
+    )
+  );
+
+  if (idx === -1) {
+    return { success: false, error: 'No matching queue item found or already DONE' };
+  }
+
+  queue[idx].status = 'DONE';
+
+  // Save updated queue
+  await updatePrinter(db, printerId, {
+    suggested_queue: JSON.stringify(queue)
+  });
+
+  return { success: true, message: `Marked queue item as DONE: ${queue[idx].module_name}` };
+}
+
+export async function getSuggestedQueueByPrinterId(
+  db: D1Database,
+  printerId: number
+): Promise<SuggestedPrintQueueItem[] | null> {
+  const printer = await getPrinterById(db, printerId);
+  if (!printer || !printer.suggested_queue) {
+    return null;
+  }
+  // Parse queue if it's a string (for DB storage as TEXT/JSON)
+  return Array.isArray(printer.suggested_queue)
+    ? printer.suggested_queue
+    : JSON.parse(printer.suggested_queue);
+}

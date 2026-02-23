@@ -347,83 +347,68 @@
     return categories;
   }
 
-  // Waste calculator - find best combination
-  function calculateOptimalCombination() {
-    if (!selectedPrinter || !selectedPrinter.loaded_spool_id) return null;
-    
-    const loadedSpool = getLoadedSpool(selectedPrinter.loaded_spool_id);
-    if (!loadedSpool) return null;
+	async function startSuggestedPrint(printItem) {
+	// You can call your startPrint action here, e.g.:
+	const response = await fetch('/?/startPrint', {
+		method: 'POST',
+		body: new URLSearchParams({
+		printerId: selectedPrinter.id,
+		moduleId: printItem.module_id
+		})
+	});
+	const result = await response.json();
+	// Optionally update UI or reload data
+	if (result.success) {
+		closePrinterModal();
+		window.location.reload();
+	}
+	}
+  // Modal handlers
 
-    const availableWeight = loadedSpool.remaining_weight;
-    const categories = getCategorizedModules();
-    
-    // Get all printable modules (compatible + any spool)
-    const printableModules = [
-      ...categories.compatiblePrintable,
-      ...categories.anySpoolPrintable
-    ];
+  let suggestedSpoolSuggestion: { preset_id: number; preset_name: string; reason: string } | null = null;
 
-    if (printableModules.length === 0) return null;
-
-    // Dynamic programming approach to minimize waste
-    const findBestCombination = (remainingWeight: number, modules: any[], currentCombo: any[] = []): any => {
-      if (remainingWeight <= 0 || modules.length === 0) {
-        return {
-          combination: currentCombo,
-          waste: remainingWeight,
-          totalWeight: availableWeight - remainingWeight
-        };
-      }
-
-      let bestResult = {
-        combination: currentCombo,
-        waste: remainingWeight,
-        totalWeight: availableWeight - remainingWeight
-      };
-
-      // Try each module
-      for (let i = 0; i < modules.length; i++) {
-        const module = modules[i];
-        const timesToPrint = Math.floor(remainingWeight / module.expected_weight);
-
-        for (let times = timesToPrint; times > 0; times--) {
-          const weightUsed = module.expected_weight * times;
-          const newRemaining = remainingWeight - weightUsed;
-          
-          const result = findBestCombination(
-            newRemaining,
-            modules.slice(i + 1),
-            [...currentCombo, { module, count: times }]
-          );
-
-          if (result.waste < bestResult.waste) {
-            bestResult = result;
+  async function handleLoadSpool() {
+    if (!selectedPrinter?.id) {
+	        showSpoolSelector = true;
+        return;
+    }
+ 
+    try {
+        // Call AI suggestion endpoint (may return object or primitive)
+        const resp = await fetch(
+        `/api/ai-recommendations?type=spool&printerId=${selectedPrinter.id}`
+        );
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const body = await resp.json();
+        
+        // Normalize into suggestion object or null
+        let suggestion = null;
+        if (body === null) {
+          suggestion = null;
+        } else if (typeof body === 'object' && body !== null) {
+          const id = Number(body.preset_id ?? body.id ?? body.presetId);
+          if (Number.isInteger(id)) {
+            suggestion = {
+              preset_id: id,
+              preset_name: String(body.preset_name ?? body.name ?? ''),
+              reason: String(body.reason ?? '')
+            };
+          }
+        } else {
+          const id = Number(body);
+          if (Number.isInteger(id)) {
+            suggestion = { preset_id: id, preset_name: '', reason: '' };
           }
         }
-      }
-
-      return bestResult;
-    };
-
-    const optimal = findBestCombination(availableWeight, printableModules);
-    
-    // Only return if we found a useful combination
-    if (optimal.combination.length > 0 && optimal.totalWeight > 0) {
-      return {
-        ...optimal,
-        wastePercentage: (optimal.waste / availableWeight * 100).toFixed(1)
-      };
+        
+        suggestedSpoolSuggestion = suggestion;
+        if (suggestion) selectedPresetId = suggestion.preset_id;
+    } catch (err) {
+        console.error('Failed to fetch spool suggestion:', err);
+    } finally {
+        showSpoolSelector = true;
     }
-
-    return null;
-  }
-
-  $: optimalCombination = selectedPrinter && showModuleSelector ? calculateOptimalCombination() : null;
-
-  // Modal handlers
-  function handleLoadSpool() {
-    showSpoolSelector = true;
-  }
+    }
 
   function closeSpoolSelector() {
     showSpoolSelector = false;
@@ -434,13 +419,28 @@
     selectedPresetId = presetId;
   }
 
-  function handleStartPrint() {
+  async function handleStartPrint() {
     if (!selectedPrinter?.loaded_spool_id) {
       alert('Please load a spool first');
       return;
     }
-    showModuleSelector = true;
+	// Only generate queue if empty or all items are DONE
+  const queue = selectedPrinter.suggested_queue;
+  const shouldGenerateQueue =
+    !queue ||
+    queue.length === 0 ||
+    queue.every(item => item.status === 'DONE');
+
+  if (shouldGenerateQueue) {
+    const response = await fetch(`/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`);
+    const result = await response.json();
+    if (result && Array.isArray(result)) {
+      selectedPrinter.suggested_queue = result;
+    }
   }
+
+  showModuleSelector = true;
+}
 
   function closeModuleSelector() {
     showModuleSelector = false;
@@ -700,6 +700,22 @@
           <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">{data.spools.length} spools</p>
         </a>
 
+      {:else if cell.type === 'inventory'}
+        <!-- Inventory Card -->
+        <a
+          href="/inventory"
+          class="group bg-slate-900/50 border border-slate-800 
+                 rounded-xl p-2 hover:border-green-900/50 hover:bg-slate-900/80
+                 transition-all duration-300 hover:scale-[1.02]
+                 flex flex-col items-center justify-center overflow-hidden"
+        >
+          <div class="text-[clamp(1.5rem,4vw,3rem)] opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
+            🛒
+          </div>
+          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white mt-1">Inventory</h3>
+          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">Products</p>
+        </a>
+
       {:else}
         <!-- Empty/Unknown Slot -->
         <div class="bg-slate-950/30 border border-slate-900/50 border-dashed
@@ -881,12 +897,41 @@
 
             <!-- Action Buttons -->
             <div class="grid grid-cols-2 gap-3 pt-2">
-              <form 
+               <button 
+                onclick={handlePrintFailed}
+                class="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 px-4 py-3 rounded-lg transition-colors font-medium"
+              >
+                ✗ Print Failed
+              </button>
+				
+				<form 
                 method="POST" 
                 action="?/completePrint" 
                 use:enhance={() => {
                   return async ({ result }) => {
                     if (result.type === 'success') {
+                      // Only regenerate AI queue if the finished job's module isn't already in the suggested queue
+                      try {
+                         const finishedModuleId = activePrintJob?.module_id;
+							const queue = selectedPrinter?.suggested_queue;
+
+							// Consider "inQueue" true only if there is a matching queue item that is NOT DONE.
+							// If matching items exist but all are DONE, we treat it as not in queue (so we regenerate).
+							const inQueue = Array.isArray(queue) && finishedModuleId != null
+								? queue.some(item => item.module_id === finishedModuleId && item.status !== 'DONE')
+								: false;
+
+							if (!inQueue && selectedPrinter?.id) {
+								const resp = await fetch(`/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`);
+								const queueResult = await resp.json();
+								if (queueResult && Array.isArray(queueResult)) {
+								selectedPrinter.suggested_queue = queueResult;
+								}
+							}
+                      } catch (e) {
+                        console.error('Failed to refresh suggested queue:', e);
+                      }
+
                       closePrinterModal();
                       window.location.reload();
                     }
@@ -896,20 +941,16 @@
                 <input type="hidden" name="jobId" value={activePrintJob.id} />
                 <input type="hidden" name="success" value="true" />
                 <input type="hidden" name="actualWeight" value={activePrintJob.expected_weight} />
+
                 <button 
                   type="submit"
                   class="w-full bg-green-500/20 hover:bg-green-500/30 text-green-400 px-4 py-3 rounded-lg transition-colors font-medium"
                 >
                   ✓ Print Successful
                 </button>
-              </form>
+              	</form>
               
-              <button 
-                onclick={handlePrintFailed}
-                class="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 px-4 py-3 rounded-lg transition-colors font-medium"
-              >
-                ✗ Print Failed
-              </button>
+             
             </div>
           </div>
 
@@ -974,6 +1015,54 @@
               </div>
             </div>
 
+			<!-- Next Suggested Print -->
+			{#if selectedPrinter?.suggested_queue}
+  {@const nextPrint = selectedPrinter.suggested_queue.find(item => item.status !== 'DONE')}
+  {#if nextPrint}
+    {@const allModules = data.printModules}
+    {@const matchingModule = allModules.find(m => m.id === nextPrint.module_id)}
+    <form
+      method="POST"
+      action="?/startPrint"
+      use:enhance={() => {
+        return async ({ result }) => {
+          if (result.type === 'success') {
+            // Optionally open file locally if path exists
+			console.log('matchingModule:', matchingModule);
+            if (matchingModule && matchingModule.path) {
+				 console.log('Opening file:', matchingModule.path);
+              await openFileLocally(
+                matchingModule.path,
+                matchingModule.name,
+                selectedPrinter.id
+              );
+            }
+            closePrinterModal();
+            window.location.reload();
+          }
+        };
+      }}
+    >
+      <input type="hidden" name="printerId" value={selectedPrinter.id} />
+      <input type="hidden" name="moduleId" value={nextPrint.module_id} />
+      <button
+        type="submit"
+        class="w-full text-left bg-green-500/10 border border-green-500/20 rounded-xl p-4 mt-3 hover:bg-green-500/20 transition-colors"
+      >
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">➡️</span>
+          <div>
+            <div class="text-xs text-slate-400 mb-1">Next Suggested Print</div>
+            <div class="text-base text-white font-medium">{nextPrint.module_name}</div>
+            <div class="text-xs text-slate-400">
+              {nextPrint.weight_of_print}g • {nextPrint.priority}
+            </div>
+          </div>
+        </div>
+      </button>
+    </form>
+  {/if}
+{/if}
             <!-- Action Buttons -->
             <div class="grid grid-cols-2 gap-3 pt-2">
               <button 
@@ -1040,6 +1129,23 @@
             </button>
           </div>
 
+          <!-- Suggested Spool (if any) -->
+          {#if suggestedSpoolSuggestion}
+            {@const sugg = suggestedSpoolSuggestion}
+            <div class="mb-4 p-4 rounded-lg border border-green-500/20 bg-green-500/6 flex items-start justify-between gap-4">
+              <div>
+                <div class="text-xs text-slate-300">Suggested Spool</div>
+                <div class="text-white font-medium">{sugg.preset_name || `Preset #${sugg.preset_id}`}</div>
+                {#if sugg.reason}
+                  <div class="text-xs text-slate-400 mt-1">{sugg.reason}</div>
+                {/if}
+              </div>
+              <div class="flex items-center gap-2">
+              
+              </div>
+            </div>
+          {/if}
+          
           <!-- Spool Presets Grid -->
           {#if data.spoolPresets && data.spoolPresets.length > 0}
             <div class="grid grid-cols-2 gap-3">
@@ -1084,7 +1190,7 @@
               <p class="text-slate-400 mb-4">No spool presets available</p>
               <a 
                 href="/settings" 
-                class="inline-block bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg transition-colors text-sm"
+                class="inline-block bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg transition-colors"
               >
                 Create Spool Preset
               </a>
@@ -1110,6 +1216,12 @@
             use:enhance={() => {
               return async ({ result }) => {
                 if (result.type === 'success') {
+					// Trigger queue generation after loading spool
+					const response = await fetch(`/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`);
+					const queueResult = await response.json();
+					if (queueResult && Array.isArray(queueResult)) {
+					selectedPrinter.suggested_queue = queueResult;
+					}
                   closePrinterModal();
                   // Reload page data
                   window.location.reload();
@@ -1196,42 +1308,48 @@
             </button>
           </div>
 
-          <!-- Optimal Combination Calculator -->
-          {#if optimalCombination && optimalCombination.combination.length > 0}
-            <div class="mb-6 bg-gradient-to-r from-green-500/10 to-blue-500/10 border border-green-500/20 rounded-xl p-4">
-              <div class="flex items-start gap-3">
-                <div class="text-2xl">💡</div>
-                <div class="flex-1">
-                  <h3 class="text-white font-medium mb-2 flex items-center gap-2">
-                    Optimal Combination
-                    <span class="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">
-                      {optimalCombination.wastePercentage}% waste
-                    </span>
-                  </h3>
-                  <div class="space-y-2">
-                    {#each optimalCombination.combination as item}
-                      <div class="flex items-center justify-between text-sm">
-                        <span class="text-slate-300">
-                          {item.count}× {item.module.name}
-                        </span>
-                        <span class="text-slate-500">
-                          {item.count * item.module.expected_weight}g
-                        </span>
-                      </div>
-                    {/each}
-                    <div class="pt-2 border-t border-slate-700/50 flex justify-between text-sm">
-                      <span class="text-slate-400">Total Usage:</span>
-                      <span class="text-white font-medium">{optimalCombination.totalWeight}g / {loadedSpool?.remaining_weight}g</span>
-                    </div>
-                    <div class="flex justify-between text-sm">
-                      <span class="text-slate-400">Remaining:</span>
-                      <span class="text-green-400">{optimalCombination.waste.toFixed(1)}g</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+          {#if selectedPrinter?.suggested_queue && selectedPrinter.suggested_queue.length > 0}
+  <div class="mb-6 bg-gradient-to-r from-green-500/10 to-blue-500/10 border border-green-500/20 rounded-xl p-4">
+    <div class="flex items-start gap-3">
+      <div class="text-2xl">📝</div>
+      <div class="flex-1">
+        <h3 class="text-white font-medium mb-2 flex items-center gap-2">
+          Saved Print Queue
+        </h3>
+        <div class="space-y-2">
+          {#each selectedPrinter.suggested_queue as item, i}
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-slate-300">
+                {i + 1}. {item.module_name}
+                {#if item.status === 'DONE'}
+                  <span class="ml-2 text-green-400 text-xs">✓ Done</span>
+                {/if}
+              </span>
+              <span class="text-slate-500">
+                {item.weight_of_print}g ({item.priority})
+              </span>
             </div>
-          {/if}
+          {/each}
+        </div>
+        <!-- Waste/leftover display -->
+        {#if selectedPrinter.suggested_queue.length > 0 && loadedSpool}
+          {@const lastPrint = selectedPrinter.suggested_queue[selectedPrinter.suggested_queue.length - 1]}
+          <div class="mt-4 text-xs text-slate-400">
+            <span>
+              Waste after queue: 
+              <span class="text-orange-400 font-semibold">
+                {lastPrint.spool_weight_after_print}g
+              </span>
+              / Start: {loadedSpool.remaining_weight}g
+            </span>
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+                 
+					
 
           <!-- Module Categories -->
           <div class="space-y-6">
@@ -1738,6 +1856,12 @@
             use:enhance={() => {
               return async ({ result }) => {
                 if (result.type === 'success') {
+					// Trigger queue generation after print failure
+					const response = await fetch(`/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`);
+					const queueResult = await response.json();
+					if (queueResult && Array.isArray(queueResult)) {
+					selectedPrinter.suggested_queue = queueResult;
+					}
                   closeFailureReasonModal();
                   closePrinterModal();
                   window.location.reload();

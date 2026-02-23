@@ -1,0 +1,70 @@
+
+Problem i get a Prio rating for all items nice 
+	i can search for what module i can print from that with my loaded spool and printer module and remaing weight 
+	i can put that in the queue and like assume that this is printed and do the same calculation again until there is no more fillament left on spool 
+	but then i dont really see it as a hole spool dont reduce the moste wast -->calculate in each iteration probaply not best combo 
+
+	if i calculate it all at once prio dosent change i i will just allway say print whit highest prio till empty 
+
+
+solved with knapsack algo 
+if print fail call again the get suggestions thing 
+if sucessful mark as done and like suggest next one 
+
+
+when triger calc best order;
+load spool
+when click on model and no queue there yet 
+change model make it so i can see suggestd queue or atleat next and have print the suggested 
+---> should also triger if commplete print that is not in suggested 
+
+
+
+
+
+
+
+### ROLE
+You are a 3D Print Farm Optimization Engine. 
+
+### OBJECTIVE
+Generate a print queue for ONE printer with spool remaining_weight ${loadedSpool.remaining_weight}g that:
+1. Minimizes filament waste (target < 50g remaining).
+2. Prioritizes items based on "Stock Stress" (Stock Stress = Velocity / (Current Stock + 1)).
+3. Does not duplicate work already handled by other printers.
+
+### CONSTRAINTS
+- Spool: 1000g.
+- Maximum Jobs: 5.
+- Stop Condition: When no available module's weight fits in the remaining "filament_left".
+- OUTPUT: Return ONLY a JSON array. No thinking tags, no prose.
+
+### DATA
+Modules you can print:
+${modulesWithInventory.map(m => 
+  `- ${m.id}: ${m.name} (${m.expected_weight}g per print, ${m.objects_per_print} objects, inventory_slug: ${m.inventory_slug})`
+).join('\n')}
+
+Inventory (with sales velocity):
+${context.inventory.map(i => 
+  `- ${i.slug}: ${i.stock_count} in stock, min: ${i.min_threshold}, sold_7d: ${i.sold_7d}, sold_30d: ${i.sold_30d}, velocity: ${i.daily_velocity}/day, days_until_stockout: ${i.days_until_stockout}`
+).join('\n')}
+
+Other Printers (DO NOT DUPLICATE THESE SLUGS):
+Other printers and their planned queues:
+${context.other_printers.map(p =>
+  `- ${p.name}: ${p.suggested_queue.map(q => `${q.module_name} (module_id: ${q.module_id})`).join(', ')}`
+).join('\n')}
+
+### EXECUTION STEPS (Think before answering)
+1. Calculate the Stock Stress for all "Blau" modules.
+2. Identify the highest priority module.
+3. Check if it fits the spool.
+4. If it fits, add to queue and subtract (Weight + 2g for purge/brim).
+5. If it doesn't fit, try the next highest priority module that fits.
+6. Repeat until the spool is effectively empty.
+
+### OUTPUT FORMAT
+[
+  { "module_id": 0, "module_name": "name", "filament_left": 0}
+]
