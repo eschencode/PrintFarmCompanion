@@ -80,7 +80,8 @@ export const actions: Actions = {
       objectsPerPrint: Number(formData.get('objectsPerPrint')) || 1,
       defaultSpoolPresetId: Number(formData.get('defaultSpoolPresetId')) || null,
       path: formData.get('path') as string,
-      imagePath: normalizedImagePath  // ✅ Will be null if not selected
+      imagePath: normalizedImagePath,
+	  printerModel: (formData.get('printerModel') as string) || null
     });
 
     return result;
@@ -99,6 +100,28 @@ export const actions: Actions = {
     const result = await db.deletePrintModule(database, moduleId);
 
     return result;
+  },
+
+  updateModule: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) return { success: false, error: 'Database not available' };
+
+    const form = await request.formData();
+    const moduleId = Number(form.get('moduleId'));
+    const imagePath = form.get('imagePath') as string;
+    const normalizedImagePath =
+      imagePath && imagePath !== '' ? `/images/${imagePath}` : null;
+
+    return db.updatePrintModule(database, moduleId, {
+      name: form.get('name') as string,
+      expectedWeight: Number(form.get('expectedWeight')),
+      expectedTime: Number(form.get('expectedTime')),
+      objectsPerPrint: Number(form.get('objectsPerPrint')) || 1,
+      defaultSpoolPresetId: Number(form.get('defaultSpoolPresetId')) || null,
+      path: form.get('path') as string,
+      imagePath: normalizedImagePath,
+      printerModel: (form.get('printerModel') as string) || null
+    });
   },
 
   addSpoolPreset: async ({ platform, request }) => {

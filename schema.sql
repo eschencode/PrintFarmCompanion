@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS spools (
 CREATE TABLE IF NOT EXISTS printers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  model TEXT,
+  model TEXT DEFAULT 'P1S',
   status TEXT DEFAULT 'WAITING',
   loaded_spool_id INTEGER,
   total_hours REAL DEFAULT 0,
@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS print_modules (
   objects_per_print INTEGER DEFAULT 1,
   default_spool_preset_id INTEGER,
   inventory_slug TEXT,
+  model TEXT DEFAULT 'P1S',
   path TEXT NOT NULL,
   image_path TEXT,
   FOREIGN KEY (default_spool_preset_id) REFERENCES spool_presets(id),

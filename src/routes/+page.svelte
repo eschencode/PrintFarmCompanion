@@ -364,9 +364,51 @@
 	}
 	}
   // Modal handlers
-  function handleLoadSpool() {
-    showSpoolSelector = true;
-  }
+
+  let suggestedSpoolSuggestion: { preset_id: number; preset_name: string; reason: string } | null = null;
+
+  async function handleLoadSpool() {
+    if (!selectedPrinter?.id) {
+	        showSpoolSelector = true;
+        return;
+    }
+ 
+    try {
+        // Call AI suggestion endpoint (may return object or primitive)
+        const resp = await fetch(
+        `/api/ai-recommendations?type=spool&printerId=${selectedPrinter.id}`
+        );
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const body = await resp.json();
+        
+        // Normalize into suggestion object or null
+        let suggestion = null;
+        if (body === null) {
+          suggestion = null;
+        } else if (typeof body === 'object' && body !== null) {
+          const id = Number(body.preset_id ?? body.id ?? body.presetId);
+          if (Number.isInteger(id)) {
+            suggestion = {
+              preset_id: id,
+              preset_name: String(body.preset_name ?? body.name ?? ''),
+              reason: String(body.reason ?? '')
+            };
+          }
+        } else {
+          const id = Number(body);
+          if (Number.isInteger(id)) {
+            suggestion = { preset_id: id, preset_name: '', reason: '' };
+          }
+        }
+        
+        suggestedSpoolSuggestion = suggestion;
+        if (suggestion) selectedPresetId = suggestion.preset_id;
+    } catch (err) {
+        console.error('Failed to fetch spool suggestion:', err);
+    } finally {
+        showSpoolSelector = true;
+    }
+    }
 
   function closeSpoolSelector() {
     showSpoolSelector = false;
@@ -868,6 +910,28 @@
                 use:enhance={() => {
                   return async ({ result }) => {
                     if (result.type === 'success') {
+                      // Only regenerate AI queue if the finished job's module isn't already in the suggested queue
+                      try {
+                         const finishedModuleId = activePrintJob?.module_id;
+							const queue = selectedPrinter?.suggested_queue;
+
+							// Consider "inQueue" true only if there is a matching queue item that is NOT DONE.
+							// If matching items exist but all are DONE, we treat it as not in queue (so we regenerate).
+							const inQueue = Array.isArray(queue) && finishedModuleId != null
+								? queue.some(item => item.module_id === finishedModuleId && item.status !== 'DONE')
+								: false;
+
+							if (!inQueue && selectedPrinter?.id) {
+								const resp = await fetch(`/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`);
+								const queueResult = await resp.json();
+								if (queueResult && Array.isArray(queueResult)) {
+								selectedPrinter.suggested_queue = queueResult;
+								}
+							}
+                      } catch (e) {
+                        console.error('Failed to refresh suggested queue:', e);
+                      }
+
                       closePrinterModal();
                       window.location.reload();
                     }
@@ -877,9 +941,8 @@
                 <input type="hidden" name="jobId" value={activePrintJob.id} />
                 <input type="hidden" name="success" value="true" />
                 <input type="hidden" name="actualWeight" value={activePrintJob.expected_weight} />
-                
-				
-				<button 
+
+                <button 
                   type="submit"
                   class="w-full bg-green-500/20 hover:bg-green-500/30 text-green-400 px-4 py-3 rounded-lg transition-colors font-medium"
                 >
@@ -1066,6 +1129,23 @@
             </button>
           </div>
 
+          <!-- Suggested Spool (if any) -->
+          {#if suggestedSpoolSuggestion}
+            {@const sugg = suggestedSpoolSuggestion}
+            <div class="mb-4 p-4 rounded-lg border border-green-500/20 bg-green-500/6 flex items-start justify-between gap-4">
+              <div>
+                <div class="text-xs text-slate-300">Suggested Spool</div>
+                <div class="text-white font-medium">{sugg.preset_name || `Preset #${sugg.preset_id}`}</div>
+                {#if sugg.reason}
+                  <div class="text-xs text-slate-400 mt-1">{sugg.reason}</div>
+                {/if}
+              </div>
+              <div class="flex items-center gap-2">
+              
+              </div>
+            </div>
+          {/if}
+          
           <!-- Spool Presets Grid -->
           {#if data.spoolPresets && data.spoolPresets.length > 0}
             <div class="grid grid-cols-2 gap-3">
@@ -1110,7 +1190,7 @@
               <p class="text-slate-400 mb-4">No spool presets available</p>
               <a 
                 href="/settings" 
-                class="inline-block bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg transition-colors text-sm"
+                class="inline-block bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg transition-colors"
               >
                 Create Spool Preset
               </a>

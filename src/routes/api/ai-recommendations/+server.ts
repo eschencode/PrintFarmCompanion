@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { AIRecommendationService, generateAndSaveSuggestedQueue, getSuggestedPrintQueue, prioritizeInventoryFromContext } from '$lib/ai';
+import { AIRecommendationService, generateAndSaveSuggestedQueue, getSuggestedPrintQueue, prioritizeInventoryFromContext, suggestSpoolToLoad } from '$lib/ai';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
   const db = platform?.env?.DB;
@@ -18,6 +18,12 @@ export const GET: RequestHandler = async ({ url, platform }) => {
   const printerId = url.searchParams.get('printerId');
 
   try {
+
+	if (type === 'spool') {
+		const aiService = new AIRecommendationService(db, ai);
+		const suggestion = await aiService.suggestSpoolToLoad();
+		return json(suggestion);
+		}
     
 	 if (type === 'queue') {
       if (!printerId) {

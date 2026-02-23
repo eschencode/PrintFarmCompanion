@@ -11,13 +11,13 @@ INSERT INTO spool_presets (name, brand, material, color, default_weight, cost) V
 
 -- Sample Printers
 INSERT INTO printers (name, model, status, loaded_spool_id, total_hours) VALUES
-  ('Mitarbeiter 01', 'P1s', 'IDLE', NULL, 145.5),
-  ('Mitarbeiter 02', 'P1s', 'IDLE', NULL, 138.2),
-  ('Mitarbeiter 03', 'P1s', 'IDLE', NULL, 152.7),
-  ('Mitarbeiter 04', 'P1s', 'IDLE', NULL, 141.3),
-  ('Mitarbeiter 05', 'P1s', 'IDLE', NULL, 136.8),
-  ('Mitarbeiter 06', 'P1s', 'IDLE', NULL, 129.4),
-  ('Rentner 01', 'P1s', 'IDLE', NULL, 95.2);
+  ('Mitarbeiter 01', 'P1S', 'IDLE', NULL, 145.5),
+  ('Mitarbeiter 02', 'P1S', 'IDLE', NULL, 138.2),
+  ('Mitarbeiter 03', 'P1S', 'IDLE', NULL, 152.7),
+  ('Mitarbeiter 04', 'P1S', 'IDLE', NULL, 141.3),
+  ('Mitarbeiter 05', 'P1S', 'IDLE', NULL, 136.8),
+  ('Mitarbeiter 06', 'P1S', 'IDLE', NULL, 129.4),
+  ('Rentner 01', 'P1S', 'IDLE', NULL, 95.2);
 
 -- ============================================
 -- INVENTORY ITEMS (with slugs for easy reference)

@@ -510,6 +510,7 @@ export async function createPrintModule(db: D1Database, module: {
   defaultSpoolPresetId?: number | null;
   path: string;
   imagePath?: string | null;
+  printerModel?: string | null;
 }) {
   const result = await db.prepare(`
     INSERT INTO print_modules (
@@ -520,6 +521,7 @@ export async function createPrintModule(db: D1Database, module: {
       default_spool_preset_id, 
       path,
       image_path
+	  model
     )
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).bind(
@@ -529,7 +531,8 @@ export async function createPrintModule(db: D1Database, module: {
     module.objectsPerPrint ?? 1,
     module.defaultSpoolPresetId ?? null,
     module.path,
-    module.imagePath || null
+    module.imagePath || null,
+	module.printerModel ?? null
   ).run();
 
   return {
@@ -552,6 +555,69 @@ export async function deletePrintModule(db: D1Database, moduleId: number) {
     success: true,
     message: 'Print module deleted successfully (jobs using it were updated)'
   };
+}
+
+export async function updatePrintModule(
+  db: D1Database,
+  id: number,
+  module: {
+    name?: string;
+    expectedWeight?: number;
+    expectedTime?: number;
+    objectsPerPrint?: number;
+    defaultSpoolPresetId?: number | null;
+    path?: string;
+    imagePath?: string | null;
+    printerModel?: string | null;
+  }
+): Promise<ServerResponse> {
+  const updates: string[] = [];
+  const values: any[] = [];
+
+  if (module.name !== undefined) {
+    updates.push('name = ?');
+    values.push(module.name);
+  }
+  if (module.expectedWeight !== undefined) {
+    updates.push('expected_weight = ?');
+    values.push(module.expectedWeight);
+  }
+  if (module.expectedTime !== undefined) {
+    updates.push('expected_time = ?');
+    values.push(module.expectedTime);
+  }
+  if (module.objectsPerPrint !== undefined) {
+    updates.push('objects_per_print = ?');
+    values.push(module.objectsPerPrint);
+  }
+  if (module.defaultSpoolPresetId !== undefined) {
+    updates.push('default_spool_preset_id = ?');
+    values.push(module.defaultSpoolPresetId);
+  }
+  if (module.path !== undefined) {
+    updates.push('path = ?');
+    values.push(module.path);
+  }
+  if (module.imagePath !== undefined) {
+    updates.push('image_path = ?');
+    values.push(module.imagePath);
+  }
+  if (module.printerModel !== undefined) {
+    updates.push('printer_model = ?');
+    values.push(module.printerModel);
+  }
+
+  if (updates.length === 0) {
+    return { success: false, error: 'No changes provided' };
+  }
+
+  values.push(id);
+  await db
+    .prepare(`UPDATE print_modules SET ${updates.join(', ')} WHERE id = ?`)
+    .bind(...values)
+    .run();
+
+  return { success: true, message: 'Print module updated' };
 }
 
 export async function getPrintModuleById(db: D1Database, id: number) {

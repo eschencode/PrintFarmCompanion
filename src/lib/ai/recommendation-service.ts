@@ -18,13 +18,72 @@ import {
 export class AIRecommendationService {
   private db: D1Database;
   private ai: Ai;
-  private contextBuilder: AIContextBuilder;
+  public contextBuilder: AIContextBuilder;
 
   constructor(db: D1Database, ai: Ai) {
     this.db = db;
     this.ai = ai;
     this.contextBuilder = new AIContextBuilder(db);
   }
+
+  /**
+   * Gets inventory with velocity information.
+   */
+  async getInventoryWithVelocity() {
+    const modules = await this.contextBuilder.getModulesContext();
+    const aiContext = await this.contextBuilder.getAdjustedInventoryContext(modules);
+    return aiContext.adjustedInventory;
+  }
+
+  /**
+ * Suggests the best spool preset to load next, based on inventory needs and sales trends.
+ * Returns the spool preset id and name.
+ */
+ async suggestSpoolToLoad(
+  this: AIRecommendationService
+): Promise<{ preset_id: number; preset_name: string; reason: string } | null> {
+  // 1. Get inventory with velocity
+  const inventory = await this.getInventoryWithVelocity();
+
+  // 2. Get all print modules
+  const modules = await this.contextBuilder.getModulesContext();
+
+  // 3. Get all spool presets
+  const result = await this.db.prepare(`SELECT id, name FROM spool_presets`).all<{ id: number; name: string }>();
+  const spoolPresets = result.results;
+
+  // 4. For each preset, find the highest-priority module that could be printed with it
+  let bestPreset: { preset_id: number; preset_name: string; reason: string } | null = null;
+  let bestScore = -Infinity;
+
+  for (const preset of spoolPresets) {
+    // Find modules that use this preset
+    const modulesForPreset = modules.filter(m => m.preset_id === preset.id);
+
+    // For each module, find its inventory and calculate a "need score"
+    for (const module of modulesForPreset) {
+      if (!module.inventory_slug) continue;
+      const inv = inventory.find(i => i.slug === module.inventory_slug);
+      if (!inv) continue;
+
+      // Score: prioritize low stock and high velocity
+      const stockScore = Math.max(0, 20 - inv.stock_count); // More points for low stock
+      const velocityScore = inv.daily_velocity * 5; // More points for high sales
+      const totalScore = stockScore + velocityScore;
+
+      if (totalScore > bestScore) {
+        bestScore = totalScore;
+        bestPreset = {
+          preset_id: preset.id,
+          preset_name: preset.name,
+          reason: `Needed for module "${module.name}" (stock: ${inv.stock_count}, velocity: ${inv.daily_velocity})`
+        };
+      }
+    }
+  }
+
+  return bestPreset;
+}
 }
 
 /**
@@ -112,6 +171,10 @@ type UnrolledItem = {
   score: number;
   priority: InventoryPriority;
 };
+
+
+
+
 
 export async function getSuggestedPrintQueue(
   db: D1Database,
@@ -259,3 +322,4 @@ export async function generateAndSaveSuggestedQueue(
 
   return queue;
 }
+
