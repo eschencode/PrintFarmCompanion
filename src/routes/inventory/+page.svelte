@@ -2,8 +2,14 @@
   import type { InventoryItem, InventoryLog } from '$lib/types';
   import { enhance } from '$app/forms';
 
+  // extend item type locally to include AI fields
+  type InventoryItemUI = InventoryItem & {
+    daily_velocity?: number;
+    days_until_stockout?: number;
+  };
+
   interface PageData {
-    items: InventoryItem[];
+    items: InventoryItemUI[];
     logs: (InventoryLog & { item_name: string })[];
   }
 
@@ -257,6 +263,17 @@
       default: return { label: '?', color: 'text-slate-400' };
     }
   }
+
+  // helper for display
+  function formatVelocity(v?: number) {
+    if (v == null) return '0/d';
+    return `${Math.round(v * 100) / 100}/d`;
+  }
+  function formatDays(d?: number) {
+    if (d == null) return '∞';
+    if (d > 999) return '∞';
+    return `${Math.round(d * 10) / 10}d`;
+  }
 </script>
 
 <svelte:head>
@@ -424,99 +441,102 @@
                               </div>
                             </button>
 
-                            <!-- Level 3: Items -->
-                            {#if isSubcategoryExpanded}
-                              <div class="bg-slate-900/50 border-t border-slate-800/30 divide-y divide-slate-800/20">
-                                {#each subcategoryData.items.sort((a, b) => a.color.localeCompare(b.color)) as { item, color }}
-                                  {@const stockLevel = getStockLevel(item)}
-                                  <div class="flex items-center gap-3 px-8 py-2 hover:bg-slate-800/20 transition-colors">
-                                    <!-- Color dot -->
-                                    <div class="w-2 h-2 rounded-full shrink-0 {stockLevel === 'out' ? 'bg-red-500' : stockLevel === 'low' ? 'bg-amber-500' : 'bg-emerald-500'}"></div>
-                                    
-                                    <!-- Item info -->
-                                    <div class="flex-1 min-w-0">
-                                      <span class="text-sm text-slate-300">{color}</span>
-                                      <span class="text-xs text-slate-600 ml-2">min: {item.min_threshold}</span>
-                                    </div>
-
-                                    <!-- Stock count / Edit -->
-                                    {#if editingItemId === item.id}
-                                      <form 
-                                        method="POST" 
-                                        action="?/setStock"
-                                        use:enhance={() => {
-                                          return async ({ update }) => {
-                                            await update();
-                                            cancelEdit();
-                                          };
-                                        }}
-                                        class="flex items-center gap-1"
-                                      >
-                                        <input type="hidden" name="id" value={item.id} />
-                                        <input 
-                                          type="number" 
-                                          name="count" 
-                                          bind:value={editCount}
-                                          min="0"
-                                          class="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-center text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                        />
-                                        <input type="hidden" name="reason" value="Manual count" />
-                                        <button type="submit" class="p-1 text-emerald-400 hover:text-emerald-300 rounded" title="Save">
-                                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                          </svg>
-                                        </button>
-                                        <button type="button" onclick={cancelEdit} class="p-1 text-slate-400 hover:text-slate-300 rounded" title="Cancel">
-                                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                          </svg>
-                                        </button>
-                                      </form>
-                                    {:else}
-                                      <div class="flex items-center gap-0.5">
-                                        <!-- Quick decrement -->
-                                        <form method="POST" action="?/removeStock" use:enhance>
-                                          <input type="hidden" name="id" value={item.id} />
-                                          <input type="hidden" name="quantity" value="1" />
-                                          <input type="hidden" name="reason" value="Quick remove" />
-                                          <button 
-                                            type="submit"
-                                            disabled={item.stock_count === 0}
-                                            class="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm"
-                                            title="Remove 1"
-                                          >
-                                            −
-                                          </button>
-                                        </form>
-                                        
-                                        <!-- Stock count -->
-                                        <button 
-                                          onclick={() => startEdit(item)}
-                                          class="min-w-12 px-2 py-1 rounded text-sm font-bold transition-colors {getStockColor(stockLevel)}"
-                                          title="Click to edit"
-                                        >
-                                          {item.stock_count}
-                                        </button>
-                                        
-                                        <!-- Quick increment -->
-                                        <form method="POST" action="?/addStock" use:enhance>
-                                          <input type="hidden" name="id" value={item.id} />
-                                          <input type="hidden" name="quantity" value="1" />
-                                          <input type="hidden" name="reason" value="Quick add" />
-                                          <button 
-                                            type="submit"
-                                            class="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors text-sm"
-                                            title="Add 1"
-                                          >
-                                            +
-                                          </button>
-                                        </form>
-                                      </div>
-                                    {/if}
+                            <!-- Level 3: Items (replace emojis with text labels) -->
+                            {#each subcategoryData.items.sort((a, b) => a.color.localeCompare(b.color)) as { item, color }}
+                              {@const stockLevel = getStockLevel(item)}
+                              <div class="flex items-center gap-3 px-8 py-2 hover:bg-slate-800/20 transition-colors">
+                                <div class="w-2 h-2 rounded-full shrink-0 {stockLevel === 'out' ? 'bg-red-500' : stockLevel === 'low' ? 'bg-amber-500' : 'bg-emerald-500'}"></div>
+                                <div class="flex-1 min-w-0">
+                                  <span class="text-sm text-slate-300">{color}</span>
+                                  <span class="text-xs text-slate-600 ml-2">min: {item.min_threshold}</span>
+                                  <div class="text-xs text-slate-500 mt-1">
+                                    <span class="mr-3">
+                                      <span class="text-slate-400">Velocity:</span>
+                                      <span class="text-slate-100 font-medium"> {formatVelocity((item as InventoryItemUI).daily_velocity)}</span>
+                                    </span>
+                                    <span>
+                                      <span class="text-slate-400">Days until stockout:</span>
+                                      <span class="text-slate-100 font-medium"> {formatDays((item as InventoryItemUI).days_until_stockout)}</span>
+                                    </span>
                                   </div>
-                                {/each}
+                                </div>
+
+                                <!-- Stock count / Edit -->
+                                {#if editingItemId === item.id}
+                                  <form 
+                                    method="POST" 
+                                    action="?/setStock"
+                                    use:enhance={() => {
+                                      return async ({ update }) => {
+                                        await update();
+                                        cancelEdit();
+                                      };
+                                    }}
+                                    class="flex items-center gap-1"
+                                  >
+                                    <input type="hidden" name="id" value={item.id} />
+                                    <input 
+                                      type="number" 
+                                      name="count" 
+                                      bind:value={editCount}
+                                      min="0"
+                                      class="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-center text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                    <input type="hidden" name="reason" value="Manual count" />
+                                    <button type="submit" class="p-1 text-emerald-400 hover:text-emerald-300 rounded" title="Save">
+                                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                      </svg>
+                                    </button>
+                                    <button type="button" onclick={cancelEdit} class="p-1 text-slate-400 hover:text-slate-300 rounded" title="Cancel">
+                                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                      </svg>
+                                    </button>
+                                  </form>
+                                {:else}
+                                  <div class="flex items-center gap-0.5">
+                                    <!-- Quick decrement -->
+                                    <form method="POST" action="?/removeStock" use:enhance>
+                                      <input type="hidden" name="id" value={item.id} />
+                                      <input type="hidden" name="quantity" value="1" />
+                                      <input type="hidden" name="reason" value="Quick remove" />
+                                      <button 
+                                        type="submit"
+                                        disabled={item.stock_count === 0}
+                                        class="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm"
+                                        title="Remove 1"
+                                      >
+                                        −
+                                      </button>
+                                    </form>
+                                    
+                                    <!-- Stock count -->
+                                    <button 
+                                      onclick={() => startEdit(item)}
+                                      class="min-w-12 px-2 py-1 rounded text-sm font-bold transition-colors {getStockColor(stockLevel)}"
+                                      title="Click to edit"
+                                    >
+                                      {item.stock_count}
+                                    </button>
+                                    
+                                    <!-- Quick increment -->
+                                    <form method="POST" action="?/addStock" use:enhance>
+                                      <input type="hidden" name="id" value={item.id} />
+                                      <input type="hidden" name="quantity" value="1" />
+                                      <input type="hidden" name="reason" value="Quick add" />
+                                      <button 
+                                        type="submit"
+                                        class="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors text-sm"
+                                        title="Add 1"
+                                      >
+                                        +
+                                      </button>
+                                    </form>
+                                  </div>
+                                {/if}
                               </div>
-                            {/if}
+                            {/each}
                           </div>
                         {/each}
                       {/if}
@@ -530,6 +550,16 @@
                               <div class="w-2 h-2 rounded-full shrink-0 {stockLevel === 'out' ? 'bg-red-500' : stockLevel === 'low' ? 'bg-amber-500' : 'bg-emerald-500'}"></div>
                               <div class="flex-1 min-w-0">
                                 <span class="text-sm text-slate-300">{item.name}</span>
+                                <div class="text-xs text-slate-500 mt-1">
+                                  <span class="mr-3">
+                                    <span class="text-slate-400">Velocity:</span>
+                                    <span class="text-slate-100 font-medium"> {formatVelocity((item as InventoryItemUI).daily_velocity)}</span>
+                                  </span>
+                                  <span>
+                                    <span class="text-slate-400">Days until stockout:</span>
+                                    <span class="text-slate-100 font-medium"> {formatDays((item as InventoryItemUI).days_until_stockout)}</span>
+                                  </span>
+                                </div>
                               </div>
                               <span class="text-sm font-bold {getStockColor(stockLevel).split(' ')[0]}">{item.stock_count}</span>
                             </div>

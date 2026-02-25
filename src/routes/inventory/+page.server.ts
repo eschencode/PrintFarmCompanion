@@ -7,6 +7,7 @@ import {
   performManualCount,
   setStock
 } from '$lib/inventory_handler';
+import { AIContextBuilder } from '$lib/ai/context-builder';
 
 export const load: PageServerLoad = async ({ platform }) => {
   const db = platform?.env?.DB;
@@ -18,7 +19,24 @@ export const load: PageServerLoad = async ({ platform }) => {
   const items = await getAllInventoryItems(db);
   const logs = await getAllRecentLogs(db, 50);
 
-  return { items, logs };
+  // ✅ Attach velocity & days_until_stockout to each item
+  try {
+    const builder = new AIContextBuilder(db);
+    const velocityList = await builder.getInventoryWithVelocity();
+    const itemsWithVelocity = items.map(i => {
+      const v = velocityList.find(v => v.slug === i.slug);
+      return {
+        ...i,
+        daily_velocity: v?.daily_velocity ?? 0,
+        days_until_stockout: v?.days_until_stockout ?? 999
+      };
+    });
+
+    return { items: itemsWithVelocity, logs };
+  } catch (err) {
+    console.error('Failed to compute inventory velocity:', err);
+    return { items, logs };
+  }
 };
 
 export const actions: Actions = {
