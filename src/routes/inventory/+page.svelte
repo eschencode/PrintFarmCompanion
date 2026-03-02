@@ -2,9 +2,33 @@
   import type { InventoryItem, InventoryLog } from '$lib/types';
   import { enhance } from '$app/forms';
 
+  // extend item type locally to include AI fields
+  type InventoryItemUI = InventoryItem & {
+    daily_velocity?: number;
+    days_until_stockout?: number;
+  };
+
+  // Set & weight types from server
+  interface SetComponent {
+    inventory_slug: string;
+    quantity: number;
+  }
+  interface SetDefinition {
+    sku: string;
+    label: string;
+    components: SetComponent[];
+  }
+  interface UnitWeight {
+    slug: string;
+    name: string;
+    weight_per_unit: number;
+  }
+
   interface PageData {
-    items: InventoryItem[];
+    items: InventoryItemUI[];
     logs: (InventoryLog & { item_name: string })[];
+    setDefinitions: SetDefinition[];
+    unitWeights: UnitWeight[];
   }
 
   let { data }: { data: PageData } = $props();
@@ -20,6 +44,145 @@
   // Expansion state
   let expandedCategories = $state<Record<string, boolean>>({});
   let expandedSubcategories = $state<Record<string, boolean>>({});
+
+  // ============ INVENTORY CHECK TOOL STATE ============
+  let activeCheckPanel = $state<'sets' | 'weight' | 'direct' | null>(null);
+  let checkSubmitting = $state(false);
+  let checkMessage = $state('');
+
+  // Sets tab state
+  let setSearchQuery = $state('');
+  let setCounts = $state<Record<string, number>>({});
+
+  // Weight tab state
+  let weightSearchQuery = $state('');
+  let weightInputs = $state<Record<string, number>>({}); // slug → weight in grams
+  
+  // Direct add tab state
+  let directSearchQuery = $state('');
+  let directCounts = $state<Record<string, number>>({}); // slug → count
+
+  // Filtered sets for search
+  const filteredSets = $derived(() => {
+    const sets = data.setDefinitions || [];
+    if (!setSearchQuery) return sets;
+    const q = setSearchQuery.toLowerCase();
+    return sets.filter(s => 
+      s.label.toLowerCase().includes(q) || 
+      s.sku.toLowerCase().includes(q)
+    );
+  });
+
+  // Filtered items for weight tab
+  const filteredWeightItems = $derived(() => {
+    const weights = data.unitWeights || [];
+    if (!weightSearchQuery) return weights;
+    const q = weightSearchQuery.toLowerCase();
+    return weights.filter(w => 
+      w.name.toLowerCase().includes(q) || 
+      w.slug.toLowerCase().includes(q)
+    );
+  });
+
+  // Filtered items for direct add tab
+  const filteredDirectItems = $derived(() => {
+    let items = data.items || [];
+    // Exclude Vase Shrunk
+    items = items.filter(item => {
+      const name = item.name.toLowerCase();
+      const slug = item.slug?.toLowerCase() || '';
+      return !(name.includes('vase shrunk') || slug.includes('vase-shrunk'));
+    });
+    if (!directSearchQuery) return items;
+    const q = directSearchQuery.toLowerCase();
+    return items.filter(i => 
+      i.name.toLowerCase().includes(q) || 
+      i.slug?.toLowerCase().includes(q) ||
+      i.sku?.toLowerCase().includes(q)
+    );
+  });
+
+  // Compute count from weight for a given slug
+  function getCountFromWeight(slug: string): number {
+    const weight = weightInputs[slug] || 0;
+    const unitWeight = (data.unitWeights || []).find(w => w.slug === slug);
+    if (!unitWeight || unitWeight.weight_per_unit <= 0 || weight <= 0) return 0;
+    return Math.floor(weight / unitWeight.weight_per_unit);
+  }
+
+  // Summary of pending changes for sets tab
+  const setPendingSummary = $derived(() => {
+    const summary: Record<string, number> = {};
+    const sets = data.setDefinitions || [];
+    for (const set of sets) {
+      const count = setCounts[set.sku] || 0;
+      if (count <= 0) continue;
+      for (const comp of set.components) {
+        summary[comp.inventory_slug] = (summary[comp.inventory_slug] || 0) + comp.quantity * count;
+      }
+    }
+    return summary;
+  });
+
+  // Summary of pending changes for weight tab
+  const weightPendingSummary = $derived(() => {
+    const summary: Record<string, number> = {};
+    for (const [slug, _weight] of Object.entries(weightInputs)) {
+      const count = getCountFromWeight(slug);
+      if (count > 0) summary[slug] = count;
+    }
+    return summary;
+  });
+
+  // Summary of pending changes for direct tab
+  const directPendingSummary = $derived(() => {
+    const summary: Record<string, number> = {};
+    for (const [slug, count] of Object.entries(directCounts)) {
+      if (count > 0) summary[slug] = count;
+    }
+    return summary;
+  });
+
+  // Get item name by slug
+  function getItemName(slug: string): string {
+    const item = (data.items || []).find(i => i.slug === slug);
+    return item?.name || slug;
+  }
+
+  // Reset check tool state
+  function resetCheckTool() {
+    setCounts = {};
+    weightInputs = {};
+    directCounts = {};
+    checkMessage = '';
+    setSearchQuery = '';
+    weightSearchQuery = '';
+    directSearchQuery = '';
+  }
+
+  function openCheckPanel(panel: 'sets' | 'weight' | 'direct') {
+    if (activeCheckPanel === panel) {
+      activeCheckPanel = null;
+    } else {
+      resetCheckTool();
+      activeCheckPanel = panel;
+    }
+  }
+
+  function closeCheckPanel() {
+    activeCheckPanel = null;
+    resetCheckTool();
+  }
+
+  function openCheckTool() {
+    resetCheckTool();
+    activeCheckPanel = 'sets';
+  }
+
+  function closeCheckTool() {
+    activeCheckPanel = null;
+    resetCheckTool();
+  }
 
   // Start editing an item's stock
   function startEdit(item: InventoryItem) {
@@ -257,6 +420,17 @@
       default: return { label: '?', color: 'text-slate-400' };
     }
   }
+
+  // helper for display
+  function formatVelocity(v?: number) {
+    if (v == null) return '0/d';
+    return `${Math.round(v * 100) / 100}/d`;
+  }
+  function formatDays(d?: number) {
+    if (d == null) return '∞';
+    if (d > 999) return '∞';
+    return `${Math.round(d * 10) / 10}d`;
+  }
 </script>
 
 <svelte:head>
@@ -363,7 +537,6 @@
                     </div>
                     
                     <div class="flex items-center gap-4">
-                      <!-- Status indicators -->
                       {#if categoryData.outOfStockCount > 0}
                         <span class="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-400">
                           {categoryData.outOfStockCount} out
@@ -374,8 +547,6 @@
                           {categoryData.lowStockCount} low
                         </span>
                       {/if}
-                      
-                      <!-- Total stock -->
                       <span class="text-lg font-bold text-emerald-400 min-w-16 text-right">
                         {categoryData.totalStock}
                       </span>
@@ -426,96 +597,71 @@
 
                             <!-- Level 3: Items -->
                             {#if isSubcategoryExpanded}
-                              <div class="bg-slate-900/50 border-t border-slate-800/30 divide-y divide-slate-800/20">
-                                {#each subcategoryData.items.sort((a, b) => a.color.localeCompare(b.color)) as { item, color }}
-                                  {@const stockLevel = getStockLevel(item)}
-                                  <div class="flex items-center gap-3 px-8 py-2 hover:bg-slate-800/20 transition-colors">
-                                    <!-- Color dot -->
-                                    <div class="w-2 h-2 rounded-full shrink-0 {stockLevel === 'out' ? 'bg-red-500' : stockLevel === 'low' ? 'bg-amber-500' : 'bg-emerald-500'}"></div>
-                                    
-                                    <!-- Item info -->
-                                    <div class="flex-1 min-w-0">
-                                      <span class="text-sm text-slate-300">{color}</span>
-                                      <span class="text-xs text-slate-600 ml-2">min: {item.min_threshold}</span>
-                                    </div>
+                              {#each subcategoryData.items.sort((a, b) => a.color.localeCompare(b.color)) as { item, color }}
+                                {@const stockLevel = getStockLevel(item)}
+                                {@const ui = item as InventoryItemUI}
+                                <div class="flex items-center gap-3 px-8 py-2.5 hover:bg-slate-800/20 transition-colors">
+                                  <div class="w-2 h-2 rounded-full shrink-0 {stockLevel === 'out' ? 'bg-red-500' : stockLevel === 'low' ? 'bg-amber-500' : 'bg-emerald-500'}"></div>
+                                  
+                                  <!-- Color name -->
+                                  <span class="text-sm text-slate-300 w-20 shrink-0">{color}</span>
 
-                                    <!-- Stock count / Edit -->
-                                    {#if editingItemId === item.id}
-                                      <form 
-                                        method="POST" 
-                                        action="?/setStock"
-                                        use:enhance={() => {
-                                          return async ({ update }) => {
-                                            await update();
-                                            cancelEdit();
-                                          };
-                                        }}
-                                        class="flex items-center gap-1"
-                                      >
-                                        <input type="hidden" name="id" value={item.id} />
-                                        <input 
-                                          type="number" 
-                                          name="count" 
-                                          bind:value={editCount}
-                                          min="0"
-                                          class="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-center text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                        />
-                                        <input type="hidden" name="reason" value="Manual count" />
-                                        <button type="submit" class="p-1 text-emerald-400 hover:text-emerald-300 rounded" title="Save">
-                                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                          </svg>
-                                        </button>
-                                        <button type="button" onclick={cancelEdit} class="p-1 text-slate-400 hover:text-slate-300 rounded" title="Cancel">
-                                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                          </svg>
-                                        </button>
-                                      </form>
-                                    {:else}
-                                      <div class="flex items-center gap-0.5">
-                                        <!-- Quick decrement -->
-                                        <form method="POST" action="?/removeStock" use:enhance>
-                                          <input type="hidden" name="id" value={item.id} />
-                                          <input type="hidden" name="quantity" value="1" />
-                                          <input type="hidden" name="reason" value="Quick remove" />
-                                          <button 
-                                            type="submit"
-                                            disabled={item.stock_count === 0}
-                                            class="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm"
-                                            title="Remove 1"
-                                          >
-                                            −
-                                          </button>
-                                        </form>
-                                        
-                                        <!-- Stock count -->
-                                        <button 
-                                          onclick={() => startEdit(item)}
-                                          class="min-w-12 px-2 py-1 rounded text-sm font-bold transition-colors {getStockColor(stockLevel)}"
-                                          title="Click to edit"
-                                        >
-                                          {item.stock_count}
-                                        </button>
-                                        
-                                        <!-- Quick increment -->
-                                        <form method="POST" action="?/addStock" use:enhance>
-                                          <input type="hidden" name="id" value={item.id} />
-                                          <input type="hidden" name="quantity" value="1" />
-                                          <input type="hidden" name="reason" value="Quick add" />
-                                          <button 
-                                            type="submit"
-                                            class="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors text-sm"
-                                            title="Add 1"
-                                          >
-                                            +
-                                          </button>
-                                        </form>
-                                      </div>
-                                    {/if}
+                                  <!-- Velocity & days metrics -->
+                                  <div class="flex-1 flex items-center gap-4 min-w-0">
+                                    <div class="flex flex-col">
+                                      <span class="text-xs text-slate-500 leading-none">velocity</span>
+                                      <span class="text-sm font-semibold text-slate-200 leading-snug">{formatVelocity(ui.daily_velocity)}</span>
+                                    </div>
+                                    <div class="flex flex-col">
+                                      <span class="text-xs text-slate-500 leading-none">days left</span>
+                                      <span class="text-sm font-semibold {ui.days_until_stockout != null && ui.days_until_stockout <= 7 ? 'text-red-400' : ui.days_until_stockout != null && ui.days_until_stockout <= 14 ? 'text-amber-400' : 'text-slate-200'} leading-snug">{formatDays(ui.days_until_stockout)}</span>
+                                    </div>
                                   </div>
-                                {/each}
-                              </div>
+
+                                  <!-- Stock count badge -->
+                                  {#if editingItemId === item.id}
+                                    <form 
+                                      method="POST" 
+                                      action="?/setStock"
+                                      use:enhance={() => {
+                                        return async ({ update }) => {
+                                          await update();
+                                          cancelEdit();
+                                        };
+                                      }}
+                                      class="flex items-center gap-1"
+                                    >
+                                      <input type="hidden" name="id" value={item.id} />
+                                      <input 
+                                        type="number" 
+                                        name="count" 
+                                        bind:value={editCount}
+                                        min="0"
+                                        class="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-center text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                      />
+                                      <input type="hidden" name="reason" value="Manual count" />
+                                      <button type="submit" class="p-1 text-emerald-400 hover:text-emerald-300 rounded" title="Save">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                        </svg>
+                                      </button>
+                                      <button type="button" onclick={cancelEdit} class="p-1 text-slate-400 hover:text-slate-300 rounded" title="Cancel">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                      </button>
+                                    </form>
+                                  {:else}
+                                    <button
+                                      onclick={() => startEdit(item)}
+                                      class="min-w-14 px-3 py-1.5 rounded-lg text-base font-bold transition-colors {getStockColor(stockLevel)}"
+                                      title="Click to edit"
+                                    >
+                                      {item.stock_count}
+                                    </button>
+                                  {/if}
+                                </div>
+                              {/each}
                             {/if}
                           </div>
                         {/each}
@@ -526,12 +672,21 @@
                         <div class="divide-y divide-slate-800/20">
                           {#each categoryData.items as { item, color }}
                             {@const stockLevel = getStockLevel(item)}
-                            <div class="flex items-center gap-3 px-6 py-2 hover:bg-slate-800/20 transition-colors">
+                            {@const ui = item as InventoryItemUI}
+                            <div class="flex items-center gap-3 px-6 py-2.5 hover:bg-slate-800/20 transition-colors">
                               <div class="w-2 h-2 rounded-full shrink-0 {stockLevel === 'out' ? 'bg-red-500' : stockLevel === 'low' ? 'bg-amber-500' : 'bg-emerald-500'}"></div>
-                              <div class="flex-1 min-w-0">
-                                <span class="text-sm text-slate-300">{item.name}</span>
+                              <span class="text-sm text-slate-300 flex-1 min-w-0 truncate">{item.name}</span>
+                              <div class="flex items-center gap-4">
+                                <div class="flex flex-col items-end">
+                                  <span class="text-xs text-slate-500 leading-none">velocity</span>
+                                  <span class="text-sm font-semibold text-slate-200 leading-snug">{formatVelocity(ui.daily_velocity)}</span>
+                                </div>
+                                <div class="flex flex-col items-end">
+                                  <span class="text-xs text-slate-500 leading-none">days left</span>
+                                  <span class="text-sm font-semibold {ui.days_until_stockout != null && ui.days_until_stockout <= 7 ? 'text-red-400' : ui.days_until_stockout != null && ui.days_until_stockout <= 14 ? 'text-amber-400' : 'text-slate-200'} leading-snug">{formatDays(ui.days_until_stockout)}</span>
+                                </div>
+                                <span class="min-w-12 px-2 py-1 rounded-lg text-sm font-bold text-center {getStockColor(stockLevel)}">{item.stock_count}</span>
                               </div>
-                              <span class="text-sm font-bold {getStockColor(stockLevel).split(' ')[0]}">{item.stock_count}</span>
                             </div>
                           {/each}
                         </div>
@@ -557,17 +712,14 @@
               <p>No activity yet</p>
             </div>
           {:else}
-            <div class="divide-y divide-slate-800/30 max-h-[600px] overflow-y-auto">
+            <div class="divide-y divide-slate-800/30 max-h-150 overflow-y-auto">
               {#each data.logs as log}
                 {@const changeType = getChangeTypeLabel(log.change_type)}
                 <div class="px-4 py-2.5 hover:bg-slate-800/20">
                   <div class="flex items-start gap-2">
-                    <!-- Change type badge -->
                     <span class="w-8 text-center text-xs font-medium {changeType.color}">
                       {changeType.label}
                     </span>
-                    
-                    <!-- Log details -->
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center gap-2">
                         <span class="text-sm text-slate-200 truncate">{log.item_name}</span>
@@ -579,8 +731,6 @@
                         <p class="text-xs text-slate-500 truncate">{log.reason}</p>
                       {/if}
                     </div>
-                    
-                    <!-- Time -->
                     <span class="text-xs text-slate-600 shrink-0">
                       {formatTime(log.created_at)}
                     </span>
@@ -592,5 +742,352 @@
         </div>
       </div>
     </div>
+
+    <!-- ============ INVENTORY CHECK SECTION ============ -->
+    <div class="mt-8">
+      <div class="mb-4">
+        <h2 class="text-lg font-bold text-slate-100">Add Stock</h2>
+        <p class="text-slate-400 text-sm mt-0.5">Choose how you want to record new inventory</p>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <button
+          onclick={() => openCheckPanel('sets')}
+          class="flex items-center gap-4 p-4 rounded-xl border transition-all {activeCheckPanel === 'sets' ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300' : 'bg-slate-900/50 border-slate-800 text-slate-300 hover:border-emerald-500/30 hover:bg-slate-800/60'}"
+        >
+          <div class="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0 text-xl">📦</div>
+          <div class="text-left">
+            <p class="font-semibold text-sm">Add by Sets</p>
+            <p class="text-xs text-slate-500 mt-0.5">Decompose bundles into singles</p>
+          </div>
+          <svg class="w-4 h-4 ml-auto shrink-0 transition-transform {activeCheckPanel === 'sets' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        <button
+          onclick={() => openCheckPanel('weight')}
+          class="flex items-center gap-4 p-4 rounded-xl border transition-all {activeCheckPanel === 'weight' ? 'bg-blue-500/10 border-blue-500/40 text-blue-300' : 'bg-slate-900/50 border-slate-800 text-slate-300 hover:border-blue-500/30 hover:bg-slate-800/60'}"
+        >
+          <div class="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0 text-xl">⚖️</div>
+          <div class="text-left">
+            <p class="font-semibold text-sm">Add by Scale</p>
+            <p class="text-xs text-slate-500 mt-0.5">Weight → item count</p>
+          </div>
+          <svg class="w-4 h-4 ml-auto shrink-0 transition-transform {activeCheckPanel === 'weight' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        <button
+          onclick={() => openCheckPanel('direct')}
+          class="flex items-center gap-4 p-4 rounded-xl border transition-all {activeCheckPanel === 'direct' ? 'bg-violet-500/10 border-violet-500/40 text-violet-300' : 'bg-slate-900/50 border-slate-800 text-slate-300 hover:border-violet-500/30 hover:bg-slate-800/60'}"
+        >
+          <div class="w-10 h-10 rounded-lg bg-violet-500/10 flex items-center justify-center shrink-0 text-xl">🔢</div>
+          <div class="text-left">
+            <p class="font-semibold text-sm">Add Individually</p>
+            <p class="text-xs text-slate-500 mt-0.5">Direct count per item</p>
+          </div>
+          <svg class="w-4 h-4 ml-auto shrink-0 transition-transform {activeCheckPanel === 'direct' ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Expanded Panel -->
+      {#if activeCheckPanel !== null}
+        {@const panelColor = activeCheckPanel === 'sets' ? 'emerald' : activeCheckPanel === 'weight' ? 'blue' : 'violet'}
+        <div class="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
+          
+          <!-- Panel Content -->
+          <div class="p-5">
+
+            <!-- ========== SETS PANEL ========== -->
+            {#if activeCheckPanel === 'sets'}
+              <div class="mb-4">
+                <input
+                  type="text"
+                  placeholder="Search sets..."
+                  bind:value={setSearchQuery}
+                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                />
+              </div>
+
+              {#if filteredSets().length === 0}
+                <p class="text-slate-500 text-sm text-center py-8">No set definitions found</p>
+              {:else}
+                <div class="grid sm:grid-cols-2 gap-2">
+                  {#each filteredSets() as set}
+                    <div class="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
+                      <div class="flex items-center justify-between gap-3">
+                        <div class="flex-1 min-w-0">
+                          <p class="text-sm font-medium text-slate-200 truncate">{set.label}</p>
+                          <p class="text-xs text-slate-500 mt-0.5">
+                            {set.components.map(c => `${c.quantity}x ${getItemName(c.inventory_slug)}`).join(' + ')}
+                          </p>
+                        </div>
+                        <div class="flex items-center gap-1 shrink-0">
+                          <button
+                            onclick={() => { setCounts[set.sku] = Math.max(0, (setCounts[set.sku] || 0) - 1); setCounts = { ...setCounts }; }}
+                            disabled={(setCounts[set.sku] || 0) === 0}
+                            class="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-lg font-bold"
+                          >−</button>
+                          <input
+                            type="number"
+                            min="0"
+                            value={setCounts[set.sku] || 0}
+                            oninput={(e) => { setCounts[set.sku] = parseInt((e.target as HTMLInputElement).value) || 0; setCounts = { ...setCounts }; }}
+                            class="w-14 bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                          />
+                          <button
+                            onclick={() => { setCounts[set.sku] = (setCounts[set.sku] || 0) + 1; setCounts = { ...setCounts }; }}
+                            class="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 transition-colors text-lg font-bold"
+                          >+</button>
+                        </div>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if Object.keys(setPendingSummary()).length > 0}
+                <div class="mt-4 bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
+                  <p class="text-xs font-medium text-emerald-400 mb-2">Will add to inventory:</p>
+                  <div class="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                    {#each Object.entries(setPendingSummary()) as [slug, qty]}
+                      <div class="text-xs text-slate-300">
+                        <span class="text-emerald-400 font-bold">+{qty}</span> {getItemName(slug)}
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+            <!-- ========== WEIGHT PANEL ========== -->
+            {:else if activeCheckPanel === 'weight'}
+              <div class="mb-4">
+                <input
+                  type="text"
+                  placeholder="Search items..."
+                  bind:value={weightSearchQuery}
+                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                />
+              </div>
+              <p class="text-xs text-slate-500 mb-4">Enter total weight in grams → auto-calculates item count</p>
+
+              {#if filteredWeightItems().length === 0}
+                <p class="text-slate-500 text-sm text-center py-8">No items with weight data available</p>
+              {:else}
+                <div class="grid sm:grid-cols-2 gap-2">
+                  {#each filteredWeightItems() as w}
+                    {@const count = getCountFromWeight(w.slug)}
+                    <div class="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
+                      <div class="flex items-center justify-between gap-3">
+                        <div class="flex-1 min-w-0">
+                          <p class="text-sm font-medium text-slate-200 truncate">{w.name}</p>
+                          <p class="text-xs text-slate-500 mt-0.5">{w.weight_per_unit}g per unit</p>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                          <div class="relative">
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              placeholder="0"
+                              value={weightInputs[w.slug] || ''}
+                              oninput={(e) => { weightInputs[w.slug] = parseFloat((e.target as HTMLInputElement).value) || 0; weightInputs = { ...weightInputs }; }}
+                              class="w-24 bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-right text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 pr-6"
+                            />
+                            <span class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500">g</span>
+                          </div>
+                          <span class="text-sm text-slate-500">=</span>
+                          <span class="min-w-10 text-center text-sm font-bold {count > 0 ? 'text-blue-400' : 'text-slate-600'}">
+                            {count}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if Object.keys(weightPendingSummary()).length > 0}
+                <div class="mt-4 bg-blue-500/5 border border-blue-500/20 rounded-lg p-3">
+                  <p class="text-xs font-medium text-blue-400 mb-2">Will add to inventory:</p>
+                  <div class="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                    {#each Object.entries(weightPendingSummary()) as [slug, qty]}
+                      <div class="text-xs text-slate-300">
+                        <span class="text-blue-400 font-bold">+{qty}</span> {getItemName(slug)}
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+            <!-- ========== DIRECT ADD PANEL ========== -->
+            {:else if activeCheckPanel === 'direct'}
+              <div class="mb-4">
+                <input
+                  type="text"
+                  placeholder="Search items..."
+                  bind:value={directSearchQuery}
+                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                />
+              </div>
+              <p class="text-xs text-slate-500 mb-4">Enter the exact count to add for each item</p>
+
+              {#if filteredDirectItems().length === 0}
+                <p class="text-slate-500 text-sm text-center py-8">No items found</p>
+              {:else}
+                <div class="grid sm:grid-cols-2 gap-1.5">
+                  {#each filteredDirectItems() as item}
+                    {@const currentStock = item.stock_count}
+                    {@const pending = directCounts[item.slug] || 0}
+                    <div class="bg-slate-800/50 border border-slate-700/50 rounded-lg px-3 py-2">
+                      <div class="flex items-center justify-between gap-3">
+                        <div class="flex-1 min-w-0">
+                          <p class="text-sm text-slate-200 truncate">{item.name}</p>
+                          <p class="text-xs text-slate-500">Stock: {currentStock}{pending > 0 ? ` → ${currentStock + pending}` : ''}</p>
+                        </div>
+                        <div class="flex items-center gap-1 shrink-0">
+                          <button
+                            onclick={() => { directCounts[item.slug] = Math.max(0, (directCounts[item.slug] || 0) - 1); directCounts = { ...directCounts }; }}
+                            disabled={(directCounts[item.slug] || 0) === 0}
+                            class="w-7 h-7 flex items-center justify-center rounded bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-bold"
+                          >−</button>
+                          <input
+                            type="number"
+                            min="0"
+                            value={directCounts[item.slug] || 0}
+                            oninput={(e) => { directCounts[item.slug] = parseInt((e.target as HTMLInputElement).value) || 0; directCounts = { ...directCounts }; }}
+                            class="w-14 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-center text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                          />
+                          <button
+                            onclick={() => { directCounts[item.slug] = (directCounts[item.slug] || 0) + 1; directCounts = { ...directCounts }; }}
+                            class="w-7 h-7 flex items-center justify-center rounded bg-violet-600 text-white hover:bg-violet-500 transition-colors text-sm font-bold"
+                          >+</button>
+                        </div>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if Object.keys(directPendingSummary()).length > 0}
+                <div class="mt-4 bg-violet-500/5 border border-violet-500/20 rounded-lg p-3">
+                  <p class="text-xs font-medium text-violet-400 mb-2">Will add to inventory:</p>
+                  <div class="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                    {#each Object.entries(directPendingSummary()) as [slug, qty]}
+                      <div class="text-xs text-slate-300">
+                        <span class="text-violet-400 font-bold">+{qty}</span> {getItemName(slug)}
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            {/if}
+          </div>
+
+          <!-- Panel Footer -->
+          <div class="px-5 py-4 border-t border-slate-800 flex items-center justify-between">
+            {#if checkMessage}
+              <p class="text-sm text-emerald-400">{checkMessage}</p>
+            {:else}
+              <button onclick={closeCheckPanel} class="text-sm text-slate-400 hover:text-white transition-colors">
+                Close
+              </button>
+            {/if}
+
+            {#if activeCheckPanel === 'sets'}
+              <form
+                method="POST"
+                action="?/addSets"
+                use:enhance={() => {
+                  checkSubmitting = true;
+                  return async ({ result, update }) => {
+                    checkSubmitting = false;
+                    if (result.type === 'success') {
+                      checkMessage = '✓ Sets added to inventory!';
+                      setCounts = {};
+                      setTimeout(() => { checkMessage = ''; closeCheckPanel(); }, 1500);
+                    }
+                    await update();
+                  };
+                }}
+              >
+                <input type="hidden" name="entries" value={JSON.stringify(
+                  Object.entries(setCounts).filter(([_, c]) => c > 0).map(([sku, count]) => ({ sku, count }))
+                )} />
+                <button
+                  type="submit"
+                  disabled={checkSubmitting || Object.keys(setPendingSummary()).length === 0}
+                  class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {checkSubmitting ? 'Adding...' : `Add ${Object.values(setPendingSummary()).reduce((s, v) => s + v, 0)} items`}
+                </button>
+              </form>
+            {:else if activeCheckPanel === 'weight'}
+              <form
+                method="POST"
+                action="?/addByWeight"
+                use:enhance={() => {
+                  checkSubmitting = true;
+                  return async ({ result, update }) => {
+                    checkSubmitting = false;
+                    if (result.type === 'success') {
+                      checkMessage = '✓ Weight-based items added!';
+                      weightInputs = {};
+                      setTimeout(() => { checkMessage = ''; closeCheckPanel(); }, 1500);
+                    }
+                    await update();
+                  };
+                }}
+              >
+                <input type="hidden" name="entries" value={JSON.stringify(
+                  Object.entries(weightPendingSummary()).map(([slug, count]) => ({ slug, count }))
+                )} />
+                <button
+                  type="submit"
+                  disabled={checkSubmitting || Object.keys(weightPendingSummary()).length === 0}
+                  class="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {checkSubmitting ? 'Adding...' : `Add ${Object.values(weightPendingSummary()).reduce((s, v) => s + v, 0)} items`}
+                </button>
+              </form>
+            {:else if activeCheckPanel === 'direct'}
+              <form
+                method="POST"
+                action="?/bulkAdd"
+                use:enhance={() => {
+                  checkSubmitting = true;
+                  return async ({ result, update }) => {
+                    checkSubmitting = false;
+                    if (result.type === 'success') {
+                      checkMessage = '✓ Items added to inventory!';
+                      directCounts = {};
+                      setTimeout(() => { checkMessage = ''; closeCheckPanel(); }, 1500);
+                    }
+                    await update();
+                  };
+                }}
+              >
+                <input type="hidden" name="entries" value={JSON.stringify(
+                  Object.entries(directCounts).filter(([_, c]) => c > 0).map(([slug, count]) => ({ slug, count }))
+                )} />
+                <button
+                  type="submit"
+                  disabled={checkSubmitting || Object.keys(directPendingSummary()).length === 0}
+                  class="px-6 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  {checkSubmitting ? 'Adding...' : `Add ${Object.values(directPendingSummary()).reduce((s, v) => s + v, 0)} items`}
+                </button>
+              </form>
+            {/if}
+          </div>
+        </div>
+      {/if}
+    </div>
+
   </div>
 </div>
