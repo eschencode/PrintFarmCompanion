@@ -320,10 +320,40 @@ export async function addStockBySlug(db: D1Database, slug: string, quantity: num
       console.warn(`Inventory item with slug "${slug}" not found - skipping stock update`);
       return { success: false, error: `Inventory item with slug "${slug}" not found` };
     }
-    
+
     return await addStock(db, item.id, quantity, reason);
   } catch (error) {
     console.error('Error adding stock by slug:', error);
     return { success: false, error: 'Failed to add stock' };
+  }
+}
+
+// Perform manual count by slug (for bulk stock count sessions)
+export async function performManualCountBySlug(db: D1Database, slug: string, actualCount: number, reason?: string): Promise<ServerResponse> {
+  try {
+    const item = await getInventoryItemBySlug(db, slug);
+    if (!item) {
+      console.warn(`Inventory item with slug "${slug}" not found - skipping count`);
+      return { success: false, error: `Item with slug "${slug}" not found` };
+    }
+    return await performManualCount(db, item.id, actualCount, reason);
+  } catch (error) {
+    console.error('Error performing manual count by slug:', error);
+    return { success: false, error: 'Failed to perform manual count' };
+  }
+}
+
+// Record B2B sale by slug
+export async function recordSaleB2BBySlug(db: D1Database, slug: string, quantity: number, reason?: string): Promise<ServerResponse> {
+  try {
+    const item = await getInventoryItemBySlug(db, slug);
+    if (!item) {
+      console.warn(`Inventory item with slug "${slug}" not found - skipping B2B sale`);
+      return { success: false, error: `Inventory item with slug "${slug}" not found` };
+    }
+    return await recordSaleB2B(db, item.id, quantity, reason);
+  } catch (error) {
+    console.error('Error recording B2B sale by slug:', error);
+    return { success: false, error: 'Failed to record B2B sale' };
   }
 }
