@@ -42,13 +42,19 @@ export class AIContextBuilder {
       GROUP BY i.id
     `).all<InventoryWithVelocity>();
 
-    return result.results.map(row => ({
-      ...row,
-      daily_velocity: Math.round((row.sold_30d / 30) * 100) / 100,
-      days_until_stockout: row.sold_30d > 0 
-        ? Math.round((row.stock_count / (row.sold_30d / 30)) * 10) / 10 
-        : 999
-    }));
+    return result.results.map(row => {
+      // Weighted blend: recent sales matter more than older ones
+      const velocity = row.sold_7d > 0 || row.sold_14d > 0 || row.sold_30d > 0
+        ? Math.round(((row.sold_7d / 7) * 0.6 + (row.sold_14d / 14) * 0.3 + (row.sold_30d / 30) * 0.1) * 100) / 100
+        : 0;
+      return {
+        ...row,
+        daily_velocity: velocity,
+        days_until_stockout: velocity > 0
+          ? Math.round((row.stock_count / velocity) * 10) / 10
+          : 999
+      };
+    });
   }
 
   /**
@@ -56,7 +62,7 @@ export class AIContextBuilder {
    */
   async getModulesContext(): Promise<ModuleContext[]> {
     const result = await this.db.prepare(`
-      SELECT 
+      SELECT
         pm.id,
         pm.name,
         pm.inventory_slug,

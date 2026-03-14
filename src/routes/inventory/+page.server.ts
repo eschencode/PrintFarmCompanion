@@ -6,7 +6,9 @@ import {
   removeStock,
   performManualCount,
   setStock,
-  addStockBySlug
+  addStockBySlug,
+  recordSaleB2BBySlug,
+  performManualCountBySlug
 } from '$lib/inventory_handler';
 import { AIContextBuilder } from '$lib/ai/context-builder';
 
@@ -261,6 +263,104 @@ export const actions: Actions = {
     } catch (error) {
       console.error('Error adding by weight:', error);
       return { success: false, error: 'Failed to add by weight' };
+    }
+  },
+
+  // B2B sell by sets – decompose sets and remove stock
+  b2bSellSets: async ({ request, platform }) => {
+    const db = platform?.env?.DB;
+    if (!db) return { success: false, error: 'Database not available' };
+
+    const formData = await request.formData();
+    const entriesJson = formData.get('entries') as string;
+
+    if (!entriesJson) return { success: false, error: 'No entries provided' };
+
+    try {
+      const entries: { sku: string; count: number }[] = JSON.parse(entriesJson);
+      const results: { slug: string; quantity: number; success: boolean }[] = [];
+
+      for (const entry of entries) {
+        if (entry.count <= 0) continue;
+
+        const components = await db.prepare(`
+          SELECT inventory_slug, quantity
+          FROM shopify_sku_mapping
+          WHERE shopify_sku = ?
+        `).bind(entry.sku).all();
+
+        const rows = (components.results || []) as { inventory_slug: string; quantity: number }[];
+
+        for (const comp of rows) {
+          const totalQty = comp.quantity * entry.count;
+          const result = await recordSaleB2BBySlug(db, comp.inventory_slug, totalQty, `B2B sale: ${entry.count}x ${entry.sku}`);
+          results.push({ slug: comp.inventory_slug, quantity: totalQty, success: result.success });
+        }
+      }
+
+      return { success: true, message: `Processed ${results.length} B2B stock removals from sets`, data: results };
+    } catch (error) {
+      console.error('Error processing B2B set sale:', error);
+      return { success: false, error: 'Failed to process B2B set sale' };
+    }
+  },
+
+  // B2B sell direct – remove exact counts from individual items
+  b2bSellDirect: async ({ request, platform }) => {
+    const db = platform?.env?.DB;
+    if (!db) return { success: false, error: 'Database not available' };
+
+    const formData = await request.formData();
+    const entriesJson = formData.get('entries') as string;
+
+    if (!entriesJson) return { success: false, error: 'No entries provided' };
+
+    try {
+      const entries: { slug: string; count: number }[] = JSON.parse(entriesJson);
+      const results: { slug: string; quantity: number; success: boolean }[] = [];
+
+      for (const entry of entries) {
+        if (entry.count <= 0) continue;
+        const result = await recordSaleB2BBySlug(db, entry.slug, entry.count, 'B2B direct sale');
+        results.push({ slug: entry.slug, quantity: entry.count, success: result.success });
+      }
+
+      return { success: true, message: `Recorded ${results.length} B2B direct sales`, data: results };
+    } catch (error) {
+      console.error('Error in B2B direct sale:', error);
+      return { success: false, error: 'Failed to record B2B direct sale' };
+    }
+  },
+
+  // Apply stock count – set stock to physically counted values and record discrepancies
+  applyStockCount: async ({ request, platform }) => {
+    const db = platform?.env?.DB;
+    if (!db) return { success: false, error: 'Database not available' };
+
+    const formData = await request.formData();
+    const entriesJson = formData.get('entries') as string;
+
+    if (!entriesJson) return { success: false, error: 'No entries provided' };
+
+    try {
+      const entries: { slug: string; count: number }[] = JSON.parse(entriesJson);
+      const results: { slug: string; success: boolean; delta?: number }[] = [];
+
+      for (const entry of entries) {
+        const result = await performManualCountBySlug(db, entry.slug, entry.count, 'Stock count session');
+        results.push({ slug: entry.slug, success: result.success, delta: (result.data as any)?.difference });
+      }
+
+      const losses = results.filter(r => r.success && (r.delta ?? 0) < 0);
+      const gains  = results.filter(r => r.success && (r.delta ?? 0) > 0);
+      return {
+        success: true,
+        message: `Stock count applied: ${losses.length} losses, ${gains.length} gains`,
+        data: results
+      };
+    } catch (error) {
+      console.error('Error applying stock count:', error);
+      return { success: false, error: 'Failed to apply stock count' };
     }
   },
 

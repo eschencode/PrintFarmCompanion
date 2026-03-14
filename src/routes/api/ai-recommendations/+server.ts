@@ -19,11 +19,11 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
   try {
 
-	if (type === 'spool') {
-		const aiService = new AIRecommendationService(db, ai);
-		const suggestion = await aiService.suggestSpoolToLoad();
-		return json(suggestion);
-		}
+  if (type === 'spool') {
+    const aiService = new AIRecommendationService(db, ai);
+    const suggestion = await aiService.suggestSpoolToLoad(printerId ? Number(printerId) : undefined);
+    return json(suggestion);
+  }
     
 	 if (type === 'queue') {
       if (!printerId) {
