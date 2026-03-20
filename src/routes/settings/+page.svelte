@@ -4,21 +4,21 @@
   import { goto } from '$app/navigation';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
   import { enhance } from '$app/forms';
-  
+
   export let data: PageData;
   export let form: ActionData;
-  
+
   // Subscribe to store
   $: fileHandlerState = $fileHandlerStore;
-  
+
   let fileHandlerToken = '';
   let testingConnection = false;
   let connectionStatus: 'untested' | 'success' | 'failed' = 'untested';
-  
+
   // Shopify sync state
   let syncingShopify = false;
   let shopifySyncResult: { success: boolean; ordersProcessed?: number; itemsDeducted?: number; skippedOrders?: number; error?: string; errors?: string[] } | null = null;
-  
+
   // ✅ Image selection
   let selectedImagePath = '';
   let imagePreviewUrl = '';
@@ -83,7 +83,7 @@ function populateFields() {
   function updateGridDimensions() {
     const totalCells = gridRows * gridCols;
     const currentLength = editingGridConfig.length;
-    
+
     if (totalCells > currentLength) {
       // Add empty cells
       editingGridConfig = [
@@ -98,7 +98,7 @@ function populateFields() {
 
   function openGridEditor(preset?: any) {
     showGridEditor = true;
-    
+
     if (preset) {
       // Edit existing preset
       editingGridId = preset.id;
@@ -173,27 +173,27 @@ function populateFields() {
     printerName = '';
     printerModel = '';
   }
-  
+
   // Sync local variable with store
   $: fileHandlerToken = fileHandlerState.token;
-  
+
   function saveFileHandlerToken() {
     fileHandlerStore.setToken(fileHandlerToken);
     connectionStatus = 'untested';
     alert('✅ Token saved! Connection will be tested automatically.');
   }
-  
+
   async function testConnection() {
     if (!fileHandlerToken) {
       alert('⚠️ Please enter a token first');
       return;
     }
-    
+
     testingConnection = true;
     connectionStatus = 'untested';
-    
+
     const connected = await fileHandlerStore.testConnection();
-    
+
     connectionStatus = connected ? 'success' : 'failed';
     testingConnection = false;
   }
@@ -209,364 +209,382 @@ function populateFields() {
   }
 </script>
 
-<div class="min-h-screen bg-black text-white p-6">
-  <div class="max-w-6xl mx-auto">
+<div class="min-h-screen p-6 sm:p-10">
+  <div class="max-w-4xl mx-auto">
+
     <!-- Header -->
-    <div class="flex justify-between items-center mb-8">
-      <div>
-        <h1 class="text-3xl font-light tracking-wide mb-2">Settings</h1>
-        <p class="text-slate-400 text-sm">Manage print modules and spool presets</p>
-      </div>
-      <button 
-        onclick={() => goto('/')}
-        class="text-slate-400 hover:text-white transition-colors flex items-center gap-2 cursor-pointer"
+    <div class="mb-10">
+      <a
+        href="/"
+        onclick={(e) => { e.preventDefault(); goto('/'); }}
+        class="inline-flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 mb-4 tracking-wide transition-colors"
       >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
         </svg>
-        Back to Dashboard
-      </button>
+        Dashboard
+      </a>
+      <h1 class="text-[2rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 leading-none">Settings</h1>
+      <p class="text-zinc-400 dark:text-zinc-500 text-sm mt-2">Configure your workspace</p>
     </div>
 
-    <!-- Messages -->
+    <!-- Flash messages -->
     {#if form?.success}
-      <div class="bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-6 flex items-center gap-3">
-        <svg class="w-5 h-5 text-green-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+      <div class="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 rounded-xl px-4 py-3 mb-6">
+        <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
         </svg>
-        <p class="text-green-400">{form.message || 'Action completed successfully'}</p>
+        <p class="text-sm text-emerald-700 dark:text-emerald-400">{form.message || 'Action completed successfully'}</p>
       </div>
     {/if}
-
     {#if form?.error}
-      <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6 flex items-center gap-3">
-        <svg class="w-5 h-5 text-red-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+      <div class="flex items-center gap-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 rounded-xl px-4 py-3 mb-6">
+        <svg class="w-4 h-4 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
         </svg>
-        <p class="text-red-400">{form.error}</p>
+        <p class="text-sm text-red-700 dark:text-red-400">{form.error}</p>
       </div>
     {/if}
 
-    <!-- File Handler Configuration -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
-      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-        <h2 class="text-xl font-medium flex items-center gap-2">
-          <span class="text-2xl">🔧</span>
-          Local File Handler Configuration
-        </h2>
-        <p class="text-sm text-slate-500 mt-1">Configure automatic file opening on print start</p>
+    <!-- ── Printers ──────────────────────────────────────────────────── -->
+    <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-6">
+      <div class="px-5 py-4 flex items-center justify-between border-b border-zinc-50 dark:border-[#1a1a1a]">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Printers</p>
+        <button
+          onclick={() => showPrinterEditor = true}
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          New Printer
+        </button>
       </div>
-      <div class="p-6 space-y-4">
-        <div>
-          <label for="fileHandlerToken" class="block text-sm text-slate-400 mb-2">
-            Auth Token
-            <span class="text-slate-600">(from local-file-handler/.env)</span>
-          </label>
-          <input 
-            type="text" 
-            id="fileHandlerToken"
-            bind:value={fileHandlerToken}
-            placeholder="Paste your AUTH_TOKEN here"
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors font-mono text-sm"
-          />
-          <p class="text-xs text-slate-500 mt-2">
-            💡 This token is stored locally in your browser and never sent to the server.
-          </p>
-          <p class="text-xs text-slate-600 mt-1">
-            Find your token in: <code class="text-blue-400">local-file-handler/.env</code>
-          </p>
+      {#if data.printers && data.printers.length > 0}
+        <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a]">
+          {#each data.printers as printer}
+            <div class="px-5 py-3.5 flex items-center gap-4 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
+              <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-[#1a1a1a] flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 17H7a2 2 0 01-2-2V9a2 2 0 012-2h1V5a1 1 0 011-1h6a1 1 0 011 1v2h1a2 2 0 012 2v6a2 2 0 01-2 2zM9 17v2h6v-2M9 12h.01"/>
+                </svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{printer.name}</p>
+                <p class="text-xs text-zinc-400">{printer.model || 'No model'} · {printer.total_hours?.toFixed(1) || 0}h total</p>
+              </div>
+              <span class="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md {
+                printer.status === 'printing' ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400' :
+                printer.status === 'IDLE' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400' :
+                'bg-zinc-100 dark:bg-[#1a1a1a] text-zinc-400'
+              }">{printer.status}</span>
+              <div class="flex items-center gap-0.5">
+                <button
+                  onclick={() => openEditPrinter(printer)}
+                  class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#1e1e1e] transition-colors"
+                  title="Edit"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                  </svg>
+                </button>
+                <form method="POST" action="?/deletePrinter" use:enhance={() => {
+                  return async ({ result, update }) => {
+                    if (result.type === 'success' || result.type === 'redirect') {
+                      await update();
+                    } else if (result.type === 'failure') {
+                      alert(result.data?.error || 'Failed to delete printer');
+                    }
+                  };
+                }}>
+                  <input type="hidden" name="printerId" value={printer.id} />
+                  <button
+                    type="submit"
+                    class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                    title="Delete"
+                    onclick={(e) => { if (!confirm(`Delete ${printer.name}?`)) e.preventDefault(); }}
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                  </button>
+                </form>
+              </div>
+            </div>
+          {/each}
         </div>
-        
-        <div class="flex gap-3">
-          <button 
-            onclick={saveFileHandlerToken}
-            class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-medium py-3 rounded-lg transition-colors"
-          >
-            Save Token
-          </button>
-          <button 
-            onclick={testConnection}
-            disabled={testingConnection || !fileHandlerToken}
-            class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-medium py-3 rounded-lg transition-colors
-                   disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {#if testingConnection}
-              Testing...
-            {:else}
-              Test Connection
-            {/if}
-          </button>
+      {:else}
+        <div class="px-5 py-10 text-center">
+          <p class="text-sm text-zinc-400 mb-3">No printers added yet</p>
+          <button
+            onclick={() => showPrinterEditor = true}
+            class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium border border-zinc-200 dark:border-[#262626] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1a1a1a] transition-colors"
+          >Add your first printer</button>
         </div>
-        
-        {#if connectionStatus === 'success'}
-          <div class="bg-green-500/10 border border-green-500/20 rounded-lg p-3 flex items-center gap-2">
-            <svg class="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+      {/if}
+    </div>
+
+    <!-- ── Print Modules ─────────────────────────────────────────────── -->
+    <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-6">
+      <div class="px-5 py-4 flex items-center justify-between border-b border-zinc-50 dark:border-[#1a1a1a]">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Print Modules</p>
+        <button
+          onclick={() => {
+            editingModule = null;
+            moduleName = ''; modulePath = ''; moduleImage = '';
+            modulePrinterModel = ''; modulePresetId = '';
+            moduleWeight = ''; moduleTime = ''; moduleObjects = 1;
+            showModuleEditor = true;
+          }}
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          New Module
+        </button>
+      </div>
+      <!-- Search -->
+      <div class="px-5 py-3 border-b border-zinc-50 dark:border-[#1a1a1a]">
+        <input
+          type="text"
+          placeholder="Search modules..."
+          bind:value={moduleSearch}
+          class="w-full bg-zinc-50 dark:bg-[#161616] rounded-lg px-3.5 py-2 text-sm text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 border border-transparent focus:border-zinc-200 dark:focus:border-[#262626] focus:outline-none transition-colors"
+        />
+      </div>
+      {#if filteredModules.length > 0}
+        <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a]">
+          {#each filteredModules as module}
+            {@const linkedPreset = data.spoolPresets.find(p => p.id === module.default_spool_preset_id)}
+            <div class="px-5 py-3.5 flex items-center gap-4 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
+              {#if module.image_path}
+                <div class="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a] shrink-0">
+                  <img src={module.image_path} alt={module.name} class="w-full h-full object-cover"
+                    onerror={(e) => e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'} />
+                </div>
+              {:else}
+                <div class="w-10 h-10 rounded-lg bg-zinc-100 dark:bg-[#1a1a1a] shrink-0 flex items-center justify-center">
+                  <svg class="w-4 h-4 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                  </svg>
+                </div>
+              {/if}
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{module.name}</p>
+                <p class="text-xs text-zinc-400 font-mono truncate">{module.path}</p>
+                <div class="flex items-center gap-3 mt-0.5">
+                  {#if module.printer_model}<span class="text-[10px] text-zinc-400">{module.printer_model}</span>{/if}
+                  <span class="text-[10px] text-zinc-400">{linkedPreset ? linkedPreset.name : 'Any spool'}</span>
+                  <span class="text-[10px] text-zinc-400">{module.expected_weight}g · {module.expected_time}min · {module.objects_per_print}×</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-0.5">
+                <button
+                  onclick={() => { editingModule = module; showModuleEditor = true; populateFields(); }}
+                  class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#1e1e1e] transition-colors"
+                  title="Edit"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                  </svg>
+                </button>
+                <form method="POST" action="?/deleteModule">
+                  <input type="hidden" name="moduleId" value={module.id} />
+                  <button
+                    type="submit"
+                    class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                    title="Delete"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                  </button>
+                </form>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <div class="px-5 py-10 text-center">
+          <p class="text-sm text-zinc-400">{moduleSearch ? 'No modules match your search.' : 'No print modules yet.'}</p>
+        </div>
+      {/if}
+    </div>
+
+    <!-- ── Spool Presets ─────────────────────────────────────────────── -->
+    <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-6">
+      <details class="group">
+        <summary class="px-5 py-4 flex items-center justify-between cursor-pointer list-none border-b border-zinc-50 dark:border-[#1a1a1a]">
+          <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Spool Presets</p>
+          <span class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>
-            <span class="text-green-400 text-sm">✅ Connection successful! File handler is online.</span>
-          </div>
-        {:else if connectionStatus === 'failed'}
-          <div class="bg-red-500/10 border border-red-500/20 rounded-lg p-3 flex items-start gap-2">
-            <svg class="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-            </svg>
-            <div class="text-sm">
-              <p class="text-red-400 font-medium">❌ Connection failed</p>
-              <p class="text-slate-500 mt-1">Make sure the file handler is running:</p>
-              <code class="text-xs bg-slate-800 px-2 py-1 rounded mt-1 inline-block text-blue-400">
-                cd local-file-handler && bun run start
-              </code>
+            New Preset
+          </span>
+        </summary>
+        <!-- Add Preset Form -->
+        <form method="POST" action="?/addSpoolPreset" class="px-5 py-5 border-b border-zinc-50 dark:border-[#1a1a1a] space-y-4">
+          <div class="grid grid-cols-2 gap-4">
+            <div class="col-span-2">
+              <label for="presetName" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Name</label>
+              <input type="text" id="presetName" name="name" required placeholder="e.g., Bambu PLA Basic Black"
+                class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+            </div>
+            <div>
+              <label for="brand" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Brand</label>
+              <input type="text" id="brand" name="brand" required placeholder="Bambu Lab"
+                class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+            </div>
+            <div>
+              <label for="material" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Material</label>
+              <input type="text" id="material" name="material" required placeholder="PLA"
+                class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+            </div>
+            <div>
+              <label for="color" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Color</label>
+              <input type="text" id="color" name="color" placeholder="Black"
+                class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+            </div>
+            <div>
+              <label for="defaultWeight" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Weight (g)</label>
+              <input type="number" id="defaultWeight" name="defaultWeight" required min="0" value="1000"
+                class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+            </div>
+            <div>
+              <label for="cost" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Cost (€)</label>
+              <input type="number" id="cost" name="cost" min="0" step="0.01" placeholder="20.00"
+                class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
             </div>
           </div>
-        {/if}
-      </div>
+          <div class="flex justify-end">
+            <button type="submit"
+              class="inline-flex items-center h-9 px-4 rounded-lg text-sm font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors">
+              Add Spool Preset
+            </button>
+          </div>
+        </form>
+      </details>
+      {#if data.spoolPresets && data.spoolPresets.length > 0}
+        <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a]">
+          {#each data.spoolPresets as preset}
+            <div class="px-5 py-3.5 flex items-center gap-4 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{preset.name}</p>
+                <p class="text-xs text-zinc-400 mt-0.5">{preset.brand} · {preset.material}{preset.color ? ` · ${preset.color}` : ''}</p>
+              </div>
+              <div class="flex items-center gap-4 text-xs text-zinc-400">
+                <span>{preset.default_weight}g</span>
+                {#if preset.cost}
+                  <span class="text-emerald-600 dark:text-emerald-400">€{preset.cost.toFixed(2)}</span>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <div class="px-5 py-8 text-center">
+          <p class="text-sm text-zinc-400">No spool presets yet. Click New Preset above.</p>
+        </div>
+      {/if}
     </div>
 
-    <!-- Grid Presets Section - Full Width -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
-      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
-        <div>
-          <h2 class="text-xl font-medium flex items-center gap-2">
-            <span class="text-2xl">🎛️</span>
-            Dashboard Grid Presets
-          </h2>
-          <p class="text-sm text-slate-500 mt-1">Configure your dashboard layouts with custom dimensions</p>
-        </div>
-        <button 
+    <!-- ── Dashboard Grid Presets ────────────────────────────────────── -->
+    <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-6">
+      <div class="px-5 py-4 flex items-center justify-between border-b border-zinc-50 dark:border-[#1a1a1a]">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Dashboard Grid Presets</p>
+        <button
           onclick={() => openGridEditor()}
-          class="bg-blue-500 hover:bg-blue-600 text-white font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
           </svg>
-          New Grid Preset
+          New Preset
         </button>
       </div>
-      
-      <div class="p-6">
-        {#if data.gridPresets && data.gridPresets.length > 0}
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {#each data.gridPresets as preset}
-              {@const gridConfig = parseGridConfig(preset.grid_config)}
-              {@const presetRows = preset.rows || 3}
-              {@const presetCols = preset.cols || 3}
-              <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4 {preset.is_default ? 'ring-2 ring-blue-500' : ''}">
-                <div class="flex justify-between items-start mb-3">
-                  <div>
-                    <h3 class="text-white font-medium flex items-center gap-2">
-                      {preset.name}
-                      {#if preset.is_default}
-                        <span class="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full">Default</span>
-                      {/if}
-                    </h3>
-                    <p class="text-xs text-slate-500 mt-1">{presetRows}×{presetCols} grid</p>
-                  </div>
-                  <div class="flex gap-1">
-                    <!-- Edit Button -->
-                    <button 
-                      onclick={() => openGridEditor(preset)}
-                      class="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-700 rounded transition-colors"
-                      title="Edit preset"
-                    >
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+      {#if data.gridPresets && data.gridPresets.length > 0}
+        <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a]">
+          {#each data.gridPresets as preset}
+            {@const gridConfig = parseGridConfig(preset.grid_config)}
+            {@const presetRows = preset.rows || 3}
+            {@const presetCols = preset.cols || 3}
+            <div class="px-5 py-4 flex items-center gap-5 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
+              <!-- Mini grid preview (colour-coded, no emoji) -->
+              <div class="grid gap-0.5 shrink-0" style="grid-template-columns: repeat({presetCols}, minmax(0, 1fr)); width: {presetCols * 14}px;">
+                {#each gridConfig as cell}
+                  <div class="aspect-square rounded-sm {
+                    cell.type === 'printer'  ? 'bg-blue-300 dark:bg-blue-700/70' :
+                    cell.type === 'stats'    ? 'bg-emerald-300 dark:bg-emerald-700/70' :
+                    cell.type === 'settings' ? 'bg-violet-300 dark:bg-violet-700/70' :
+                    cell.type === 'storage'  ? 'bg-amber-300 dark:bg-amber-700/70' :
+                    cell.type === 'inventory'? 'bg-orange-300 dark:bg-orange-700/70' :
+                    cell.type === 'spools'   ? 'bg-rose-300 dark:bg-rose-700/70' :
+                    'bg-zinc-200 dark:bg-[#262626]'
+                  }"></div>
+                {/each}
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{preset.name}</p>
+                  {#if preset.is_default}
+                    <span class="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900">Default</span>
+                  {/if}
+                </div>
+                <p class="text-xs text-zinc-400 mt-0.5">{presetRows}×{presetCols} grid</p>
+              </div>
+              <div class="flex items-center gap-0.5">
+                <button
+                  onclick={() => openGridEditor(preset)}
+                  class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#1e1e1e] transition-colors"
+                  title="Edit"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                  </svg>
+                </button>
+                {#if !preset.is_default}
+                  <form method="POST" action="?/setDefaultGridPreset" use:enhance>
+                    <input type="hidden" name="presetId" value={preset.id}/>
+                    <button type="submit"
+                      class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-emerald-500 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors"
+                      title="Set as default">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                       </svg>
                     </button>
-                    {#if !preset.is_default}
-                      <form method="POST" action="?/setDefaultGridPreset" use:enhance>
-                        <input type="hidden" name="presetId" value={preset.id} />
-                        <button 
-                          type="submit"
-                          class="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-700 rounded transition-colors"
-                          title="Set as default"
-                        >
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                          </svg>
-                        </button>
-                      </form>
-                    {/if}
-                    <form method="POST" action="?/deleteGridPreset" use:enhance>
-                      <input type="hidden" name="presetId" value={preset.id} />
-                      <button 
-                        type="submit"
-                        class="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded transition-colors"
-                        title="Delete preset"
-                      >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </form>
-                  </div>
-                </div>
-                
-                <!-- Mini Grid Preview (dynamic based on rows/cols) -->
-                <div class="grid gap-1" style="grid-template-columns: repeat({presetCols}, minmax(0, 1fr));">
-                  {#each gridConfig as cell, i}
-                    <div class="aspect-square rounded flex items-center justify-center text-xs
-                      {cell.type === 'printer' ? 'bg-blue-500/30 text-blue-300' : ''}
-                      {cell.type === 'stats' ? 'bg-green-500/30 text-green-300' : ''}
-                      {cell.type === 'settings' ? 'bg-purple-500/30 text-purple-300' : ''}
-                      {cell.type === 'spools' ? 'bg-orange-500/30 text-orange-300' : ''}
-                      {cell.type === 'storage' ? 'bg-amber-500/30 text-amber-300' : ''}
-                      {cell.type === 'empty' ? 'bg-slate-700/30 text-slate-500' : ''}
-                    ">
-                      {#if cell.type === 'printer'}
-                        🖨️
-                      {:else if cell.type === 'stats'}
-                        📊
-                      {:else if cell.type === 'settings'}
-                        ⚙️
-                      {:else if cell.type === 'spools'}
-                        🎨
-                      {:else if cell.type === 'storage'}
-                        📦
-					  {:else if cell.type === 'inventory'}
-                        🛒
-                      {:else}
-                        ∅
-                      {/if}
-                    </div>
-                  {/each}
-                </div>
+                  </form>
+                {/if}
+                <form method="POST" action="?/deleteGridPreset" use:enhance>
+                  <input type="hidden" name="presetId" value={preset.id}/>
+                  <button type="submit"
+                    class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                    title="Delete">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                  </button>
+                </form>
               </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="text-center py-8">
-            <p class="text-slate-500 mb-4">No grid presets yet. Create your first one!</p>
-            <button 
-              onclick={() => openGridEditor()}
-              class="bg-blue-500 hover:bg-blue-600 text-white font-medium px-6 py-2 rounded-lg transition-colors"
-            >
-              Create Grid Preset
-            </button>
-          </div>
-        {/if}
-      </div>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <div class="px-5 py-10 text-center">
+          <p class="text-sm text-zinc-400 mb-3">No grid presets yet</p>
+          <button onclick={() => openGridEditor()}
+            class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium border border-zinc-200 dark:border-[#262626] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1a1a1a] transition-colors">
+            Create your first preset
+          </button>
+        </div>
+      {/if}
     </div>
 
-    <!-- Printer Management Section - Full Width -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
-      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
-        <div>
-          <h2 class="text-xl font-medium flex items-center gap-2">
-            <span class="text-2xl">🖨️</span>
-            Printer Management
-          </h2>
-          <p class="text-sm text-slate-500 mt-1">Add, edit, and manage your 3D printers</p>
-        </div>
-        <button 
-          onclick={() => showPrinterEditor = true}
-          class="bg-blue-500 hover:bg-blue-600 text-white font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          Add Printer
-        </button>
-      </div>
-      
-      <div class="p-6">
-        {#if data.printers && data.printers.length > 0}
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {#each data.printers as printer}
-              <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4 hover:border-slate-600 transition-colors">
-                <div class="flex justify-between items-start mb-3">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                      <span class="text-xl">🖨️</span>
-                    </div>
-                    <div>
-                      <h3 class="text-white font-medium">{printer.name}</h3>
-                      <p class="text-xs text-slate-500">{printer.model || 'No model specified'}</p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div class="flex items-center justify-between text-sm">
-                  <div class="flex items-center gap-2">
-                    <span class="text-slate-400">ID:</span>
-                    <span class="text-blue-400 font-mono">#{printer.id}</span>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="px-2 py-0.5 rounded text-xs {
-                      printer.status === 'printing' ? 'bg-blue-500/20 text-blue-400' :
-                      printer.status === 'IDLE' ? 'bg-green-500/20 text-green-400' :
-                      'bg-slate-500/20 text-slate-400'
-                    }">
-                      {printer.status}
-                    </span>
-                  </div>
-                </div>
-                
-                <div class="mt-3 pt-3 border-t border-slate-700 flex justify-between items-center">
-                  <span class="text-xs text-slate-500">{printer.total_hours?.toFixed(1) || 0}h total</span>
-                  <div class="flex gap-1">
-                    <button 
-                      onclick={() => openEditPrinter(printer)}
-                      class="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-slate-700 rounded transition-colors"
-                      title="Edit printer"
-                    >
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <form method="POST" action="?/deletePrinter" use:enhance={() => {
-                      return async ({ result, update }) => {
-                        if (result.type === 'success' || result.type === 'redirect') {
-                          await update();
-                        } else if (result.type === 'failure') {
-                          alert(result.data?.error || 'Failed to delete printer');
-                        }
-                      };
-                    }}>
-                      <input type="hidden" name="printerId" value={printer.id} />
-                      <button 
-                        type="submit"
-                        class="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded transition-colors"
-                        title="Delete printer"
-                        onclick={(e) => {
-                          if (!confirm(`Delete ${printer.name}? This cannot be undone.`)) {
-                            e.preventDefault();
-                          }
-                        }}
-                      >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="text-center py-8">
-            <p class="text-slate-500 mb-4">No printers yet. Add your first printer!</p>
-            <button 
-              onclick={() => showPrinterEditor = true}
-              class="bg-blue-500 hover:bg-blue-600 text-white font-medium px-6 py-2 rounded-lg transition-colors"
-            >
-              Add Printer
-            </button>
-          </div>
-        {/if}
-      </div>
-    </div>
-
-    <!-- Shopify Integration Section - Full Width -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
-      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
-        <div>
-          <h2 class="text-xl font-medium flex items-center gap-2">
-            <span class="text-2xl">🛒</span>
-            Shopify Integration
-          </h2>
-          <p class="text-sm text-slate-500 mt-1">Sync orders to auto-deduct inventory</p>
-        </div>
+    <!-- ── Shopify Integration ───────────────────────────────────────── -->
+    <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-6">
+      <div class="px-5 py-4 flex items-center justify-between border-b border-zinc-50 dark:border-[#1a1a1a]">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Shopify Integration</p>
         {#if data.shopifyConfigured}
           <form method="POST" action="?/syncShopify" use:enhance={() => {
             syncingShopify = true;
@@ -574,26 +592,21 @@ function populateFields() {
               syncingShopify = false;
               if (result.type === 'success' && result.data) {
                 shopifySyncResult = result.data as typeof shopifySyncResult;
-              } else {
-                shopifySyncResult = null;
-              }
+              } else { shopifySyncResult = null; }
               await update();
             };
           }}>
-            <button 
-              type="submit"
-              disabled={syncingShopify}
-              class="bg-green-600 hover:bg-green-700 disabled:bg-slate-700 text-white font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
-            >
+            <button type="submit" disabled={syncingShopify}
+              class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 disabled:opacity-40 transition-colors">
               {#if syncingShopify}
-                <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                   <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
                 Syncing...
               {:else}
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
                 Sync Now
               {/if}
@@ -601,626 +614,197 @@ function populateFields() {
           </form>
         {/if}
       </div>
-      
-      <div class="p-6">
+      <div class="p-5">
         {#if !data.shopifyConfigured}
-          <div class="text-center py-8">
-            <div class="text-4xl mb-4">⚠️</div>
-            <p class="text-slate-400 mb-2">Shopify not configured</p>
-            <p class="text-sm text-slate-500 mb-4">
-              Set <code class="bg-slate-800 px-2 py-0.5 rounded">SHOPIFY_STORE_DOMAIN</code> and 
-              <code class="bg-slate-800 px-2 py-0.5 rounded">SHOPIFY_ACCESS_TOKEN</code> in your environment
+          <div class="py-8 text-center space-y-2">
+            <p class="text-sm font-medium text-zinc-500">Shopify not configured</p>
+            <p class="text-xs text-zinc-400 max-w-sm mx-auto">
+              Set <code class="bg-zinc-100 dark:bg-[#1a1a1a] px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-400">SHOPIFY_STORE_DOMAIN</code> and
+              <code class="bg-zinc-100 dark:bg-[#1a1a1a] px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-400">SHOPIFY_ACCESS_TOKEN</code> in your environment.
             </p>
-            <a href="https://admin.shopify.com/store/dilemma-studio/settings/apps/development" 
-               target="_blank" 
-               class="text-blue-400 hover:text-blue-300 text-sm">
-              Create API credentials in Shopify Admin →
+            <a href="https://admin.shopify.com/store/dilemma-studio/settings/apps/development" target="_blank"
+              class="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
+              Open Shopify Admin
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+              </svg>
             </a>
           </div>
         {:else}
           {#if shopifySyncResult}
-            <div class="mb-4 p-4 rounded-lg {shopifySyncResult.success ? 'bg-green-900/30 border border-green-800' : 'bg-red-900/30 border border-red-800'}">
+            <div class="mb-4 px-4 py-3 rounded-lg {shopifySyncResult.success ? 'bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40' : 'bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40'}">
               {#if shopifySyncResult.success}
-                <p class="text-green-400 font-medium">Sync Complete</p>
-                <p class="text-sm text-slate-400">
-                  {shopifySyncResult.ordersProcessed} orders processed, 
-                  {shopifySyncResult.itemsDeducted} items deducted
-                  {#if (shopifySyncResult.skippedOrders ?? 0) > 0}
-                    ({shopifySyncResult.skippedOrders} skipped)
-                  {/if}
-                </p>
+                <p class="text-sm font-medium text-emerald-700 dark:text-emerald-400">Sync complete</p>
+                <p class="text-xs text-zinc-500 mt-1">{shopifySyncResult.ordersProcessed} orders · {shopifySyncResult.itemsDeducted} items deducted{(shopifySyncResult.skippedOrders ?? 0) > 0 ? ` · ${shopifySyncResult.skippedOrders} skipped` : ''}</p>
               {:else}
-                <p class="text-red-400 font-medium">Sync Failed</p>
-                <p class="text-sm text-slate-400">{shopifySyncResult.error}</p>
+                <p class="text-sm font-medium text-red-700 dark:text-red-400">Sync failed</p>
+                <p class="text-xs text-zinc-500 mt-1">{shopifySyncResult.error}</p>
               {/if}
               {#if shopifySyncResult.errors?.length}
-                <div class="mt-2 text-sm text-amber-400">
+                <div class="mt-2 space-y-0.5">
                   {#each shopifySyncResult.errors as error}
-                    <p>• {error}</p>
+                    <p class="text-xs text-amber-600 dark:text-amber-400">· {error}</p>
                   {/each}
                 </div>
               {/if}
             </div>
           {/if}
-          
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
-              <p class="text-sm text-slate-500">Last Sync</p>
-              <p class="text-lg font-medium">
-                {#if data.shopifySyncState?.last_sync_at}
-                  {new Date(data.shopifySyncState.last_sync_at).toLocaleString()}
-                {:else}
-                  Never
-                {/if}
-              </p>
-            </div>
-            <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
-              <p class="text-sm text-slate-500">Orders Processed</p>
-              <p class="text-lg font-medium">{data.shopifySyncState?.orders_processed ?? 0}</p>
-            </div>
-            <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
-              <p class="text-sm text-slate-500">Items Deducted</p>
-              <p class="text-lg font-medium">{data.shopifySyncState?.items_deducted ?? 0}</p>
-            </div>
+          <div class="grid grid-cols-3 gap-3 mb-5">
+            {#each [
+              { label: 'Last Sync', value: data.shopifySyncState?.last_sync_at ? new Date(data.shopifySyncState.last_sync_at).toLocaleString() : 'Never' },
+              { label: 'Orders Processed', value: String(data.shopifySyncState?.orders_processed ?? 0) },
+              { label: 'Items Deducted', value: String(data.shopifySyncState?.items_deducted ?? 0) },
+            ] as stat}
+              <div class="bg-zinc-50 dark:bg-[#161616] rounded-lg px-4 py-3">
+                <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500 mb-1.5">{stat.label}</p>
+                <p class="text-sm font-medium text-zinc-700 dark:text-zinc-300 tabular-nums">{stat.value}</p>
+              </div>
+            {/each}
           </div>
-          
           {#if data.shopifyRecentOrders?.length > 0}
-            <h3 class="text-sm font-medium text-slate-400 mb-3">Recent Orders</h3>
-            <div class="space-y-2">
+            <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500 mb-2">Recent Orders</p>
+            <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden">
               {#each data.shopifyRecentOrders as order}
-                <div class="flex justify-between items-center bg-slate-800/30 border border-slate-700 rounded-lg px-4 py-2">
-                  <span class="text-slate-200">#{order.shopify_order_number}</span>
-                  <span class="text-sm text-slate-400">{order.total_items} items</span>
-                  <span class="text-xs text-slate-500">
-                    {new Date(order.processed_at).toLocaleString()}
-                  </span>
+                <div class="flex items-center justify-between px-4 py-2.5 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
+                  <span class="text-sm text-zinc-700 dark:text-zinc-300 font-mono">#{order.shopify_order_number}</span>
+                  <span class="text-xs text-zinc-400">{order.total_items} items</span>
+                  <span class="text-xs text-zinc-400">{new Date(order.processed_at).toLocaleString()}</span>
                 </div>
               {/each}
             </div>
           {:else}
-            <p class="text-center text-slate-500 py-4">No orders synced yet</p>
+            <p class="text-sm text-zinc-400 text-center py-4">No orders synced yet</p>
           {/if}
         {/if}
       </div>
     </div>
 
-    <!-- Rest of settings page - Print Modules and Spool Presets -->
-    <div class="grid grid-cols-1 lg:grid-cols-1 gap-6">
-      
-      <!-- Print Modules Section -->
-      <div class="space-y-6">
-        <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-            <h2 class="text-xl font-medium">Print Modules</h2>
-            <p class="text-sm text-slate-500 mt-1">Define your print configurations</p>
-          </div>
-          
-          <!-- Add Module Form -->
-          <form method="POST" action="?/addModule" class="p-6 space-y-4">
-            <div>
-              <label for="moduleName" class="block text-sm text-slate-400 mb-2">Module Name</label>
-              <input 
-                type="text" 
-                id="moduleName"
-                name="name"
-                required
-                placeholder="e.g., Small Gear Print"
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-              />
-            </div>
-
-						<div>
-			<label for="printerModel" class="block text-sm text-slate-400 mb-2">
-			Printer Model
-			</label>
-			<input
-				type="text"
-				id="printerModel"
-				name="printerModel"
-				placeholder="e.g. P1S, H2S"
-				class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 
-					text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 
-					transition-colors"
-			/>
-			<p class="text-xs text-slate-600 mt-1">
-				Restrict this module to a specific printer model.
-			</p>
-			</div>
-            
-            <div>
-              <label for="modulePath" class="block text-sm text-slate-400 mb-2">File Path</label>
-              <input 
-                type="text" 
-                id="modulePath"
-                name="path"
-                required
-                placeholder="/Users/username/Documents/3d-models/file.3mf"
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors font-mono text-sm"
-              />
-              <p class="text-xs text-slate-600 mt-1">Must be an absolute path</p>
-            </div>
-
-            <!-- ✅ UPDATED: Dropdown Image Selector -->
-            <div>
-              <label for="imagePath" class="block text-sm text-slate-400 mb-2">
-                Module Image (Optional)
-              </label>
-              <select 
-                id="imagePath"
-                name="imagePath"
-                bind:value={selectedImagePath}
-                onchange={(e) => updateImagePreview(e.currentTarget.value)}
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
-              >
-                <option value="">No image</option>
-                {#if data.availableImages && data.availableImages.length > 0}
-                  {#each data.availableImages as imageName}
-                    <option value={imageName}>{imageName}</option>
-                  {/each}
-                {:else}
-                  <option value="" disabled>No images available</option>
-                {/if}
-              </select>
-              <p class="text-xs text-slate-600 mt-1">
-                📁 Images are loaded from: <code class="text-blue-400">static/images/</code>
-              </p>
-              <p class="text-xs text-slate-600 mt-0.5">
-                💡 To add more images, place them in the static/images/ folder and restart the server
-              </p>
-              
-              <!-- ✅ Image Preview -->
-              {#if imagePreviewUrl}
-                <div class="mt-3 p-3 bg-slate-800/50 rounded-lg">
-                  <p class="text-xs text-slate-400 mb-2">Preview:</p>
-                  <div class="w-32 h-32 rounded-lg overflow-hidden bg-slate-700/50 flex items-center justify-center">
-                    <img 
-                      src={imagePreviewUrl} 
-                      alt="Preview"
-                      class="max-w-full max-h-full object-contain"
-                      onerror={(e) => {
-                        e.currentTarget.style.display = 'none';
-                        const errorDiv = e.currentTarget.nextElementSibling as HTMLElement;
-                        if (errorDiv) errorDiv.style.display = 'block';
-                      }}
-                    />
-                    <div style="display: none;" class="text-red-400 text-xs text-center px-4">
-                      ❌ Image not found
-                      <p class="text-slate-600 mt-1">Make sure the file exists in static/images/</p>
-                    </div>
-                  </div>
-                </div>
-              {/if}
-            </div>
-
-            <div>
-              <label for="defaultSpoolPresetId" class="block text-sm text-slate-400 mb-2">
-                Preferred Spool Preset (Optional)
-              </label>
-              <select 
-                id="defaultSpoolPresetId"
-                name="defaultSpoolPresetId"
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
-              >
-                <option value="">Any spool (no preference)</option>
-                {#if data.spoolPresets && data.spoolPresets.length > 0}
-                  {#each data.spoolPresets as preset}
-                    <option value={preset.id}>
-                      {preset.name} ({preset.brand} {preset.material})
-                    </option>
-                  {/each}
-                {:else}
-                  <option value="" disabled>No presets available - create one first</option>
-                {/if}
-              </select>
-              <p class="text-xs text-slate-600 mt-1">
-                This module will only appear when a matching spool is loaded
-              </p>
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label for="expectedWeight" class="block text-sm text-slate-400 mb-2">Weight (g)</label>
-                <input 
-                  type="number" 
-                  id="expectedWeight"
-                  name="expectedWeight"
-                  required
-                  min="0"
-                  step="0.1"
-                  placeholder="25"
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label for="expectedTime" class="block text-sm text-slate-400 mb-2">Time (min)</label>
-                <input 
-                  type="number" 
-                  id="expectedTime"
-                  name="expectedTime"
-                  required
-                  min="0"
-                  placeholder="120"
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label for="objectsPerPrint" class="block text-sm text-slate-400 mb-2">Objects Per Print</label>
-              <input 
-                type="number" 
-                id="objectsPerPrint"
-                name="objectsPerPrint"
-                required
-                min="1"
-                value="1"
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-              />
-            </div>
-
-            <button 
-              type="submit"
-              class="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-3 rounded-lg transition-colors"
-            >
-              Add Module
-            </button>
-          </form>
-        </div>
-
-       <div class="p-6">
-  <div class="mb-4">
-    <input
-      type="text"
-      placeholder="Search modules…"
-      bind:value={moduleSearch}
-      class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-    />
-  </div>
-
-  <!-- Modules List (vertical, not grid) -->
-  {#if filteredModules.length > 0}
-    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-        <h3 class="text-lg font-medium">Existing Modules ({filteredModules.length})</h3>
+    <!-- ── Local File Handler ────────────────────────────────────────── -->
+    <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-10">
+      <div class="px-5 py-4 border-b border-zinc-50 dark:border-[#1a1a1a]">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Local File Handler</p>
+        <p class="text-xs text-zinc-400 mt-1">Enables automatic file opening on print start</p>
       </div>
-      <div class="divide-y divide-slate-800">
-		
-		{#each filteredModules as module}
-          {@const linkedPreset = data.spoolPresets.find(p => p.id === module.default_spool_preset_id)}
-          <div class="p-4 hover:bg-slate-800/30 transition-colors">
-            <div class="flex gap-4">
-              {#if module.image_path}
-                <div class="w-20 h-20 rounded-lg overflow-hidden bg-slate-700/50 flex-shrink-0 flex items-center justify-center">
-                  <img 
-                    src={module.image_path} 
-                    alt={module.name}
-                    class="max-w-full max-h-full object-contain"
-                    onerror={(e) => e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'} 
-                  />
-                </div>
-              {:else}
-                <div class="w-20 h-20 rounded-lg overflow-hidden bg-slate-700/50 flex-shrink-0 flex items-center justify-center">
-                  <span class="text-3xl opacity-50">📦</span>
-                </div>
-              {/if}
-
-              <div class="flex-1">
-                <div class="flex justify-between items-start mb-2">
-                  <h4 class="text-white font-medium">{module.name}</h4>
-                  <form method="POST" action="?/deleteModule">
-                    <input type="hidden" name="moduleId" value={module.id} />
-                    <button 
-                      type="submit"
-                      class="text-red-400 hover:text-red-300 text-sm"
-                    >
-                      Delete
-                    </button>
-					
-                  </form>
-
-				   <button
-				onclick={() => {
-				editingModule = module;
-				showModuleEditor = true;
-				populateFields();
-				}}
-				class="text-blue-400 hover:underline text-xs"
-			>
-				Edit
-			</button>
-
-                </div>
-
-				
-
-                <div class="space-y-1 text-sm">
-                  <p class="text-slate-400 font-mono text-xs truncate">{module.path}</p>
-                  {#if module.printer_model}
-                    <p class="text-slate-600 text-xs">🖨 Model: {module.printer_model}</p>
-                  {/if}
-                  {#if linkedPreset}
-                    <p class="text-blue-400 text-xs">
-                      🎯 Preset: {linkedPreset.name}
-                    </p>
-                  {:else}
-                    <p class="text-slate-600 text-xs">
-                      ✨ Any spool
-                    </p>
-                  {/if}
-                  <div class="flex gap-4 text-slate-500">
-                    <span>{module.expected_weight}g</span>
-                    <span>{module.expected_time} min</span>
-                    <span>{module.objects_per_print} objects</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        {/each}
-      </div>
-    </div>
-  {:else}
-    <p class="text-slate-500 py-4 text-center">No modules match your search.</p>
-  {/if}
-</div>
-
-</div>
-
-      <!-- Spool Presets Section -->
-      <div class="space-y-6">
-        <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-            <h2 class="text-xl font-medium">Spool Presets</h2>
-            <p class="text-sm text-slate-500 mt-1">Create reusable spool configurations</p>
-          </div>
-          
-          <!-- Add Preset Form -->
-          <form method="POST" action="?/addSpoolPreset" class="p-6 space-y-4">
-            <div>
-              <label for="presetName" class="block text-sm text-slate-400 mb-2">Preset Name</label>
-              <input 
-                type="text" 
-                id="presetName"
-                name="name"
-                required
-                placeholder="e.g., Bambu PLA Basic Black"
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-              />
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label for="brand" class="block text-sm text-slate-400 mb-2">Brand</label>
-                <input 
-                  type="text" 
-                  id="brand"
-                  name="brand"
-                  required
-                  placeholder="Bambu Lab"
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label for="material" class="block text-sm text-slate-400 mb-2">Material</label>
-                <input 
-                  type="text" 
-                  id="material"
-                  name="material"
-                  required
-                  placeholder="PLA"
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label for="color" class="block text-sm text-slate-400 mb-2">Color</label>
-                <input 
-                  type="text" 
-                  id="color"
-                  name="color"
-                  placeholder="Black"
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label for="defaultWeight" class="block text-sm text-slate-400 mb-2">Weight (g)</label>
-                <input 
-                  type="number" 
-                  id="defaultWeight"
-                  name="defaultWeight"
-                  required
-                  min="0"
-                  value="1000"
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label for="cost" class="block text-sm text-slate-400 mb-2">Cost ($)</label>
-              <input 
-                type="number" 
-                id="cost"
-                name="cost"
-                min="0"
-                step="0.01"
-                placeholder="20.00"
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-              />
-            </div>
-
-            <button 
-              type="submit"
-              class="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-3 rounded-lg transition-colors"
-            >
-              Add Spool Preset
-            </button>
-          </form>
+      <div class="p-5 space-y-4">
+        <div>
+          <label for="fileHandlerToken" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Auth Token</label>
+          <input
+            type="text"
+            id="fileHandlerToken"
+            bind:value={fileHandlerToken}
+            placeholder="Paste your AUTH_TOKEN here"
+            class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 font-mono focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+          />
+          <p class="text-xs text-zinc-400 mt-1.5">Stored locally in your browser. Find it in <code class="bg-zinc-100 dark:bg-[#1a1a1a] px-1.5 py-0.5 rounded">local-file-handler/.env</code></p>
         </div>
-
-        <!-- Presets List -->
-		 
-        {#if data.spoolPresets && data.spoolPresets.length > 0}
-          <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-            <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
-              <h3 class="text-lg font-medium">Existing Presets ({data.spoolPresets.length})</h3>
-            </div>
-            <div class="divide-y divide-slate-800">
-              {#each data.spoolPresets as preset}
-                <div class="p-4 hover:bg-slate-800/30 transition-colors">
-                  <div class="flex justify-between items-start">
-                    <div>
-                      <h4 class="text-white font-medium mb-1">{preset.name}</h4>
-                      <p class="text-sm text-slate-400">{preset.brand} • {preset.material}</p>
-                      {#if preset.color}
-                        <p class="text-xs text-slate-500 mt-1">{preset.color}</p>
-                      {/if}
-                      <div class="flex gap-4 mt-2 text-sm">
-                        <span class="text-slate-500">{preset.default_weight}g</span>
-                        {#if preset.cost}
-                          <span class="text-green-400">${preset.cost.toFixed(2)}</span>
-                        {/if}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              {/each}
-            </div>
+        <div class="flex gap-2">
+          <button onclick={saveFileHandlerToken}
+            class="flex-1 h-9 rounded-lg text-sm font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors">
+            Save Token
+          </button>
+          <button onclick={testConnection} disabled={testingConnection || !fileHandlerToken}
+            class="flex-1 h-9 rounded-lg text-sm font-medium border border-zinc-200 dark:border-[#262626] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1a1a1a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+            {testingConnection ? 'Testing...' : 'Test Connection'}
+          </button>
+        </div>
+        {#if connectionStatus === 'success'}
+          <div class="flex items-center gap-2.5 px-3.5 py-2.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 rounded-lg">
+            <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            <span class="text-sm text-emerald-700 dark:text-emerald-400">Connection successful — file handler is online</span>
+          </div>
+        {:else if connectionStatus === 'failed'}
+          <div class="px-3.5 py-2.5 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 rounded-lg">
+            <p class="text-sm font-medium text-red-700 dark:text-red-400">Connection failed</p>
+            <p class="text-xs text-zinc-400 mt-1">Make sure the handler is running: <code class="bg-zinc-100 dark:bg-[#1a1a1a] px-1.5 py-0.5 rounded">cd local-file-handler && bun run start</code></p>
           </div>
         {/if}
       </div>
-
     </div>
+
   </div>
 </div>
 
 <!-- Grid Editor Modal -->
 {#if showGridEditor}
   <div
-    class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-6"
+    class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6"
     onclick={closeGridEditor}
     onkeydown={(e) => e.key === 'Escape' && closeGridEditor()}
-    role="button"
-    tabindex="0"
-    aria-label="Close grid editor"
+    role="button" tabindex="0" aria-label="Close grid editor"
   >
     <!-- svelte-ignore a11y_interactive_supports_focus -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div 
-      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+    <div
+      class="bg-white dark:bg-[#111] border border-zinc-100 dark:border-[#1e1e1e] rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
       onclick={(e) => e.stopPropagation()}
-      role="dialog"
-      aria-modal="true"
+      role="dialog" aria-modal="true"
     >
       <!-- Header -->
-      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center sticky top-0 z-10">
+      <div class="px-6 py-4 border-b border-zinc-50 dark:border-[#1a1a1a] flex justify-between items-center sticky top-0 bg-white dark:bg-[#111] z-10">
         <div>
-          <h2 class="text-xl font-medium">{editingGridId ? 'Edit Grid Preset' : 'Create Grid Preset'}</h2>
-          <p class="text-sm text-slate-500 mt-1">Configure your dashboard layout with custom dimensions</p>
+          <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">{editingGridId ? 'Edit Grid Preset' : 'New Grid Preset'}</p>
+          <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5">Configure your dashboard layout</p>
         </div>
-        <button 
-          onclick={closeGridEditor}
-          class="text-slate-400 hover:text-white transition-colors p-2"
-          aria-label="Close"
-        >
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        <button onclick={closeGridEditor}
+          class="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#1e1e1e] transition-colors"
+          aria-label="Close">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
           </svg>
         </button>
       </div>
 
       <form method="POST" action={editingGridId ? '?/updateGridPreset' : '?/addGridPreset'} use:enhance={() => {
         return async ({ result, update }) => {
-          if (result.type === 'success') {
-            closeGridEditor();
-          }
+          if (result.type === 'success') { closeGridEditor(); }
           await update();
         };
       }}>
         <div class="p-6 space-y-6">
-          <!-- Hidden ID for updates -->
           {#if editingGridId}
             <input type="hidden" name="presetId" value={editingGridId} />
           {/if}
 
-          <!-- Preset Name -->
           <div>
-            <label for="gridPresetName" class="block text-sm text-slate-400 mb-2">Preset Name</label>
-            <input 
-              type="text" 
-              id="gridPresetName"
-              name="name"
-              bind:value={gridPresetName}
-              required
-              placeholder="e.g., Main Dashboard, Large Grid, Secondary View"
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-            />
+            <label for="gridPresetName" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Preset Name</label>
+            <input type="text" id="gridPresetName" name="name" bind:value={gridPresetName} required
+              placeholder="e.g., Main Dashboard, Large Grid"
+              class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
           </div>
 
-          <!-- Grid Dimensions -->
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label for="gridRows" class="block text-sm text-slate-400 mb-2">Rows</label>
-              <input 
-                type="number" 
-                id="gridRows"
-                name="rows"
-                bind:value={gridRows}
-                onchange={updateGridDimensions}
-                min="1"
-                max="10"
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
-              />
+              <label for="gridRows" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Rows</label>
+              <input type="number" id="gridRows" name="rows" bind:value={gridRows} onchange={updateGridDimensions} min="1" max="10"
+                class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
             </div>
             <div>
-              <label for="gridCols" class="block text-sm text-slate-400 mb-2">Columns</label>
-              <input 
-                type="number" 
-                id="gridCols"
-                name="cols"
-                bind:value={gridCols}
-                onchange={updateGridDimensions}
-                min="1"
-                max="10"
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
-              />
+              <label for="gridCols" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Columns</label>
+              <input type="number" id="gridCols" name="cols" bind:value={gridCols} onchange={updateGridDimensions} min="1" max="10"
+                class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
             </div>
           </div>
 
-          <p class="text-xs text-slate-500">Grid: {gridRows}×{gridCols} = {gridRows * gridCols} cells</p>
+          <p class="text-xs text-zinc-400">{gridRows}×{gridCols} = {gridRows * gridCols} cells</p>
 
-          <!-- Set as Default -->
           <div class="flex items-center gap-3">
-            <input 
-              type="checkbox" 
-              id="gridIsDefault"
-              name="isDefault"
-              bind:checked={gridPresetIsDefault}
-              value="true"
-              class="w-5 h-5 rounded bg-slate-800 border-slate-700 text-blue-500 focus:ring-blue-500"
-            />
-            <label for="gridIsDefault" class="text-sm text-slate-300">Set as default dashboard grid</label>
+            <input type="checkbox" id="gridIsDefault" name="isDefault" bind:checked={gridPresetIsDefault} value="true"
+              class="w-4 h-4 rounded bg-zinc-50 dark:bg-[#161616] border-zinc-300 dark:border-zinc-600 text-zinc-900 focus:ring-zinc-900 dark:focus:ring-zinc-50"/>
+            <label for="gridIsDefault" class="text-sm text-zinc-600 dark:text-zinc-400">Set as default dashboard grid</label>
           </div>
 
-          <!-- Hidden field for grid config -->
           <input type="hidden" name="gridConfig" value={gridConfigJson} />
 
-          <!-- Grid Editor -->
           <div>
-            <p class="text-sm text-slate-400 mb-3">Grid Layout ({gridRows}×{gridCols})</p>
+            <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-3">Grid Layout ({gridRows}×{gridCols})</p>
             <div class="grid gap-2" style="grid-template-columns: repeat({gridCols}, minmax(0, 1fr));">
               {#each editingGridConfig as cell, index}
-                <div class="bg-slate-800 border border-slate-700 rounded-lg p-2 flex flex-col min-h-[120px]">
-                  <div class="text-xs text-slate-500 mb-1">Cell {index + 1}</div>
-                  
-                  <!-- Cell Type Selector -->
+                <div class="bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-xl p-2.5 flex flex-col min-h-[120px]">
+                  <p class="text-[10px] text-zinc-400 mb-1.5">Cell {index + 1}</p>
                   <select
-                    class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white mb-1 focus:outline-none focus:border-blue-500"
+                    class="bg-white dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-2 py-1.5 text-xs text-zinc-800 dark:text-zinc-200 mb-1.5 focus:outline-none focus:border-zinc-400 transition-colors"
                     value={cell.type}
                     onchange={(e) => setCellType(index, e.currentTarget.value as GridCell['type'])}
                   >
@@ -1232,11 +816,9 @@ function populateFields() {
                     <option value="spools">Materials</option>
                     <option value="inventory">Inventory</option>
                   </select>
-
-                  <!-- Printer Selector (if printer type) -->
                   {#if cell.type === 'printer'}
                     <select
-                      class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+                      class="bg-white dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-2 py-1.5 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none focus:border-zinc-400 transition-colors"
                       value={cell.printerId || ''}
                       onchange={(e) => setCellPrinter(index, Number(e.currentTarget.value))}
                     >
@@ -1246,29 +828,20 @@ function populateFields() {
                       {/each}
                     </select>
                   {/if}
-
-                  <!-- Visual Preview -->
                   <div class="flex-1 flex items-center justify-center mt-1">
-                    {#if cell.type === 'printer'}
-                      <div class="text-center">
-                        <span class="text-lg">🖨️</span>
-                        {#if cell.printerId}
-                          <p class="text-[10px] text-blue-400 truncate max-w-full">{getPrinterName(cell.printerId)}</p>
-                        {/if}
-                      </div>
-                    {:else if cell.type === 'stats'}
-                      <span class="text-lg">📊</span>
-                    {:else if cell.type === 'settings'}
-                      <span class="text-lg">⚙️</span>
-                    {:else if cell.type === 'storage'}
-                      <span class="text-lg">📦</span>
-                    {:else if cell.type === 'spools'}
-                      <span class="text-lg">🎨</span>
-					{:else if cell.type === 'inventory'}
-                      <span class="text-lg">🛒</span>
-                    {:else}
-                      <span class="text-slate-600 text-xs">Empty</span>
-                    {/if}
+                    <div class="w-6 h-6 rounded-md {
+                      cell.type === 'printer'  ? 'bg-blue-300 dark:bg-blue-700/70' :
+                      cell.type === 'stats'    ? 'bg-emerald-300 dark:bg-emerald-700/70' :
+                      cell.type === 'settings' ? 'bg-violet-300 dark:bg-violet-700/70' :
+                      cell.type === 'storage'  ? 'bg-amber-300 dark:bg-amber-700/70' :
+                      cell.type === 'inventory'? 'bg-orange-300 dark:bg-orange-700/70' :
+                      cell.type === 'spools'   ? 'bg-rose-300 dark:bg-rose-700/70' :
+                      'bg-zinc-200 dark:bg-[#262626]'
+                    }">
+                      {#if cell.type === 'printer' && cell.printerId}
+                        <p class="text-[8px] text-blue-800 dark:text-blue-200 truncate px-1 pt-1">{getPrinterName(cell.printerId)}</p>
+                      {/if}
+                    </div>
                   </div>
                 </div>
               {/each}
@@ -1276,21 +849,14 @@ function populateFields() {
           </div>
         </div>
 
-        <!-- Footer -->
-        <div class="px-6 py-4 border-t border-slate-800 bg-slate-900/50 flex justify-end gap-3 sticky bottom-0">
-          <button 
-            type="button"
-            onclick={closeGridEditor}
-            class="px-6 py-2.5 text-slate-400 hover:text-white transition-colors"
-          >
+        <div class="px-6 py-4 border-t border-zinc-50 dark:border-[#1a1a1a] flex justify-end gap-2 sticky bottom-0 bg-white dark:bg-[#111]">
+          <button type="button" onclick={closeGridEditor}
+            class="h-9 px-4 rounded-lg text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors">
             Cancel
           </button>
-          <button 
-            type="submit"
-            disabled={!gridPresetName.trim()}
-            class="bg-green-500 hover:bg-green-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-medium px-6 py-2.5 rounded-lg transition-colors"
-          >
-            {editingGridId ? 'Save Changes' : 'Create Grid Preset'}
+          <button type="submit" disabled={!gridPresetName.trim()}
+            class="h-9 px-4 rounded-lg text-sm font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+            {editingGridId ? 'Save Changes' : 'Create Preset'}
           </button>
         </div>
       </form>
@@ -1302,7 +868,7 @@ function populateFields() {
 <!-- Printer Editor Modal -->
 {#if showPrinterEditor}
   <div
-    class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-6"
+    class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6"
     onclick={closePrinterEditor}
     onkeydown={(e) => e.key === 'Escape' && closePrinterEditor()}
     role="button"
@@ -1311,23 +877,23 @@ function populateFields() {
   >
     <!-- svelte-ignore a11y_interactive_supports_focus -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div 
-      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-md w-full"
+    <div
+      class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg max-w-md w-full"
       onclick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
     >
       <!-- Header -->
-      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+      <div class="px-6 py-4 border-b border-zinc-200 dark:border-[#262626] bg-zinc-50 dark:bg-[#111111] flex justify-between items-center">
         <div>
           <h2 class="text-xl font-medium">{editingPrinter ? 'Edit Printer' : 'Add Printer'}</h2>
-          <p class="text-sm text-slate-500 mt-1">
+          <p class="text-sm text-zinc-500 mt-1">
             {editingPrinter ? `Editing ${editingPrinter.name}` : 'Add a new 3D printer'}
           </p>
         </div>
-        <button 
+        <button
           onclick={closePrinterEditor}
-          class="text-slate-400 hover:text-white transition-colors p-2"
+          class="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors p-2"
           aria-label="Close"
         >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1336,9 +902,9 @@ function populateFields() {
         </button>
       </div>
 
-      <form 
-        method="POST" 
-        action={editingPrinter ? '?/updatePrinter' : '?/addPrinter'} 
+      <form
+        method="POST"
+        action={editingPrinter ? '?/updatePrinter' : '?/addPrinter'}
         use:enhance={() => {
           return async ({ result, update }) => {
             if (result.type === 'success') {
@@ -1352,59 +918,59 @@ function populateFields() {
           {#if editingPrinter}
             <input type="hidden" name="printerId" value={editingPrinter.id} />
           {/if}
-          
+
           <!-- Printer Name -->
           <div>
-            <label for="printerName" class="block text-sm text-slate-400 mb-2">Printer Name *</label>
-            <input 
-              type="text" 
+            <label for="printerName" class="block text-sm text-zinc-500 mb-2">Printer Name *</label>
+            <input
+              type="text"
               id="printerName"
               name="name"
               bind:value={printerName}
               required
               placeholder="e.g., P1S #1, Bambu Lab X1C"
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
             />
           </div>
 
           <!-- Printer Model -->
           <div>
-            <label for="printerModel" class="block text-sm text-slate-400 mb-2">Model (Optional)</label>
-            <input 
-              type="text" 
+            <label for="printerModel" class="block text-sm text-zinc-500 mb-2">Model (Optional)</label>
+            <input
+              type="text"
               id="printerModel"
               name="model"
               bind:value={printerModel}
               placeholder="e.g., P1S, X1 Carbon, A1 Mini"
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
             />
-            <p class="text-xs text-slate-600 mt-1">Used to display the correct printer image</p>
+            <p class="text-xs text-zinc-500 mt-1">Used to display the correct printer image</p>
           </div>
 
           {#if editingPrinter}
-            <div class="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+            <div class="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-[#262626] rounded-md p-3">
               <div class="flex items-center justify-between text-sm">
-                <span class="text-slate-400">Printer ID:</span>
-                <span class="text-blue-400 font-mono">#{editingPrinter.id}</span>
+                <span class="text-zinc-500">Printer ID:</span>
+                <span class="text-blue-600 dark:text-blue-400 font-mono">#{editingPrinter.id}</span>
               </div>
-              <p class="text-xs text-slate-600 mt-2">Use this ID when configuring grid presets</p>
+              <p class="text-xs text-zinc-500 mt-2">Use this ID when configuring grid presets</p>
             </div>
           {/if}
         </div>
 
         <!-- Footer -->
-        <div class="px-6 py-4 border-t border-slate-800 bg-slate-900/50 flex justify-end gap-3">
-          <button 
+        <div class="px-6 py-4 border-t border-zinc-200 dark:border-[#262626] bg-zinc-50 dark:bg-[#111111] flex justify-end gap-3">
+          <button
             type="button"
             onclick={closePrinterEditor}
-            class="px-6 py-2.5 text-slate-400 hover:text-white transition-colors"
+            class="px-6 py-2.5 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors"
           >
             Cancel
           </button>
-          <button 
+          <button
             type="submit"
             disabled={!printerName.trim()}
-            class="bg-green-500 hover:bg-green-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-medium px-6 py-2.5 rounded-lg transition-colors"
+            class="bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white dark:text-zinc-900 font-medium px-6 py-2.5 rounded-md transition-colors"
           >
             {editingPrinter ? 'Save Changes' : 'Add Printer'}
           </button>
@@ -1414,10 +980,11 @@ function populateFields() {
   </div>
 {/if}
 
+
 <!-- Module editor modal -->
 {#if showModuleEditor}
   <div
-    class="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-6"
+    class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6"
     onclick={() => {
       showModuleEditor = false;
       editingModule = null;
@@ -1427,11 +994,11 @@ function populateFields() {
   >
     <!-- stop background clicks bubbling to outer div -->
     <div
-      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-y-auto"
+      class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg max-w-lg w-full overflow-y-auto"
       onclick={(e) => e.stopPropagation()}
       role="dialog" aria-modal="true"
     >
-      <div class="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+      <div class="px-6 py-4 border-b border-zinc-200 dark:border-[#262626] bg-zinc-50 dark:bg-[#111111] flex justify-between items-center">
         <h2 class="text-xl font-medium">
           {editingModule ? 'Edit print module' : 'Add print module'}
         </h2>
@@ -1440,7 +1007,7 @@ function populateFields() {
             showModuleEditor = false;
             editingModule = null;
           }}
-          class="text-slate-400 hover:text-white p-2"
+          class="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50 p-2"
           aria-label="Close"
         >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1470,7 +1037,7 @@ function populateFields() {
 
         <!-- module name -->
         <div>
-          <label for="editModuleName" class="block text-sm text-slate-400 mb-2">Module
+          <label for="editModuleName" class="block text-sm text-zinc-500 mb-2">Module
             Name</label>
           <input
             id="editModuleName"
@@ -1478,13 +1045,13 @@ function populateFields() {
             name="name"
             bind:value={moduleName}
             required
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
           />
         </div>
 
         <!-- printer model -->
         <div>
-          <label for="editPrinterModel" class="block text-sm text-slate-400 mb-2">Printer
+          <label for="editPrinterModel" class="block text-sm text-zinc-500 mb-2">Printer
             Model</label>
           <input
             id="editPrinterModel"
@@ -1492,16 +1059,16 @@ function populateFields() {
             name="printerModel"
             bind:value={modulePrinterModel}
             placeholder="e.g. P1S, H2S"
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
           />
-          <p class="text-xs text-slate-600 mt-1">
+          <p class="text-xs text-zinc-500 mt-1">
             Restrict this module to a specific printer model.
           </p>
         </div>
 
         <!-- path -->
         <div>
-          <label for="editModulePath" class="block text-sm text-slate-400 mb-2">File
+          <label for="editModulePath" class="block text-sm text-zinc-500 mb-2">File
             Path</label>
           <input
             id="editModulePath"
@@ -1509,14 +1076,14 @@ function populateFields() {
             name="path"
             bind:value={modulePath}
             required
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors font-mono text-sm"
+            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors font-mono text-sm"
           />
-          <p class="text-xs text-slate-600 mt-1">Must be an absolute path</p>
+          <p class="text-xs text-zinc-500 mt-1">Must be an absolute path</p>
         </div>
 
         <!-- image selector -->
         <div>
-          <label for="editImagePath" class="block text-sm text-slate-400 mb-2">
+          <label for="editImagePath" class="block text-sm text-zinc-500 mb-2">
             Module Image (Optional)
           </label>
           <select
@@ -1524,7 +1091,7 @@ function populateFields() {
             name="imagePath"
             bind:value={moduleImage}
             onchange={(e) => updateImagePreview(e.currentTarget.value)}
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
           >
             <option value="">No image</option>
             {#if data.availableImages && data.availableImages.length > 0}
@@ -1539,14 +1106,14 @@ function populateFields() {
 
         <!-- spool preset dropdown -->
         <div>
-          <label for="editDefaultSpoolPresetId" class="block text-sm text-slate-400 mb-2">
+          <label for="editDefaultSpoolPresetId" class="block text-sm text-zinc-500 mb-2">
             Preferred Spool Preset (Optional)
           </label>
           <select
             id="editDefaultSpoolPresetId"
             name="defaultSpoolPresetId"
             bind:value={modulePresetId}
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500 transition-colors"
+            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
           >
             <option value="">Any spool (no preference)</option>
             {#if data.spoolPresets && data.spoolPresets.length > 0}
@@ -1557,7 +1124,7 @@ function populateFields() {
               {/each}
             {/if}
           </select>
-          <p class="text-xs text-slate-600 mt-1">
+          <p class="text-xs text-zinc-500 mt-1">
             This module will only appear when a matching spool is loaded
           </p>
         </div>
@@ -1565,7 +1132,7 @@ function populateFields() {
         <!-- weight/time/objects grid -->
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label for="editExpectedWeight" class="block text-sm text-slate-400 mb-2">Weight
+            <label for="editExpectedWeight" class="block text-sm text-zinc-500 mb-2">Weight
               (g)</label>
             <input
               id="editExpectedWeight"
@@ -1575,11 +1142,11 @@ function populateFields() {
               required
               min="0"
               step="0.1"
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
             />
           </div>
           <div>
-            <label for="editExpectedTime" class="block text-sm text-slate-400 mb-2">Time
+            <label for="editExpectedTime" class="block text-sm text-zinc-500 mb-2">Time
               (min)</label>
             <input
               id="editExpectedTime"
@@ -1588,12 +1155,12 @@ function populateFields() {
               bind:value={moduleTime}
               required
               min="0"
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
             />
           </div>
         </div>
         <div>
-          <label for="editObjectsPerPrint" class="block text-sm text-slate-400 mb-2">
+          <label for="editObjectsPerPrint" class="block text-sm text-zinc-500 mb-2">
             Objects Per Print</label>
           <input
             id="editObjectsPerPrint"
@@ -1602,13 +1169,13 @@ function populateFields() {
             bind:value={moduleObjects}
             required
             min="1"
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
           />
         </div>
 
         <button
           type="submit"
-          class="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-3 rounded-lg transition-colors"
+          class="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 font-medium py-3 rounded-md transition-colors"
         >
           {editingModule ? 'Save Changes' : 'Add Module'}
         </button>
