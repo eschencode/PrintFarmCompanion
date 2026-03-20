@@ -348,12 +348,11 @@
 
   // Toggle functions
   function toggleCategory(categoryName: string) {
-    if (expandedCategories[categoryName]) {
-      const newExpanded = { ...expandedCategories };
-      delete newExpanded[categoryName];
-      expandedCategories = newExpanded;
+    // absent = open (default), false = explicitly closed
+    if (expandedCategories[categoryName] !== false) {
+      expandedCategories = { ...expandedCategories, [categoryName]: false };
 
-      // Clean up children
+      // Collapse children
       const newSubcategories = { ...expandedSubcategories };
       Object.keys(newSubcategories).forEach(key => {
         if (key.startsWith(`${categoryName}:`)) {
@@ -362,7 +361,9 @@
       });
       expandedSubcategories = newSubcategories;
     } else {
-      expandedCategories = { ...expandedCategories, [categoryName]: true };
+      const newExpanded = { ...expandedCategories };
+      delete newExpanded[categoryName];
+      expandedCategories = newExpanded;
     }
   }
 
@@ -533,7 +534,7 @@
           {:else}
             <div class="divide-y divide-zinc-50 dark:divide-[#171717]">
               {#each Object.entries(groupedInventory()).sort(([,a], [,b]) => b.totalStock - a.totalStock) as [categoryName, categoryData]}
-                {@const isCategoryExpanded = !!expandedCategories[categoryName]}
+                {@const isCategoryExpanded = expandedCategories[categoryName] !== false}
                 {@const hasSubcategories = Object.keys(categoryData.subcategories).length > 0}
                 {@const itemCount = Object.values(categoryData.subcategories).reduce((sum, sub) => sum + sub.items.length, 0) + categoryData.items.length}
 
