@@ -4,12 +4,12 @@
   import { goto } from '$app/navigation';
   import { enhance } from '$app/forms';
   import * as echarts from 'echarts';
-  
+
   export let data: PageData;
-  
+
   // Type definitions for breakdown data structures
   type TimeRange = 'last30Days' | 'thisMonth' | 'last90Days';
-  
+
   interface ColorData {
     count: number;
     objects: number;
@@ -18,7 +18,7 @@
     wastedCost: number;
     wastedWeight: number;
   }
-  
+
   interface ModuleData {
     total: number;
     totalObjects: number;
@@ -33,7 +33,7 @@
     costPerObject: number;
     colors: Record<string, ColorData>;
   }
-  
+
   interface SubcategoryData {
     total: number;
     totalObjects: number;
@@ -45,7 +45,7 @@
     failedPrints: number;
     modules: Record<string, ModuleData>;
   }
-  
+
   interface CategoryData {
     total: number;
     totalObjects: number;
@@ -59,7 +59,7 @@
     modules: Record<string, ModuleData>;
     colors: Record<string, Omit<ColorData, 'weight' | 'wastedWeight'>>;
   }
-  
+
   // Chart element references
   let printHistoryChart: HTMLDivElement;
   let materialUsageChart: HTMLDivElement;
@@ -67,17 +67,17 @@
   let topModulesChart: HTMLDivElement;
   let failureReasonsChart: HTMLDivElement;
   let printerUtilizationChart: HTMLDivElement;
-  
+
   // Toggle states
   let showSpools = false;
   let showPrintHistory = false;
   let selectedTimeRange: TimeRange = 'last30Days';
-  
+
   // Expansion state - simple objects with direct updates (no async/debounce)
   let expandedCategories: Record<string, boolean> = {};
   let expandedSubcategories: Record<string, boolean> = {};
   let expandedModules: Record<string, boolean> = {};
-  
+
   // Edit spool state
   let editingSpoolId: number | null = null;
   let editForm = {
@@ -87,14 +87,14 @@
     remaining_weight: 0,
     cost: 0
   };
-  
+
   // Reactive statements with proper typing
   $: sortedSpools = [...(data.spools || [])].sort((a, b) => b.id - a.id);
   $: currentBreakdown = (data.stats.moduleBreakdown?.[selectedTimeRange] || {}) as Record<string, CategoryData>;
   $: currentSets = data.stats.setCosts?.[selectedTimeRange] || {};
   $: totalPrintsInRange = Object.values(currentBreakdown).reduce((sum, cat) => sum + (cat?.total || 0), 0);
   $: totalObjectsInRange = Object.values(currentBreakdown).reduce((sum, cat) => sum + (cat?.totalObjects || 0), 0);
-  
+
   function getTimeRangeLabel(range: TimeRange): string {
     switch(range) {
       case 'last30Days': return 'Last 30 Days';
@@ -102,7 +102,7 @@
       case 'last90Days': return 'Last 90 Days';
     }
   }
-  
+
   // ✅ SIMPLIFIED: Direct synchronous toggle - no async, no flags, no race conditions
   function toggleCategory(categoryName: string) {
     if (expandedCategories[categoryName]) {
@@ -110,11 +110,11 @@
       const newExpanded = { ...expandedCategories };
       delete newExpanded[categoryName];
       expandedCategories = newExpanded;
-      
+
       // Clean up children (subcategories and modules under this category)
       const newSubcategories = { ...expandedSubcategories };
       const newModules = { ...expandedModules };
-      
+
       Object.keys(newSubcategories).forEach(key => {
         if (key.startsWith(`${categoryName}:`)) {
           delete newSubcategories[key];
@@ -125,7 +125,7 @@
           delete newModules[key];
         }
       });
-      
+
       expandedSubcategories = newSubcategories;
       expandedModules = newModules;
     } else {
@@ -133,16 +133,16 @@
       expandedCategories = { ...expandedCategories, [categoryName]: true };
     }
   }
-  
+
   function toggleSubcategory(categoryName: string, subcategoryName: string) {
     const key = `${categoryName}:${subcategoryName}`;
-    
+
     if (expandedSubcategories[key]) {
       // Collapse: remove this subcategory and its module children
       const newSubcategories = { ...expandedSubcategories };
       delete newSubcategories[key];
       expandedSubcategories = newSubcategories;
-      
+
       // Clean up modules under this subcategory
       const newModules = { ...expandedModules };
       Object.keys(newModules).forEach(moduleKey => {
@@ -156,10 +156,10 @@
       expandedSubcategories = { ...expandedSubcategories, [key]: true };
     }
   }
-  
+
   function toggleModule(parentKey: string, moduleName: string) {
     const key = `${parentKey}:${moduleName}`;
-    
+
     if (expandedModules[key]) {
       const newModules = { ...expandedModules };
       delete newModules[key];
@@ -168,7 +168,7 @@
       expandedModules = { ...expandedModules, [key]: true };
     }
   }
-  
+
   function startEdit(spool: any) {
     editingSpoolId = spool.id;
     editForm = {
@@ -179,7 +179,7 @@
       cost: spool.cost || 0
     };
   }
-  
+
   function cancelEdit() {
     editingSpoolId = null;
     editForm = {
@@ -190,7 +190,7 @@
       cost: 0
     };
   }
-  
+
   function formatDate(timestamp: number) {
     return new Date(timestamp).toLocaleString();
   }
@@ -202,24 +202,35 @@
     const mins = minutes % 60;
     return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
   }
-  
+
   // ✅ FIX: Navigation function that always works
   function navigateToDashboard() {
     goto('/');
   }
-  
+
   onMount(() => {
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    const textColor = isDark ? '#a1a1aa' : '#737373';
+    const gridColor = isDark ? '#262626' : '#f4f4f5';
+    const axisColor = isDark ? '#262626' : '#e5e5e5';
+    const tooltipBg = isDark ? '#111111' : '#ffffff';
+    const tooltipBorder = isDark ? '#262626' : '#e5e5e5';
+    const tooltipText = isDark ? '#fafafa' : '#0a0a0a';
+    const labelColor = isDark ? '#fafafa' : '#0a0a0a';
+
     // Print History Line Chart
-    const historyChart = echarts.init(printHistoryChart, 'dark');
+    const historyChart = echarts.init(printHistoryChart);
     historyChart.setOption({
       title: {
         text: 'Print History (Last 30 Days)',
-        textStyle: { color: '#fff' }
+        textStyle: { color: textColor }
       },
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'rgba(15, 23, 42, 0.9)',
-        borderColor: '#334155'
+        backgroundColor: tooltipBg,
+        borderColor: tooltipBorder,
+        textStyle: { color: tooltipText }
       },
       grid: {
         left: '3%',
@@ -230,14 +241,14 @@
       xAxis: {
         type: 'category',
         data: data.stats.last30Days,
-        axisLine: { lineStyle: { color: '#475569' } },
-        axisLabel: { color: '#94a3b8' }
+        axisLine: { lineStyle: { color: axisColor } },
+        axisLabel: { color: textColor }
       },
       yAxis: {
         type: 'value',
-        axisLine: { lineStyle: { color: '#475569' } },
-        axisLabel: { color: '#94a3b8' },
-        splitLine: { lineStyle: { color: '#334155' } }
+        axisLine: { lineStyle: { color: axisColor } },
+        axisLabel: { color: textColor },
+        splitLine: { lineStyle: { color: gridColor } }
       },
       series: [{
         name: 'Prints',
@@ -254,18 +265,19 @@
         }
       }]
     });
-    
+
     // Material Usage Chart
-    const materialChart = echarts.init(materialUsageChart, 'dark');
+    const materialChart = echarts.init(materialUsageChart);
     materialChart.setOption({
       title: {
         text: 'Material Usage (Last 30 Days)',
-        textStyle: { color: '#fff' }
+        textStyle: { color: textColor }
       },
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'rgba(15, 23, 42, 0.9)',
-        borderColor: '#334155',
+        backgroundColor: tooltipBg,
+        borderColor: tooltipBorder,
+        textStyle: { color: tooltipText },
         formatter: '{b}: {c}g'
       },
       grid: {
@@ -277,14 +289,14 @@
       xAxis: {
         type: 'category',
         data: data.stats.last30Days,
-        axisLine: { lineStyle: { color: '#475569' } },
-        axisLabel: { color: '#94a3b8' }
+        axisLine: { lineStyle: { color: axisColor } },
+        axisLabel: { color: textColor }
       },
       yAxis: {
         type: 'value',
-        axisLine: { lineStyle: { color: '#475569' } },
-        axisLabel: { color: '#94a3b8', formatter: '{value}g' },
-        splitLine: { lineStyle: { color: '#334155' } }
+        axisLine: { lineStyle: { color: axisColor } },
+        axisLabel: { color: textColor, formatter: '{value}g' },
+        splitLine: { lineStyle: { color: gridColor } }
       },
       series: [{
         name: 'Material (g)',
@@ -298,25 +310,26 @@
         }
       }]
     });
-    
+
     // Success Rate Pie Chart
-    const successChart = echarts.init(successRateChart, 'dark');
+    const successChart = echarts.init(successRateChart);
     successChart.setOption({
       title: {
         text: 'Print Success Rate',
-        textStyle: { color: '#fff' }
+        textStyle: { color: textColor }
       },
       tooltip: {
         trigger: 'item',
-        backgroundColor: 'rgba(15, 23, 42, 0.9)',
-        borderColor: '#334155',
+        backgroundColor: tooltipBg,
+        borderColor: tooltipBorder,
+        textStyle: { color: tooltipText },
         formatter: '{b}: {c} ({d}%)'
       },
       legend: {
         orient: 'vertical',
         right: '10%',
         top: 'center',
-        textStyle: { color: '#94a3b8' }
+        textStyle: { color: textColor }
       },
       series: [{
         type: 'pie',
@@ -329,22 +342,23 @@
         label: {
           show: true,
           formatter: '{b}: {d}%',
-          color: '#fff'
+          color: labelColor
         }
       }]
     });
-    
+
     // Top Modules Bar Chart
-    const modulesChart = echarts.init(topModulesChart, 'dark');
+    const modulesChart = echarts.init(topModulesChart);
     modulesChart.setOption({
       title: {
         text: 'Top 10 Printed Modules',
-        textStyle: { color: '#fff' }
+        textStyle: { color: textColor }
       },
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'rgba(15, 23, 42, 0.9)',
-        borderColor: '#334155',
+        backgroundColor: tooltipBg,
+        borderColor: tooltipBorder,
+        textStyle: { color: tooltipText },
         axisPointer: { type: 'shadow' }
       },
       grid: {
@@ -355,15 +369,15 @@
       },
       xAxis: {
         type: 'value',
-        axisLine: { lineStyle: { color: '#475569' } },
-        axisLabel: { color: '#94a3b8' },
-        splitLine: { lineStyle: { color: '#334155' } }
+        axisLine: { lineStyle: { color: axisColor } },
+        axisLabel: { color: textColor },
+        splitLine: { lineStyle: { color: gridColor } }
       },
       yAxis: {
         type: 'category',
         data: data.stats.topModules.map(m => m.name).reverse(),
-        axisLine: { lineStyle: { color: '#475569' } },
-        axisLabel: { color: '#94a3b8' }
+        axisLine: { lineStyle: { color: axisColor } },
+        axisLabel: { color: textColor }
       },
       series: [{
         type: 'bar',
@@ -376,20 +390,21 @@
         }
       }]
     });
-    
+
     // Failure Reasons Pie Chart
     let failureChart: echarts.ECharts | undefined;
     if (data.stats.failureReasons.length > 0) {
-      failureChart = echarts.init(failureReasonsChart, 'dark');
+      failureChart = echarts.init(failureReasonsChart);
       failureChart.setOption({
         title: {
           text: 'Failure Reasons',
-          textStyle: { color: '#fff' }
+          textStyle: { color: textColor }
         },
         tooltip: {
           trigger: 'item',
-          backgroundColor: 'rgba(15, 23, 42, 0.9)',
-          borderColor: '#334155',
+          backgroundColor: tooltipBg,
+          borderColor: tooltipBorder,
+          textStyle: { color: tooltipText },
           formatter: '{b}: {c} ({d}%)'
         },
         series: [{
@@ -399,7 +414,7 @@
           label: {
             show: true,
             formatter: '{b}: {d}%',
-            color: '#fff'
+            color: labelColor
           },
           emphasis: {
             itemStyle: {
@@ -411,18 +426,19 @@
         }]
       });
     }
-    
+
     // Printer Utilization Chart
-    const utilizationChart = echarts.init(printerUtilizationChart, 'dark');
+    const utilizationChart = echarts.init(printerUtilizationChart);
     utilizationChart.setOption({
       title: {
         text: 'Printer Utilization (Total Hours)',
-        textStyle: { color: '#fff' }
+        textStyle: { color: textColor }
       },
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'rgba(15, 23, 42, 0.9)',
-        borderColor: '#334155',
+        backgroundColor: tooltipBg,
+        borderColor: tooltipBorder,
+        textStyle: { color: tooltipText },
         formatter: '{b}: {c}h'
       },
       grid: {
@@ -434,14 +450,14 @@
       xAxis: {
         type: 'category',
         data: data.stats.printerUtilization.map(p => p.name),
-        axisLine: { lineStyle: { color: '#475569' } },
-        axisLabel: { color: '#94a3b8', rotate: 45 }
+        axisLine: { lineStyle: { color: axisColor } },
+        axisLabel: { color: textColor, rotate: 45 }
       },
       yAxis: {
         type: 'value',
-        axisLine: { lineStyle: { color: '#475569' } },
-        axisLabel: { color: '#94a3b8', formatter: '{value}h' },
-        splitLine: { lineStyle: { color: '#334155' } }
+        axisLine: { lineStyle: { color: axisColor } },
+        axisLabel: { color: textColor, formatter: '{value}h' },
+        splitLine: { lineStyle: { color: gridColor } }
       },
       series: [{
         type: 'bar',
@@ -449,7 +465,69 @@
         itemStyle: { color: '#06b6d4' }
       }]
     });
-    
+
+    // Update charts when color scheme changes
+    const colorSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleColorSchemeChange = (e: MediaQueryListEvent) => {
+      const dark = e.matches;
+      const newTextColor = dark ? '#a1a1aa' : '#737373';
+      const newGridColor = dark ? '#262626' : '#f4f4f5';
+      const newAxisColor = dark ? '#262626' : '#e5e5e5';
+      const newTooltipBg = dark ? '#111111' : '#ffffff';
+      const newTooltipBorder = dark ? '#262626' : '#e5e5e5';
+      const newTooltipText = dark ? '#fafafa' : '#0a0a0a';
+      const newLabelColor = dark ? '#fafafa' : '#0a0a0a';
+
+      const axisUpdate = {
+        axisLine: { lineStyle: { color: newAxisColor } },
+        axisLabel: { color: newTextColor }
+      };
+      const splitLineUpdate = { splitLine: { lineStyle: { color: newGridColor } } };
+      const tooltipUpdate = {
+        backgroundColor: newTooltipBg,
+        borderColor: newTooltipBorder,
+        textStyle: { color: newTooltipText }
+      };
+
+      historyChart.setOption({
+        title: { textStyle: { color: newTextColor } },
+        tooltip: tooltipUpdate,
+        xAxis: axisUpdate,
+        yAxis: { ...axisUpdate, ...splitLineUpdate }
+      });
+      materialChart.setOption({
+        title: { textStyle: { color: newTextColor } },
+        tooltip: tooltipUpdate,
+        xAxis: axisUpdate,
+        yAxis: { ...axisUpdate, ...splitLineUpdate }
+      });
+      successChart.setOption({
+        title: { textStyle: { color: newTextColor } },
+        tooltip: tooltipUpdate,
+        legend: { textStyle: { color: newTextColor } },
+        series: [{ label: { color: newLabelColor } }]
+      });
+      modulesChart.setOption({
+        title: { textStyle: { color: newTextColor } },
+        tooltip: tooltipUpdate,
+        xAxis: { ...axisUpdate, ...splitLineUpdate },
+        yAxis: axisUpdate
+      });
+      failureChart?.setOption({
+        title: { textStyle: { color: newTextColor } },
+        tooltip: tooltipUpdate,
+        series: [{ label: { color: newLabelColor } }]
+      });
+      utilizationChart.setOption({
+        title: { textStyle: { color: newTextColor } },
+        tooltip: tooltipUpdate,
+        xAxis: axisUpdate,
+        yAxis: { ...axisUpdate, ...splitLineUpdate }
+      });
+    };
+
+    colorSchemeQuery.addEventListener('change', handleColorSchemeChange);
+
     // Resize charts on window resize
     const handleResize = () => {
       historyChart.resize();
@@ -459,12 +537,13 @@
       failureChart?.resize();
       utilizationChart.resize();
     };
-    
+
     window.addEventListener('resize', handleResize);
-    
+
     // Cleanup when component unmounts
     return () => {
       window.removeEventListener('resize', handleResize);
+      colorSchemeQuery.removeEventListener('change', handleColorSchemeChange);
       historyChart.dispose();
       materialChart.dispose();
       successChart.dispose();
@@ -475,134 +554,134 @@
   });
 </script>
 
-<div class="min-h-screen bg-black text-white p-6">
+<div class="min-h-screen bg-white dark:bg-[#0a0a0a] text-zinc-900 dark:text-zinc-50 p-6">
   <div class="max-w-7xl mx-auto">
     <!-- Header - Use dedicated function and higher z-index -->
     <div class="flex justify-between items-center mb-8 relative z-50">
       <h1 class="text-3xl font-light">Statistics & Analytics</h1>
-      <button 
+      <button
         on:click={navigateToDashboard}
-        class="text-slate-400 hover:text-white transition-colors cursor-pointer pointer-events-auto"
+        class="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors cursor-pointer pointer-events-auto"
       >
         ← Back to Dashboard
       </button>
     </div>
-    
+
     <!-- Key Metrics Cards -->
     <div class="grid grid-cols-5 gap-4 mb-8">
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-        <p class="text-slate-400 text-sm mb-1">Total Prints</p>
-        <p class="text-3xl font-bold text-white">{data.stats.totalPrints}</p>
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
+        <p class="text-zinc-500 text-sm mb-1">Total Prints</p>
+        <p class="text-3xl font-medium text-zinc-900 dark:text-zinc-50">{data.stats.totalPrints}</p>
       </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-        <p class="text-slate-400 text-sm mb-1">Success Rate</p>
-        <p class="text-3xl font-bold text-green-400">
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
+        <p class="text-zinc-500 text-sm mb-1">Success Rate</p>
+        <p class="text-3xl font-medium text-green-600 dark:text-green-400">
           {data.stats.totalPrints > 0 ? ((data.stats.successfulPrints / data.stats.totalPrints) * 100).toFixed(1) : 0}%
         </p>
       </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-        <p class="text-slate-400 text-sm mb-1">Material Used</p>
-        <p class="text-3xl font-bold text-blue-400">{data.stats.totalMaterialUsed}g</p>
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
+        <p class="text-zinc-500 text-sm mb-1">Material Used</p>
+        <p class="text-3xl font-medium text-blue-600 dark:text-blue-400">{data.stats.totalMaterialUsed}g</p>
       </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-        <p class="text-slate-400 text-sm mb-1">Total Runtime</p>
-        <p class="text-3xl font-bold text-purple-400">{data.stats.totalHours.toFixed(1)}h</p>
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
+        <p class="text-zinc-500 text-sm mb-1">Total Runtime</p>
+        <p class="text-3xl font-medium text-purple-400">{data.stats.totalHours.toFixed(1)}h</p>
       </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
-        <p class="text-slate-400 text-sm mb-1">Active Printers</p>
-        <p class="text-3xl font-bold text-cyan-400">{data.printers.length}</p>
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
+        <p class="text-zinc-500 text-sm mb-1">Active Printers</p>
+        <p class="text-3xl font-medium text-cyan-400">{data.printers.length}</p>
       </div>
     </div>
-    
+
     <!-- Toggle Buttons Row -->
     <div class="flex gap-3 mb-6">
       <button
         on:click|stopPropagation={() => showPrintHistory = !showPrintHistory}
-        class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg px-4 py-2.5 transition-colors"
+        class="flex items-center gap-2 bg-zinc-50 dark:bg-[#111111] hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-[#262626] rounded-lg px-4 py-2.5 transition-colors"
       >
-        <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
-        <span class="text-white font-medium">
+        <span class="text-zinc-900 dark:text-zinc-50 font-medium">
           {showPrintHistory ? 'Hide' : 'Show'} Print History
         </span>
-        <span class="text-slate-400 text-sm">({data.printJobs.length})</span>
-        <svg 
-          class="w-4 h-4 text-slate-400 transition-transform duration-200 {showPrintHistory ? 'rotate-180' : ''}" 
-          fill="none" 
-          stroke="currentColor" 
+        <span class="text-zinc-500 text-sm">({data.printJobs.length})</span>
+        <svg
+          class="w-4 h-4 text-zinc-500 transition-transform duration-200 {showPrintHistory ? 'rotate-180' : ''}"
+          fill="none"
+          stroke="currentColor"
           viewBox="0 0 24 24"
         >
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
         </svg>
       </button>
-      
+
       <button
         on:click|stopPropagation={() => showSpools = !showSpools}
-        class="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg px-4 py-2.5 transition-colors"
+        class="flex items-center gap-2 bg-zinc-50 dark:bg-[#111111] hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-[#262626] rounded-lg px-4 py-2.5 transition-colors"
       >
         <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
         </svg>
-        <span class="text-white font-medium">
+        <span class="text-zinc-900 dark:text-zinc-50 font-medium">
           {showSpools ? 'Hide' : 'Show'} All Spools
         </span>
-        <span class="text-slate-400 text-sm">({data.spools?.length || 0})</span>
-        <svg 
-          class="w-4 h-4 text-slate-400 transition-transform duration-200 {showSpools ? 'rotate-180' : ''}" 
-          fill="none" 
-          stroke="currentColor" 
+        <span class="text-zinc-500 text-sm">({data.spools?.length || 0})</span>
+        <svg
+          class="w-4 h-4 text-zinc-500 transition-transform duration-200 {showSpools ? 'rotate-180' : ''}"
+          fill="none"
+          stroke="currentColor"
           viewBox="0 0 24 24"
         >
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
         </svg>
       </button>
     </div>
-    
+
     <!-- Print History Table (Collapsible) -->
     {#if showPrintHistory}
-      <div class="bg-slate-900 border border-slate-800 rounded-xl mb-8 overflow-hidden animate-fade-in">
-        <div class="p-6 border-b border-slate-800">
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden animate-fade-in">
+        <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
           <h2 class="text-xl font-medium">Print History</h2>
-          <p class="text-sm text-slate-400 mt-1">{data.printJobs.length} total jobs</p>
+          <p class="text-sm text-zinc-500 mt-1">{data.printJobs.length} total jobs</p>
         </div>
         <div class="overflow-x-auto max-h-96 overflow-y-auto">
           <table class="w-full">
-            <thead class="bg-slate-800 sticky top-0">
+            <thead class="bg-zinc-100 dark:bg-zinc-800 sticky top-0">
               <tr>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Date</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Module</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Printer</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Material</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Status</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Date</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Module</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Printer</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Material</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Status</th>
               </tr>
             </thead>
             <tbody>
               {#each data.printJobs as job}
                 {@const printer = data.printers.find(p => p.id === job.printer_id)}
-                <tr class="border-t border-slate-800 hover:bg-slate-800/50 transition-colors">
-                  <td class="px-4 py-3 text-sm text-slate-400">
+                <tr class="border-t border-zinc-200 dark:border-[#262626] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+                  <td class="px-4 py-3 text-sm text-zinc-500">
                     {formatDate(job.start_time)}
                   </td>
-                  <td class="px-4 py-3 text-sm text-white font-medium">
+                  <td class="px-4 py-3 text-sm text-zinc-900 dark:text-zinc-50 font-medium">
                     {job.name || 'Unknown'}
                   </td>
-                  <td class="px-4 py-3 text-sm text-slate-400">
+                  <td class="px-4 py-3 text-sm text-zinc-500">
                     {printer?.name || 'Unknown'}
                   </td>
-                  <td class="px-4 py-3 text-sm text-slate-400">
+                  <td class="px-4 py-3 text-sm text-zinc-500">
                     {job.actual_weight || job.planned_weight}g
                   </td>
                   <td class="px-4 py-3 text-sm">
                     {#if job.status === 'printing'}
-                      <span class="inline-flex items-center gap-1 text-blue-400">
+                      <span class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400">
                         <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                         In Progress
                       </span>
                     {:else if job.status === 'success'}
-                      <span class="inline-flex items-center gap-1 text-green-400">
+                      <span class="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                           <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
                         </svg>
@@ -610,14 +689,14 @@
                       </span>
                     {:else if job.status === 'failed'}
                       <div>
-                        <span class="inline-flex items-center gap-1 text-red-400">
+                        <span class="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
                           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
                           </svg>
                           Failed
                         </span>
                         {#if job.failure_reason}
-                          <p class="text-xs text-slate-500 mt-1">{job.failure_reason}</p>
+                          <p class="text-xs text-zinc-500 mt-1">{job.failure_reason}</p>
                         {/if}
                       </div>
                     {/if}
@@ -629,29 +708,29 @@
         </div>
       </div>
     {/if}
-    
+
     <!-- All Spools Table (UPDATED with Edit/Delete) -->
     {#if showSpools}
-      <div class="bg-slate-900 border border-slate-800 rounded-xl mb-8 overflow-hidden animate-fade-in">
-        <div class="p-6 border-b border-slate-800">
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden animate-fade-in">
+        <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
           <h2 class="text-xl font-medium">All Spools</h2>
-          <p class="text-sm text-slate-400 mt-1">{sortedSpools.length} total spools (newest first)</p>
+          <p class="text-sm text-zinc-500 mt-1">{sortedSpools.length} total spools (newest first)</p>
         </div>
         <div class="overflow-x-auto max-h-96 overflow-y-auto">
           <table class="w-full">
-            <thead class="bg-slate-800 sticky top-0 z-10">
+            <thead class="bg-zinc-100 dark:bg-zinc-800 sticky top-0 z-10">
               <tr>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">ID</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Brand</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Material</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Color</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Initial</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Remaining</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Used</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">% Left</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Cost</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Status</th>
-                <th class="px-4 py-3 text-left text-sm font-medium text-slate-300">Actions</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">ID</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Brand</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Material</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Color</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Initial</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Remaining</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Used</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">% Left</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Cost</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Status</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-zinc-300">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -662,39 +741,39 @@
                   {@const isLoaded = data.printers.some(p => p.loaded_spool_id === spool.id)}
                   {@const loadedPrinter = data.printers.find(p => p.loaded_spool_id === spool.id)}
                   {@const isEditing = editingSpoolId === spool.id}
-                  
-                  <tr class="border-t border-slate-800 hover:bg-slate-800/50 transition-colors">
+
+                  <tr class="border-t border-zinc-200 dark:border-[#262626] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
                     <!-- ID -->
-                    <td class="px-4 py-3 text-sm text-slate-400 font-mono">
+                    <td class="px-4 py-3 text-sm text-zinc-500 font-mono">
                       #{spool.id}
                     </td>
-                    
+
                     <!-- Brand (Editable) -->
                     <td class="px-4 py-3 text-sm">
                       {#if isEditing}
                         <input
                           type="text"
                           bind:value={editForm.brand}
-                          class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm"
+                          class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 py-1 text-zinc-900 dark:text-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50"
                         />
                       {:else}
-                        <span class="text-white font-medium">{spool.brand}</span>
+                        <span class="text-zinc-900 dark:text-zinc-50 font-medium">{spool.brand}</span>
                       {/if}
                     </td>
-                    
+
                     <!-- Material (Editable) -->
                     <td class="px-4 py-3 text-sm">
                       {#if isEditing}
                         <input
                           type="text"
                           bind:value={editForm.material}
-                          class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm"
+                          class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 py-1 text-zinc-900 dark:text-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50"
                         />
                       {:else}
-                        <span class="text-slate-300">{spool.material}</span>
+                        <span class="text-zinc-700 dark:text-zinc-300">{spool.material}</span>
                       {/if}
                     </td>
-                    
+
                     <!-- Color (Editable) -->
                     <td class="px-4 py-3 text-sm">
                       {#if isEditing}
@@ -702,23 +781,23 @@
                           type="text"
                           bind:value={editForm.color}
                           placeholder="Color"
-                          class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm"
+                          class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 py-1 text-zinc-900 dark:text-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50"
                         />
                       {:else if spool.color}
                         <span class="inline-flex items-center gap-2">
-                          <span class="w-3 h-3 rounded-full border border-slate-600" style="background-color: {spool.color.toLowerCase()}"></span>
+                          <span class="w-3 h-3 rounded-full border border-zinc-300 dark:border-zinc-700" style="background-color: {spool.color.toLowerCase()}"></span>
                           {spool.color}
                         </span>
                       {:else}
-                        <span class="text-slate-500">-</span>
+                        <span class="text-zinc-500">-</span>
                       {/if}
                     </td>
-                    
+
                     <!-- Initial Weight (Read-only) -->
-                    <td class="px-4 py-3 text-sm text-slate-400">
+                    <td class="px-4 py-3 text-sm text-zinc-500">
                       {spool.initial_weight}g
                     </td>
-                    
+
                     <!-- Remaining Weight (Editable) -->
                     <td class="px-4 py-3 text-sm">
                       {#if isEditing}
@@ -727,89 +806,89 @@
                           bind:value={editForm.remaining_weight}
                           min="0"
                           max={spool.initial_weight}
-                          class="w-20 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm"
+                          class="w-20 bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 py-1 text-zinc-900 dark:text-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50"
                         />
-                        <span class="text-slate-500 text-xs ml-1">g</span>
+                        <span class="text-zinc-500 text-xs ml-1">g</span>
                       {:else}
-                        <span class="text-white font-medium">{spool.remaining_weight}g</span>
+                        <span class="text-zinc-900 dark:text-zinc-50 font-medium">{spool.remaining_weight}g</span>
                       {/if}
                     </td>
-                    
+
                     <!-- Used Weight -->
-                    <td class="px-4 py-3 text-sm text-slate-400">
+                    <td class="px-4 py-3 text-sm text-zinc-500">
                       {usedWeight}g
                     </td>
-                    
+
                     <!-- Percentage Bar -->
                     <td class="px-4 py-3 text-sm">
                       <div class="flex items-center gap-2">
-                        <div class="w-16 h-2 bg-slate-700 rounded-full overflow-hidden">
-                          <div 
+                        <div class="w-16 h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                          <div
                             class="h-full transition-all duration-300 {
-                              Number(percentLeft) > 50 ? 'bg-green-500' : 
-                              Number(percentLeft) > 20 ? 'bg-yellow-500' : 
+                              Number(percentLeft) > 50 ? 'bg-green-500' :
+                              Number(percentLeft) > 20 ? 'bg-yellow-500' :
                               'bg-red-500'
                             }"
                             style="width: {percentLeft}%"
                           ></div>
                         </div>
                         <span class="text-xs {
-                          Number(percentLeft) > 50 ? 'text-green-400' : 
-                          Number(percentLeft) > 20 ? 'text-yellow-400' : 
-                          'text-red-400'
+                          Number(percentLeft) > 50 ? 'text-green-600 dark:text-green-400' :
+                          Number(percentLeft) > 20 ? 'text-amber-600 dark:text-amber-400' :
+                          'text-red-600 dark:text-red-400'
                         }">
                           {percentLeft}%
                         </span>
                       </div>
                     </td>
-                    
+
                     <!-- Cost (Editable) -->
                     <td class="px-4 py-3 text-sm">
                       {#if isEditing}
                         <div class="flex items-center gap-1">
-                          <span class="text-slate-500">$</span>
+                          <span class="text-zinc-500">$</span>
                           <input
                             type="number"
                             bind:value={editForm.cost}
                             min="0"
                             step="0.01"
-                            class="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-sm"
+                            class="w-16 bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 py-1 text-zinc-900 dark:text-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50"
                           />
                         </div>
                       {:else if spool.cost}
-                        <span class="text-green-400">${spool.cost.toFixed(2)}</span>
+                        <span class="text-green-600 dark:text-green-400">${spool.cost.toFixed(2)}</span>
                       {:else}
-                        <span class="text-slate-500">-</span>
+                        <span class="text-zinc-500">-</span>
                       {/if}
                     </td>
-                    
+
                     <!-- Status -->
                     <td class="px-4 py-3 text-sm">
                       {#if isLoaded}
-                        <span class="inline-flex items-center gap-1 text-blue-400 bg-blue-500/10 px-2 py-1 rounded text-xs">
+                        <span class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-2 py-1 rounded-sm text-xs">
                           <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
                           </svg>
                           Loaded
                         </span>
-                        <p class="text-xs text-slate-500 mt-1">{loadedPrinter?.name}</p>
+                        <p class="text-xs text-zinc-500 mt-1">{loadedPrinter?.name}</p>
                       {:else if spool.remaining_weight <= 0}
-                        <span class="inline-flex items-center gap-1 text-slate-500 bg-slate-800 px-2 py-1 rounded text-xs">
+                        <span class="inline-flex items-center gap-1 text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-sm text-xs">
                           Empty
                         </span>
                       {:else}
-                        <span class="inline-flex items-center gap-1 text-slate-400 text-xs">
+                        <span class="inline-flex items-center gap-1 text-zinc-500 text-xs">
                           Available
                         </span>
                       {/if}
                     </td>
-                    
+
                     <!-- Actions (Edit/Delete or Save/Cancel) -->
                     <td class="px-4 py-3 text-sm">
                       {#if isEditing}
                         <div class="flex items-center gap-2">
-                          <form 
-                            method="POST" 
+                          <form
+                            method="POST"
                             action="?/updateSpool"
                             use:enhance={() => {
                               return async ({ result }) => {
@@ -828,7 +907,7 @@
                             <input type="hidden" name="cost" value={editForm.cost} />
                             <button
                               type="submit"
-                              class="text-green-400 hover:text-green-300 transition-colors"
+                              class="text-green-600 dark:text-green-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
                               title="Save changes"
                             >
                               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -838,7 +917,7 @@
                           </form>
                           <button
                             on:click|stopPropagation={cancelEdit}
-                            class="text-slate-400 hover:text-white transition-colors"
+                            class="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors"
                             title="Cancel"
                           >
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -850,7 +929,7 @@
                         <div class="flex items-center gap-2">
                           <button
                             on:click|stopPropagation={() => startEdit(spool)}
-                            class="text-blue-400 hover:text-blue-300 transition-colors"
+                            class="text-blue-600 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                             title="Edit spool"
                             disabled={isLoaded}
                           >
@@ -858,8 +937,8 @@
                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
                           </button>
-                          <form 
-                            method="POST" 
+                          <form
+                            method="POST"
                             action="?/deleteSpool"
                             use:enhance={() => {
                               return async ({ result, update }) => {
@@ -878,7 +957,7 @@
                                 }
                               }}
                               disabled={isLoaded}
-                              class="text-red-400 hover:text-red-300 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                              class="text-red-600 dark:text-red-400 hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                               title={isLoaded ? 'Cannot delete loaded spool' : 'Delete spool'}
                             >
                               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -893,7 +972,7 @@
                 {/each}
               {:else}
                 <tr>
-                  <td colspan="11" class="px-4 py-8 text-center text-slate-500">
+                  <td colspan="11" class="px-4 py-8 text-center text-zinc-500">
                     No spools found
                   </td>
                 </tr>
@@ -903,25 +982,25 @@
         </div>
       </div>
     {/if}
-    
+
     <!-- ✅ UPDATED: Module Production Breakdown Section -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl mb-8 overflow-hidden">
-      <div class="p-6 border-b border-slate-800">
+    <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden">
+      <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
         <div class="flex items-center justify-between">
           <div>
             <h2 class="text-xl font-medium">Module Production Breakdown</h2>
-            <p class="text-sm text-slate-400 mt-1">Detailed cost and production analysis by category</p>
+            <p class="text-sm text-zinc-500 mt-1">Detailed cost and production analysis by category</p>
           </div>
-          
+
           <!-- Time Range Selector -->
-          <div class="flex gap-2 bg-slate-800 rounded-lg p-1">
+          <div class="flex gap-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
             {#each ['last30Days', 'thisMonth', 'last90Days'] as range}
               <button
                 on:click|stopPropagation={() => selectedTimeRange = range as TimeRange}
                 class="px-4 py-2 rounded-md text-sm font-medium transition-all
-                       {selectedTimeRange === range 
-                         ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' 
-                         : 'text-slate-400 hover:text-white'}"
+                       {selectedTimeRange === range
+                         ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                         : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-50'}"
               >
                 {getTimeRangeLabel(range as TimeRange)}
               </button>
@@ -933,25 +1012,25 @@
       <div class="p-6">
         <!-- Total Count Header -->
         <div class="mb-6 grid grid-cols-4 gap-4">
-          <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-            <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Total Prints</p>
-            <p class="text-3xl font-bold text-white">{totalPrintsInRange}</p>
+          <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+            <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Prints</p>
+            <p class="text-3xl font-medium text-zinc-900 dark:text-zinc-50">{totalPrintsInRange}</p>
           </div>
-          <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-            <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Total Objects</p>
-            <p class="text-3xl font-bold text-purple-400">{totalObjectsInRange}</p>
+          <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+            <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Objects</p>
+            <p class="text-3xl font-medium text-purple-400">{totalObjectsInRange}</p>
           </div>
           <!-- ✅ NEW: Total Weight -->
-          <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-            <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Total Weight</p>
-            <p class="text-3xl font-bold text-blue-400">
+          <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+            <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Weight</p>
+            <p class="text-3xl font-medium text-blue-600 dark:text-blue-400">
               {(Object.values(currentBreakdown).reduce((sum: number, cat: any) => sum + (cat.totalWeight || 0), 0) / 1000).toFixed(2)}kg
             </p>
           </div>
           <!-- ✅ NEW: Total Cost -->
-          <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
-            <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">Total Cost</p>
-            <p class="text-3xl font-bold text-green-400">
+          <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+            <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Cost</p>
+            <p class="text-3xl font-medium text-green-600 dark:text-green-400">
               ${Object.values(currentBreakdown).reduce((sum: number, cat: any) => sum + (cat.totalCost || 0), 0).toFixed(2)}
             </p>
           </div>
@@ -964,52 +1043,52 @@
               {@const isCategoryExpanded = !!expandedCategories[categoryName]}
               {@const categoryPercentage = ((categoryData.total / totalPrintsInRange) * 100).toFixed(1)}
               {@const hasSubcategories = Object.keys(categoryData.subcategories || {}).length > 0}
-              
+
               <!-- Level 1: Category -->
-              <div class="border border-slate-700 rounded-lg overflow-hidden hover:border-slate-600 transition-colors">
+              <div class="border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
                 <button
                   on:click|stopPropagation={() => toggleCategory(categoryName)}
-                  class="w-full px-5 py-4 flex items-center justify-between bg-slate-800/30 hover:bg-slate-800/50 transition-colors"
+                  class="w-full px-5 py-4 flex items-center justify-between bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
                 >
                   <div class="flex items-center gap-4">
-                    <div class="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                      <svg 
-                        class="w-5 h-5 text-blue-400 transition-transform duration-200 {isCategoryExpanded ? 'rotate-90' : ''}" 
-                        fill="none" 
-                        stroke="currentColor" 
+                    <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-950 flex items-center justify-center">
+                      <svg
+                        class="w-5 h-5 text-blue-600 dark:text-blue-400 transition-transform duration-200 {isCategoryExpanded ? 'rotate-90' : ''}"
+                        fill="none"
+                        stroke="currentColor"
                         viewBox="0 0 24 24"
                       >
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                       </svg>
                     </div>
                     <div class="text-left">
-                      <h3 class="text-lg font-semibold text-white">{categoryName}</h3>
-                      <p class="text-xs text-slate-500 mt-0.5">{categoryData.total} prints • {categoryData.totalObjects} objects</p>
+                      <h3 class="text-lg font-medium text-zinc-900 dark:text-zinc-50">{categoryName}</h3>
+                      <p class="text-xs text-zinc-500 mt-0.5">{categoryData.total} prints • {categoryData.totalObjects} objects</p>
                     </div>
                   </div>
-                  
+
                   <div class="flex items-center gap-6">
                     <!-- Progress Bar -->
                     <div class="flex items-center gap-3">
-                      <div class="w-24 h-2 bg-slate-700 rounded-full overflow-hidden">
-                        <div 
-                          class="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
+                      <div class="w-24 h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                        <div
+                          class="h-full bg-blue-500 transition-all duration-500"
                           style="width: {categoryPercentage}%"
                         ></div>
                       </div>
-                      <span class="text-sm font-medium text-slate-400 w-12 text-right">{categoryPercentage}%</span>
+                      <span class="text-sm font-medium text-zinc-500 w-12 text-right">{categoryPercentage}%</span>
                     </div>
-                    
+
                     <!-- ✅ UPDATED: Weight + Cost Info (Weight more dominant) -->
-                    <div class="text-right min-w-[160px]">
-                      <p class="text-2xl font-bold text-blue-400">
+                    <div class="text-right min-w-40">
+                      <p class="text-2xl font-medium text-blue-600 dark:text-blue-400">
                         {(categoryData.totalWeight / 1000).toFixed(2)}kg
                       </p>
-                      <p class="text-sm text-green-400 mt-0.5">
+                      <p class="text-sm text-green-600 dark:text-green-400 mt-0.5">
                         ${categoryData.totalCost.toFixed(2)}
                       </p>
                       {#if categoryData.wastedCost > 0}
-                        <p class="text-xs text-red-400 mt-0.5">
+                        <p class="text-xs text-red-600 dark:text-red-400 mt-0.5">
                           -{(categoryData.wastedWeight / 1000).toFixed(2)}kg waste
                         </p>
                       {/if}
@@ -1018,8 +1097,8 @@
                 </button>
 
                 {#if isCategoryExpanded}
-                  <div class="bg-slate-900/50 border-t border-slate-700">
-                    
+                  <div class="bg-white dark:bg-[#111111] border-t border-zinc-200 dark:border-[#262626]">
+
                     <!-- ✅ Level 2: Subcategories -->
                     {#if hasSubcategories}
                       <div class="p-4 space-y-2">
@@ -1027,87 +1106,87 @@
                           {@const subcategoryKey = `${categoryName}:${subcategoryName}`}
                           {@const isSubcategoryExpanded = !!expandedSubcategories[subcategoryKey]}
                           {@const subcategoryPercentage = ((subcategoryData.total / categoryData.total) * 100).toFixed(1)}
-                          
-                          <div class="border border-slate-700/50 rounded-lg overflow-hidden">
+
+                          <div class="border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden">
                             <button
                               on:click|stopPropagation={() => toggleSubcategory(categoryName, subcategoryName)}
-                              class="w-full px-4 py-3 flex items-center justify-between bg-slate-800/20 hover:bg-slate-800/40 transition-colors"
+                              class="w-full px-4 py-3 flex items-center justify-between bg-zinc-50 dark:bg-[#111111] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                             >
                               <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 rounded-md bg-indigo-500/10 flex items-center justify-center">
-                                  <svg 
-                                    class="w-4 h-4 text-indigo-400 transition-transform duration-200 {isSubcategoryExpanded ? 'rotate-90' : ''}" 
-                                    fill="none" 
-                                    stroke="currentColor" 
+                                <div class="w-8 h-8 rounded-md bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center">
+                                  <svg
+                                    class="w-4 h-4 text-indigo-400 transition-transform duration-200 {isSubcategoryExpanded ? 'rotate-90' : ''}"
+                                    fill="none"
+                                    stroke="currentColor"
                                     viewBox="0 0 24 24"
                                   >
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                                   </svg>
                                 </div>
                                 <div class="text-left">
-                                  <h4 class="text-sm font-semibold text-slate-200">{subcategoryName}</h4>
-                                  <p class="text-xs text-slate-500">{subcategoryData.total} prints • {subcategoryData.totalObjects} objects</p>
+                                  <h4 class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{subcategoryName}</h4>
+                                  <p class="text-xs text-zinc-500">{subcategoryData.total} prints • {subcategoryData.totalObjects} objects</p>
                                 </div>
                               </div>
-                              
+
                               <!-- ✅ UPDATED: Weight + Cost for subcategory -->
                               <div class="flex items-center gap-4">
-                                <div class="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                                  <div 
+                                <div class="w-16 h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                  <div
                                     class="h-full bg-indigo-400 transition-all duration-500"
                                     style="width: {subcategoryPercentage}%"
                                   ></div>
                                 </div>
-                                <span class="text-xs font-medium text-slate-500 w-10 text-right">{subcategoryPercentage}%</span>
-                                <div class="text-right min-w-[100px]">
-                                  <span class="text-base font-bold text-blue-400">{(subcategoryData.totalWeight / 1000).toFixed(2)}kg</span>
-                                  <p class="text-xs text-green-400">${subcategoryData.totalCost.toFixed(2)}</p>
+                                <span class="text-xs font-medium text-zinc-500 w-10 text-right">{subcategoryPercentage}%</span>
+                                <div class="text-right min-w-25">
+                                  <span class="text-base font-medium text-blue-600 dark:text-blue-400">{(subcategoryData.totalWeight / 1000).toFixed(2)}kg</span>
+                                  <p class="text-xs text-green-600 dark:text-green-400">${subcategoryData.totalCost.toFixed(2)}</p>
                                 </div>
                               </div>
                             </button>
 
                             <!-- Level 3: Modules under Subcategory -->
                             {#if isSubcategoryExpanded}
-                              <div class="bg-slate-900/30 border-t border-slate-700/50 p-3 space-y-1.5">
+                              <div class="bg-white dark:bg-[#111111] border-t border-zinc-200 dark:border-[#262626] p-3 space-y-1.5">
                                 {#each Object.entries(subcategoryData.modules).sort(([,a], [,b]) => b.total - a.total) as [moduleName, moduleData]}
                                   {@const moduleKey = `${subcategoryKey}:${moduleName}`}
                                   {@const isModuleExpanded = !!expandedModules[moduleKey]}
                                   {@const modulePercentage = ((moduleData.total / subcategoryData.total) * 100).toFixed(1)}
-                                  
-                                  <div class="border border-slate-700/30 rounded-md overflow-hidden">
+
+                                  <div class="border border-zinc-200 dark:border-[#262626] rounded-md overflow-hidden">
                                     <button
                                       on:click|stopPropagation={() => toggleModule(subcategoryKey, moduleName)}
-                                      class="w-full px-3 py-2.5 flex items-center justify-between bg-slate-800/10 hover:bg-slate-800/30 transition-colors"
+                                      class="w-full px-3 py-2.5 flex items-center justify-between bg-zinc-50 dark:bg-[#111111] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                                     >
                                       <div class="flex items-center gap-2">
-                                        <svg 
-                                          class="w-3 h-3 text-slate-600 transition-transform duration-200 {isModuleExpanded ? 'rotate-90' : ''}" 
-                                          fill="none" 
-                                          stroke="currentColor" 
+                                        <svg
+                                          class="w-3 h-3 text-zinc-500 transition-transform duration-200 {isModuleExpanded ? 'rotate-90' : ''}"
+                                          fill="none"
+                                          stroke="currentColor"
                                           viewBox="0 0 24 24"
                                         >
                                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                                         </svg>
                                         <div class="text-left">
-                                          <p class="text-xs font-medium text-slate-300">{moduleName}</p>
+                                          <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{moduleName}</p>
                                           <div class="flex items-center gap-2 mt-0.5">
-                                            <span class="text-xs text-slate-600">{moduleData.total} prints</span>
-                                            <span class="text-xs text-slate-700">•</span>
-                                            <span class="text-xs text-slate-600">{moduleData.totalObjects} obj</span>
+                                            <span class="text-xs text-zinc-500">{moduleData.total} prints</span>
+                                            <span class="text-xs text-zinc-500">•</span>
+                                            <span class="text-xs text-zinc-500">{moduleData.totalObjects} obj</span>
                                           </div>
                                         </div>
                                       </div>
-                                      
+
                                       <!-- ✅ UPDATED: Weight + Cost for module -->
                                       <div class="flex items-center gap-3">
                                         <div class="text-right">
-                                          <p class="text-xs font-bold text-blue-400">{(moduleData.totalWeight / 1000).toFixed(3)}kg</p>
-                                          <p class="text-xs text-slate-500">{moduleData.avgWeightPerPrint.toFixed(0)}g/print</p>
-                                          <p class="text-xs text-green-400 mt-0.5">${moduleData.avgCostPerPrint.toFixed(3)}/print</p>
-                                          <p class="text-xs text-green-500">${moduleData.costPerObject.toFixed(4)}/obj</p>
+                                          <p class="text-xs font-medium text-blue-600 dark:text-blue-400">{(moduleData.totalWeight / 1000).toFixed(3)}kg</p>
+                                          <p class="text-xs text-zinc-500">{moduleData.avgWeightPerPrint.toFixed(0)}g/print</p>
+                                          <p class="text-xs text-green-600 dark:text-green-400 mt-0.5">${moduleData.avgCostPerPrint.toFixed(3)}/print</p>
+                                          <p class="text-xs text-green-600 dark:text-green-400">${moduleData.costPerObject.toFixed(4)}/obj</p>
                                         </div>
-                                        <div class="w-12 h-1 bg-slate-700 rounded-full overflow-hidden">
-                                          <div 
+                                        <div class="w-12 h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                          <div
                                             class="h-full bg-purple-400 transition-all duration-500"
                                             style="width: {modulePercentage}%"
                                           ></div>
@@ -1117,30 +1196,30 @@
 
                                     <!-- Level 4: Colors -->
                                     {#if isModuleExpanded}
-                                      <div class="bg-slate-900/50 border-t border-slate-700/30 p-2 space-y-1">
+                                      <div class="bg-white dark:bg-[#111111] border-t border-zinc-200 dark:border-[#262626] p-2 space-y-1">
                                         {#each Object.entries(moduleData.colors).sort(([,a], [,b]) => b.count - a.count) as [color, colorData]}
                                           {@const colorPercentage = ((colorData.count / moduleData.total) * 100).toFixed(1)}
-                                          
-                                          <div class="px-3 py-2 bg-slate-800/20 rounded hover:bg-slate-800/40 transition-colors">
+
+                                          <div class="px-3 py-2 bg-zinc-50 dark:bg-[#111111] rounded-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
                                             <div class="flex items-center justify-between">
                                               <div class="flex items-center gap-2">
-                                                <div 
-                                                  class="w-3 h-3 rounded-full border-2 border-slate-600 shadow-sm"
+                                                <div
+                                                  class="w-3 h-3 rounded-full border-2 border-zinc-300 dark:border-zinc-700"
                                                   style="background-color: {color.toLowerCase()}"
                                                 ></div>
-                                                <span class="text-xs font-medium text-slate-400">{color}</span>
+                                                <span class="text-xs font-medium text-zinc-500">{color}</span>
                                               </div>
                                               <!-- ✅ UPDATED: Weight + objects + cost for color -->
                                               <div class="flex items-center gap-3">
-                                                <span class="text-xs font-bold text-blue-400">{(colorData.weight / 1000).toFixed(3)}kg</span>
-                                                <span class="text-xs text-slate-600">{colorData.objects} obj</span>
-                                                <div class="w-12 h-1 bg-slate-700 rounded-full overflow-hidden">
-                                                  <div 
-                                                    class="h-full bg-gradient-to-r from-green-400 to-emerald-500 transition-all duration-500"
+                                                <span class="text-xs font-medium text-blue-600 dark:text-blue-400">{(colorData.weight / 1000).toFixed(3)}kg</span>
+                                                <span class="text-xs text-zinc-500">{colorData.objects} obj</span>
+                                                <div class="w-12 h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                                  <div
+                                                    class="h-full bg-green-500 transition-all duration-500"
                                                     style="width: {colorPercentage}%"
                                                   ></div>
                                                 </div>
-                                                <span class="text-xs font-bold text-green-400 min-w-[40px] text-right">{colorData.count}</span>
+                                                <span class="text-xs font-medium text-green-600 dark:text-green-400 min-w-10 text-right">{colorData.count}</span>
                                               </div>
                                             </div>
                                           </div>
@@ -1154,7 +1233,7 @@
                           </div>
                         {/each}
                       </div>
-                      
+
                     {:else}
                       <!-- No subcategories - show modules directly -->
                       <div class="p-4 space-y-2">
@@ -1162,73 +1241,73 @@
                           {@const moduleKey = `${categoryName}:${moduleName}`}
                           {@const isModuleExpanded = !!expandedModules[moduleKey]}
                           {@const modulePercentage = ((moduleData.total / categoryData.total) * 100).toFixed(1)}
-                          
-                          <div class="border border-slate-700/50 rounded-lg overflow-hidden">
+
+                          <div class="border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden">
                             <button
                               on:click|stopPropagation={() => toggleModule(categoryName, moduleName)}
-                              class="w-full px-4 py-3 flex items-center justify-between bg-slate-800/20 hover:bg-slate-800/40 transition-colors"
+                              class="w-full px-4 py-3 flex items-center justify-between bg-zinc-50 dark:bg-[#111111] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                             >
                               <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 rounded-md bg-purple-500/10 flex items-center justify-center">
-                                  <svg 
-                                    class="w-4 h-4 text-purple-400 transition-transform duration-200 {isModuleExpanded ? 'rotate-90' : ''}" 
-                                    fill="none" 
-                                    stroke="currentColor" 
+                                <div class="w-8 h-8 rounded-md bg-purple-50 dark:bg-purple-950 flex items-center justify-center">
+                                  <svg
+                                    class="w-4 h-4 text-purple-400 transition-transform duration-200 {isModuleExpanded ? 'rotate-90' : ''}"
+                                    fill="none"
+                                    stroke="currentColor"
                                     viewBox="0 0 24 24"
                                   >
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                                   </svg>
                                 </div>
                                 <div class="text-left">
-                                  <h4 class="text-sm font-semibold text-slate-200">{moduleName}</h4>
-                                  <p class="text-xs text-slate-500">{moduleData.total} prints • {moduleData.totalObjects} objects</p>
+                                  <h4 class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{moduleName}</h4>
+                                  <p class="text-xs text-zinc-500">{moduleData.total} prints • {moduleData.totalObjects} objects</p>
                                 </div>
                               </div>
-                              
+
                               <!-- ✅ UPDATED: Weight + Cost for module (no subcategory) -->
                               <div class="flex items-center gap-4">
                                 <div class="text-right">
-                                  <p class="text-sm font-bold text-blue-400">{(moduleData.totalWeight / 1000).toFixed(3)}kg</p>
-                                  <p class="text-xs text-slate-500">{(moduleData.avgWeightPerPrint || 0).toFixed(0)}g/print</p>
-                                  <p class="text-xs text-green-400 mt-0.5">${moduleData.avgCostPerPrint.toFixed(3)}/print</p>
-                                  <p class="text-xs text-green-500">${moduleData.costPerObject.toFixed(4)}/obj</p>
+                                  <p class="text-sm font-medium text-blue-600 dark:text-blue-400">{(moduleData.totalWeight / 1000).toFixed(3)}kg</p>
+                                  <p class="text-xs text-zinc-500">{(moduleData.avgWeightPerPrint || 0).toFixed(0)}g/print</p>
+                                  <p class="text-xs text-green-600 dark:text-green-400 mt-0.5">${moduleData.avgCostPerPrint.toFixed(3)}/print</p>
+                                  <p class="text-xs text-green-600 dark:text-green-400">${moduleData.costPerObject.toFixed(4)}/obj</p>
                                 </div>
-                                <div class="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                                  <div 
+                                <div class="w-16 h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                  <div
                                     class="h-full bg-purple-400 transition-all duration-500"
                                     style="width: {modulePercentage}%"
                                   ></div>
                                 </div>
-                                <span class="text-xs font-medium text-slate-500 w-10 text-right">{modulePercentage}%</span>
+                                <span class="text-xs font-medium text-zinc-500 w-10 text-right">{modulePercentage}%</span>
                               </div>
                             </button>
 
                             <!-- Level 3: Colors -->
                             {#if isModuleExpanded}
-                              <div class="bg-slate-900/30 border-t border-slate-700/50 p-3 space-y-1.5">
+                              <div class="bg-white dark:bg-[#111111] border-t border-zinc-200 dark:border-[#262626] p-3 space-y-1.5">
                                 {#each Object.entries(moduleData.colors).sort(([,a], [,b]) => b.count - a.count) as [color, colorData]}
                                   {@const colorPercentage = ((colorData.count / moduleData.total) * 100).toFixed(1)}
-                                  
-                                  <div class="px-3 py-2 bg-slate-800/20 rounded hover:bg-slate-800/40 transition-colors">
+
+                                  <div class="px-3 py-2 bg-zinc-50 dark:bg-[#111111] rounded-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
                                     <div class="flex items-center justify-between">
                                       <div class="flex items-center gap-2">
-                                        <div 
-                                          class="w-3 h-3 rounded-full border-2 border-slate-600 shadow-sm"
+                                        <div
+                                          class="w-3 h-3 rounded-full border-2 border-zinc-300 dark:border-zinc-700"
                                           style="background-color: {color.toLowerCase()}"
                                         ></div>
-                                        <span class="text-xs font-medium text-slate-400">{color}</span>
+                                        <span class="text-xs font-medium text-zinc-500">{color}</span>
                                       </div>
                                       <!-- ✅ UPDATED: Weight + objects + cost for color -->
                                       <div class="flex items-center gap-3">
-                                        <span class="text-xs font-bold text-blue-400">{(colorData.weight / 1000).toFixed(3)}kg</span>
-                                        <span class="text-xs text-slate-600">{colorData.objects} obj</span>
-                                        <div class="w-12 h-1 bg-slate-700 rounded-full overflow-hidden">
-                                          <div 
-                                            class="h-full bg-gradient-to-r from-green-400 to-emerald-500 transition-all duration-500"
+                                        <span class="text-xs font-medium text-blue-600 dark:text-blue-400">{(colorData.weight / 1000).toFixed(3)}kg</span>
+                                        <span class="text-xs text-zinc-500">{colorData.objects} obj</span>
+                                        <div class="w-12 h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                          <div
+                                            class="h-full bg-green-500 transition-all duration-500"
                                             style="width: {colorPercentage}%"
                                           ></div>
                                         </div>
-                                        <span class="text-xs font-bold text-green-400 min-w-[40px] text-right">{colorData.count}</span>
+                                        <span class="text-xs font-medium text-green-600 dark:text-green-400 min-w-10 text-right">{colorData.count}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -1246,11 +1325,11 @@
           </div>
         {:else}
           <div class="text-center py-12">
-            <svg class="w-16 h-16 mx-auto text-slate-700 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-16 h-16 mx-auto text-zinc-200 dark:text-zinc-700 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
             </svg>
-            <p class="text-slate-500 text-lg font-medium">No prints found</p>
-            <p class="text-slate-600 text-sm mt-1">{getTimeRangeLabel(selectedTimeRange)}</p>
+            <p class="text-zinc-500 text-lg font-medium">No prints found</p>
+            <p class="text-zinc-500 text-sm mt-1">{getTimeRangeLabel(selectedTimeRange)}</p>
           </div>
         {/if}
       </div>
@@ -1259,84 +1338,84 @@
     <!-- Charts Grid -->
     <div class="grid grid-cols-2 gap-6 mb-6">
       <!-- Print History Line Chart -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
         <div bind:this={printHistoryChart} style="width: 100%; height: 400px;"></div>
       </div>
-      
+
       <!-- Material Usage Chart -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
         <div bind:this={materialUsageChart} style="width: 100%; height: 400px;"></div>
       </div>
-      
+
       <!-- Success Rate Pie Chart -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
         <div bind:this={successRateChart} style="width: 100%; height: 400px;"></div>
       </div>
-      
+
       <!-- Top Modules Bar Chart -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
         <div bind:this={topModulesChart} style="width: 100%; height: 400px;"></div>
       </div>
-      
+
       <!-- Failure Reasons (if any failures exist) -->
       {#if data.stats.failureReasons.length > 0}
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+        <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
           <div bind:this={failureReasonsChart} style="width: 100%; height: 400px;"></div>
         </div>
       {/if}
-      
+
       <!-- Printer Utilization -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
         <div bind:this={printerUtilizationChart} style="width: 100%; height: 400px;"></div>
       </div>
     </div>
 
     <!-- ✅ NEW: Product Sets Cost Analysis -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl mb-8 overflow-hidden">
-      <div class="p-6 border-b border-slate-800">
+    <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden">
+      <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
         <h2 class="text-xl font-medium">Product Sets Cost Analysis</h2>
-        <p class="text-sm text-slate-400 mt-1">Cost breakdown for complete product sets</p>
+        <p class="text-sm text-zinc-500 mt-1">Cost breakdown for complete product sets</p>
       </div>
 
       <div class="p-6">
         {#if data.stats.setCosts && data.stats.setCosts[selectedTimeRange]}
           {@const currentSets = data.stats.setCosts[selectedTimeRange]}
-          
+
           <div class="grid grid-cols-2 gap-6">
             {#each Object.entries(currentSets) as [setName, setData]}
-              <div class="bg-slate-800/50 rounded-xl p-6">
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-6">
                 <!-- Set Header -->
                 <div class="flex items-center justify-between mb-4">
                   <div class="flex items-center gap-3">
                     <span class="text-3xl">{setData.emoji}</span>
                     <div>
-                      <h3 class="text-lg font-medium text-white">{setName}</h3>
-                      <p class="text-xs text-slate-400">
+                      <h3 class="text-lg font-medium text-zinc-900 dark:text-zinc-50">{setName}</h3>
+                      <p class="text-xs text-zinc-500">
                         {setData.possibleSets === Infinity ? 0 : setData.possibleSets} complete sets produced
                       </p>
                     </div>
                   </div>
                   <div class="text-right">
-                    <p class="text-sm text-slate-400">Cost per Set</p>
-                    <p class="text-2xl font-bold text-green-400">
+                    <p class="text-sm text-zinc-500">Cost per Set</p>
+                    <p class="text-2xl font-medium text-green-600 dark:text-green-400">
                       ${setData.possibleSets > 0 ? setData.costPerSet.toFixed(2) : '0.00'}
                     </p>
                   </div>
                 </div>
 
                 <!-- Components Breakdown -->
-                <div class="space-y-3 border-t border-slate-700 pt-4">
+                <div class="space-y-3 border-t border-zinc-200 dark:border-[#262626] pt-4">
                   {#each Object.entries(setData.components) as [componentName, componentData]}
-                    <div class="bg-slate-700/30 rounded-lg p-3">
+                    <div class="bg-zinc-200 dark:bg-zinc-700 rounded-lg p-3">
                       <div class="flex items-center justify-between mb-2">
-                        <span class="text-sm font-medium text-slate-200 capitalize">
+                        <span class="text-sm font-medium text-zinc-700 dark:text-zinc-300 capitalize">
                           {componentData.quantity}x {componentName}
                         </span>
-                        <span class="text-sm text-green-400">
+                        <span class="text-sm text-green-600 dark:text-green-400">
                           ${(componentData.costPerObject * componentData.quantity).toFixed(2)}
                         </span>
                       </div>
-                      <div class="flex items-center justify-between text-xs text-slate-500">
+                      <div class="flex items-center justify-between text-xs text-zinc-500">
                         <span>${componentData.costPerObject.toFixed(3)}/object</span>
                         <span>{componentData.objectsProduced} objects produced</span>
                       </div>
@@ -1345,15 +1424,15 @@
                 </div>
 
                 <!-- Total Cost -->
-                <div class="mt-4 pt-4 border-t border-slate-700 flex items-center justify-between">
-                  <span class="text-sm text-slate-400">Total Material Cost</span>
-                  <span class="text-lg font-bold text-white">${setData.totalCost.toFixed(2)}</span>
+                <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-[#262626] flex items-center justify-between">
+                  <span class="text-sm text-zinc-500">Total Material Cost</span>
+                  <span class="text-lg font-medium text-zinc-900 dark:text-zinc-50">${setData.totalCost.toFixed(2)}</span>
                 </div>
               </div>
             {/each}
           </div>
         {:else}
-          <p class="text-center text-slate-500">No set data available</p>
+          <p class="text-center text-zinc-500">No set data available</p>
         {/if}
       </div>
     </div>
@@ -1371,7 +1450,7 @@
       transform: translateY(0);
     }
   }
-  
+
   .animate-fade-in {
     animation: fade-in 0.3s ease-out;
   }

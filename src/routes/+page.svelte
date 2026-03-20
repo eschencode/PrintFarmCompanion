@@ -6,9 +6,9 @@
   import { enhance } from '$app/forms';
   import { onMount } from 'svelte';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
-  
+
   export let data: PageData;
-  
+
   let selectedPrinter: any = null;
   let showSpoolSelector: boolean = false;
   let showModuleSelector: boolean = false;
@@ -18,9 +18,9 @@
   let selectedFailureReason: string = ''; // ✅ This stores "deduct" or "keep"
   let customFailureReason: string = ''; // ✅ This stores the actual failure reason text
   let showCustomInput: boolean = false; // ✅ NEW: Track if "Custom" was selected
-  
+
   $: fileHandlerState = $fileHandlerStore;
-  
+
   async function openFileLocally(filePath: string, moduleName: string, printerId: number) {
     return await fileHandlerStore.openFile(filePath, moduleName, printerId);
   }
@@ -40,7 +40,7 @@
   function selectPrinter(printer: any) {
     selectedPrinter = printer;
   }
-  
+
   function closePrinterModal() {
     selectedPrinter = null;
     showSpoolSelector = false;
@@ -143,7 +143,7 @@
   function handleKeydown(event: KeyboardEvent) {
     // Only handle if no modal is open
     if (selectedPrinter) return;
-    
+
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
       event.preventDefault();
       nextGrid();
@@ -192,16 +192,16 @@
     if (Math.abs(event.deltaX) > Math.abs(event.deltaY) && Math.abs(event.deltaX) > 1) {
       event.preventDefault();
       event.stopPropagation();
-      
+
       isSwiping = true;
-      
+
       // Accumulate the swipe
       accumulatedDelta += event.deltaX;
-      
+
       // Check if we can navigate in that direction
       const canGoNext = currentGridIndex < allGrids.length - 1;
       const canGoPrev = currentGridIndex > 0;
-      
+
       // Only allow offset if we can navigate that direction
       if (accumulatedDelta > 0 && canGoNext) {
         // Swiping left (going to next) - show black on right
@@ -213,10 +213,10 @@
         // Can't navigate, no offset
         swipeOffset = 0;
       }
-      
+
       // Clear existing timeout
       if (resetTimeout) clearTimeout(resetTimeout);
-      
+
       // Check if we crossed threshold - switch immediately!
       if (Math.abs(accumulatedDelta) > SWIPE_THRESHOLD) {
         if (accumulatedDelta > 0 && canGoNext) {
@@ -230,7 +230,7 @@
         isSwiping = false;
         return;
       }
-      
+
       // Reset after gesture ends
       resetTimeout = setTimeout(() => {
         isSwiping = false;
@@ -246,7 +246,7 @@
   onMount(() => {
     window.addEventListener('keydown', handleKeydown);
     document.addEventListener('wheel', handleWheel, { passive: false });
-    
+
     return () => {
       window.removeEventListener('keydown', handleKeydown);
       document.removeEventListener('wheel', handleWheel);
@@ -275,12 +275,12 @@
   function getLastPrintJob(printerId: number) {
     if (!data.printJobs || data.printJobs.length === 0) return null;
 
-    const completedJobs = data.printJobs.filter((job: any) => 
+    const completedJobs = data.printJobs.filter((job: any) =>
       job.printer_id === printerId && job.status !== 'printing'
     );
-    
+
     if (completedJobs.length === 0) return null;
-    
+
     // Sort by end_time descending and return the most recent
     return completedJobs.sort((a: any, b: any) => b.end_time - a.end_time)[0];
   }
@@ -293,7 +293,7 @@
       anySpoolPrintable: [],
       anySpoolInsufficientMaterial: []
     };
-    
+
     const loadedSpool = getLoadedSpool(selectedPrinter.loaded_spool_id);
     if (!loadedSpool) return {
       compatiblePrintable: [],
@@ -370,7 +370,7 @@
 	        showSpoolSelector = true;
         return;
     }
- 
+
     try {
         // Call AI suggestion endpoint (may return object or primitive)
         const resp = await fetch(
@@ -378,7 +378,7 @@
         );
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const body = await resp.json();
-        
+
         // Normalize into suggestion object or null
         let suggestion = null;
         if (body === null) {
@@ -398,7 +398,7 @@
             suggestion = { preset_id: id, preset_name: '', reason: '' };
           }
         }
-        
+
         suggestedSpoolSuggestion = suggestion;
         if (suggestion) selectedPresetId = suggestion.preset_id;
     } catch (err) {
@@ -485,9 +485,9 @@
 
 </script>
 
-<div 
+<div
   bind:this={mainContainer}
-  class="h-screen w-screen bg-black p-6 overflow-hidden"
+  class="h-screen w-screen bg-white dark:bg-[#0a0a0a] p-6 overflow-hidden"
   ontouchstart={handleTouchStart}
   ontouchend={handleTouchEnd}
   role="region"
@@ -496,15 +496,15 @@
   <!-- Header -->
   <div class="mb-6 flex justify-between items-center">
     <div class="flex items-center gap-4">
-      <h1 class="text-3xl font-light text-white tracking-wide">Print Farm</h1>
+      <h1 class="text-3xl font-light text-zinc-900 dark:text-zinc-50 tracking-wide">Print Farm</h1>
       {#if allGrids.length > 1}
-        <span class="text-sm text-slate-500 font-light">
+        <span class="text-sm text-zinc-500 font-light">
           {currentGrid?.name || 'Dashboard'}
         </span>
       {/if}
     </div>
     <div class="flex items-center gap-4">
-      <div class="text-xs text-slate-500 font-light">
+      <div class="text-xs text-zinc-500 font-light">
         {data.printers.length} Printers • {data.activePrintJobs.length} Active
       </div>
     </div>
@@ -513,29 +513,29 @@
   <!-- Swipeable Grid Container -->
   <div class="relative overflow-hidden h-[calc(100vh-120px)]">
     <!-- Current Grid (with swipe transform) -->
-    <div 
+    <div
       class="absolute inset-0 ease-out"
       class:transition-transform={!isSwiping}
       class:duration-300={!isSwiping}
       style="transform: translateX({swipeOffset}px);"
     >
       <!-- Dynamic Grid -->
-      <div 
+      <div
         class="grid gap-4 h-full"
         style="grid-template-columns: repeat({gridCols}, minmax(0, 1fr)); grid-template-rows: repeat({gridRows}, minmax(0, 1fr));"
       >
-    
+
     {#each gridLayout as cell, i}
-      
+
       {#if cell.type === 'printer'}
         {@const printer = getPrinterForPosition(cell.printerId)}
-        
+
         {#if printer}
           <!-- Active Printer Card -->
           <button
             onclick={() => selectPrinter(printer)}
-            class="group relative bg-slate-900/50 border border-slate-800 
-                   rounded-xl p-2 hover:border-slate-700 hover:bg-slate-900/80 
+            class="group relative bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626]
+                   rounded-lg p-2 hover:border-zinc-200 dark:hover:border-[#262626] hover:bg-zinc-50 dark:hover:bg-zinc-800
                    transition-all duration-300 hover:scale-[1.02]
                    flex flex-col items-center justify-center overflow-hidden min-h-0"
           >
@@ -560,11 +560,11 @@
                   // Module is compatible if: no preset preference OR preset matches
                   return !moduleHasPresetPreference || presetMatches;
                 })}
-                {@const minModuleWeight = compatibleModules.length > 0 
-                  ? Math.min(...compatibleModules.map((m: any) => m.expected_weight)) 
+                {@const minModuleWeight = compatibleModules.length > 0
+                  ? Math.min(...compatibleModules.map((m: any) => m.expected_weight))
                   : Infinity}
-                {@const maxPrintsPossible = minModuleWeight > 0 && minModuleWeight !== Infinity 
-                  ? Math.floor(remainingWeight / minModuleWeight) 
+                {@const maxPrintsPossible = minModuleWeight > 0 && minModuleWeight !== Infinity
+                  ? Math.floor(remainingWeight / minModuleWeight)
                   : 0}
                 {#if !loadedSpoolForDot}
                   <!-- No spool loaded - red indicator -->
@@ -580,41 +580,41 @@
                   <div class="w-2 h-2 bg-green-500 rounded-full"></div>
                 {/if}
               {:else}
-                <div class="w-2 h-2 bg-slate-600 rounded-full"></div>
+                <div class="w-2 h-2 bg-zinc-300 dark:bg-zinc-600 rounded-full"></div>
               {/if}
             </div>
 
             <!-- Printer Image - scales with container -->
             <div class="flex-1 flex items-center justify-center min-h-0 w-full group-hover:scale-105 transition-transform">
-              <img 
-                src={getPrinterImage(printer.model)} 
+              <img
+                src={getPrinterImage(printer.model)}
                 alt="Printer"
                 class="max-h-full max-w-full object-contain opacity-90 group-hover:opacity-100 transition-opacity"
               />
             </div>
 
             <!-- Printer Name & Progress - compact for smaller cells -->
-            <div class="w-full text-center border-t border-slate-800/50 pt-1 mt-1 min-h-0 flex-shrink-0">
-              <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white truncate px-1">{printer.name}</h3>
-              <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">
+            <div class="w-full text-center border-t border-zinc-200 dark:border-[#262626] pt-1 mt-1 min-h-0 flex-shrink-0">
+              <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-50 truncate px-1">{printer.name}</h3>
+              <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-zinc-500 font-light">
                 {#if printer.status === 'printing'}
-                  <span class="text-blue-400">Printing</span>
+                  <span class="text-blue-600 dark:text-blue-400">Printing</span>
                 {:else if printer.status === 'IDLE'}
-                  <span class="text-green-400">Idle</span>
+                  <span class="text-green-600 dark:text-green-400">Idle</span>
                 {:else}
-                  <span class="text-slate-500">{printer.status}</span>
+                  <span class="text-zinc-500">{printer.status}</span>
                 {/if}
               </p>
-              
+
               <!-- Progress Bar for Active Prints -->
               {#if printer.status === 'printing'}
                 {@const activePrint = getActivePrintJob(Number(printer.id))}
                 {#if activePrint}
                   {@const progress = getProgress(Number(activePrint.start_time), Number(activePrint.expected_time))}
                   <div class="mt-1 px-1">
-                    <div class="w-full bg-slate-700/50 rounded-full h-1 overflow-hidden">
-                      <div 
-                        class="{progress >= 100 ? 'bg-violet-500' : 'bg-blue-500'} h-full rounded-full transition-all duration-300" 
+                    <div class="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-1 overflow-hidden">
+                      <div
+                        class="{progress >= 100 ? 'bg-violet-500' : 'bg-blue-500'} h-full rounded-full transition-all duration-300"
                         style="width: {Math.min(progress, 100)}%"
                       ></div>
                     </div>
@@ -625,9 +625,9 @@
           </button>
         {:else}
           <!-- Empty Printer Slot -->
-          <div class="bg-slate-950/30 border border-slate-900/50 border-dashed
-                      rounded-xl p-2 flex items-center justify-center overflow-hidden">
-            <div class="text-center text-slate-700">
+          <div class="bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] border-dashed
+                      rounded-lg p-2 flex items-center justify-center overflow-hidden">
+            <div class="text-center text-zinc-200 dark:text-zinc-700">
               <div class="text-[clamp(1rem,3vw,2rem)] opacity-30">📦</div>
               <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] font-light">Empty</p>
             </div>
@@ -638,87 +638,87 @@
         <!-- Settings Card -->
         <a
           href="/settings"
-          class="group bg-slate-900/50 border border-slate-800 
-                 rounded-xl p-2 hover:border-violet-900/50 hover:bg-slate-900/80
+          class="group bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626]
+                 rounded-lg p-2 hover:border-violet-900/50 hover:bg-zinc-50 dark:hover:bg-zinc-800
                  transition-all duration-300 hover:scale-[1.02]
                  flex flex-col items-center justify-center overflow-hidden"
         >
           <div class="text-[clamp(1.5rem,4vw,3rem)] opacity-70 group-hover:opacity-100 group-hover:rotate-90 transition-all duration-500">
             ⚙️
           </div>
-          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white mt-1">Settings</h3>
-          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">Configure</p>
+          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-50 mt-1">Settings</h3>
+          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-zinc-500 font-light">Configure</p>
         </a>
 
       {:else if cell.type === 'stats'}
         <!-- Stats Card -->
         <a
           href="/stats"
-          class="group bg-slate-900/50 border border-slate-800 
-                 rounded-xl p-2 hover:border-emerald-900/50 hover:bg-slate-900/80
+          class="group bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626]
+                 rounded-lg p-2 hover:border-emerald-900/50 hover:bg-zinc-50 dark:hover:bg-zinc-800
                  transition-all duration-300 hover:scale-[1.02]
                  flex flex-col items-center justify-center overflow-hidden"
         >
           <div class="text-[clamp(1.5rem,4vw,3rem)] opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
             📈
           </div>
-          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white mt-1">Stats</h3>
-          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">Inspect Data</p>
+          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-50 mt-1">Stats</h3>
+          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-zinc-500 font-light">Inspect Data</p>
         </a>
 
       {:else if cell.type === 'storage'}
         <!-- Storage Card -->
         <a
           href="/storage"
-          class="group bg-slate-900/50 border border-slate-800 
-                 rounded-xl p-2 hover:border-amber-900/50 hover:bg-slate-900/80
+          class="group bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626]
+                 rounded-lg p-2 hover:border-amber-900/50 hover:bg-zinc-50 dark:hover:bg-zinc-800
                  transition-all duration-300 hover:scale-[1.02]
                  flex flex-col items-center justify-center overflow-hidden"
         >
           <div class="text-[clamp(1.5rem,4vw,3rem)] opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
             📦
           </div>
-          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white mt-1">Storage</h3>
-          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">Inventory</p>
+          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-50 mt-1">Storage</h3>
+          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-zinc-500 font-light">Inventory</p>
         </a>
 
       {:else if cell.type === 'spools'}
         <!-- Materials/Spools Card -->
         <a
           href="/spools"
-          class="group bg-slate-900/50 border border-slate-800 
-                 rounded-xl p-2 hover:border-orange-900/50 hover:bg-slate-900/80
+          class="group bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626]
+                 rounded-lg p-2 hover:border-orange-900/50 hover:bg-zinc-50 dark:hover:bg-zinc-800
                  transition-all duration-300 hover:scale-[1.02]
                  flex flex-col items-center justify-center overflow-hidden"
         >
           <div class="text-[clamp(1.5rem,4vw,3rem)] opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
             🎨
           </div>
-          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white mt-1">Materials</h3>
-          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">{data.spools.length} spools</p>
+          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-50 mt-1">Materials</h3>
+          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-zinc-500 font-light">{data.spools.length} spools</p>
         </a>
 
       {:else if cell.type === 'inventory'}
         <!-- Inventory Card -->
         <a
           href="/inventory"
-          class="group bg-slate-900/50 border border-slate-800 
-                 rounded-xl p-2 hover:border-green-900/50 hover:bg-slate-900/80
+          class="group bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626]
+                 rounded-lg p-2 hover:border-green-900/50 hover:bg-zinc-50 dark:hover:bg-zinc-800
                  transition-all duration-300 hover:scale-[1.02]
                  flex flex-col items-center justify-center overflow-hidden"
         >
           <div class="text-[clamp(1.5rem,4vw,3rem)] opacity-70 group-hover:opacity-100 group-hover:scale-110 transition-all">
             🛒
           </div>
-          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-white mt-1">Inventory</h3>
-          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-slate-500 font-light">Products</p>
+          <h3 class="text-[clamp(0.5rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-50 mt-1">Inventory</h3>
+          <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] text-zinc-500 font-light">Products</p>
         </a>
 
       {:else}
         <!-- Empty/Unknown Slot -->
-        <div class="bg-slate-950/30 border border-slate-900/50 border-dashed
-                    rounded-xl p-2 flex items-center justify-center overflow-hidden">
-          <div class="text-center text-slate-700">
+        <div class="bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] border-dashed
+                    rounded-lg p-2 flex items-center justify-center overflow-hidden">
+          <div class="text-center text-zinc-200 dark:text-zinc-700">
             <div class="text-[clamp(1rem,3vw,2rem)] opacity-30">❓</div>
             <p class="text-[clamp(0.4rem,1.5vw,0.75rem)] font-light">Empty</p>
           </div>
@@ -735,10 +735,10 @@
   {#if allGrids.length > 1}
     <div class="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 px-4 py-2">
       <!-- Left Arrow -->
-      <button 
+      <button
         onclick={prevGrid}
         disabled={currentGridIndex === 0}
-        class="p-1.5 rounded-full text-slate-600 hover:text-slate-400 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+        class="p-1.5 rounded-full text-zinc-300 dark:text-zinc-600 hover:text-zinc-500 dark:hover:text-zinc-300 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
         aria-label="Previous grid"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -751,17 +751,17 @@
         {#each allGrids as grid, i}
           <button
             onclick={() => goToGrid(i)}
-            class="w-1.5 h-1.5 rounded-full transition-all duration-300 {i === currentGridIndex ? 'bg-slate-400 scale-125' : 'bg-slate-700 hover:bg-slate-600'}"
+            class="w-1.5 h-1.5 rounded-full transition-all duration-300 {i === currentGridIndex ? 'bg-zinc-500 scale-125' : 'bg-zinc-200 dark:bg-[#262626] hover:bg-zinc-300 dark:hover:bg-zinc-600'}"
             aria-label="Go to grid {grid.name}"
           ></button>
         {/each}
       </div>
 
       <!-- Right Arrow -->
-      <button 
+      <button
         onclick={nextGrid}
         disabled={currentGridIndex === allGrids.length - 1}
-        class="p-1.5 rounded-full text-slate-600 hover:text-slate-400 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+        class="p-1.5 rounded-full text-zinc-300 dark:text-zinc-600 hover:text-zinc-500 dark:hover:text-zinc-300 transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
         aria-label="Next grid"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -776,9 +776,9 @@
 {#if selectedPrinter && !showSpoolSelector && !showModuleSelector}
   {@const activePrintJob = getActivePrintJob(selectedPrinter.id)}
   {@const loadedSpool = getLoadedSpool(selectedPrinter.loaded_spool_id)}
-  
+
   <div
-    class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-6 border-0 cursor-default"
+    class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6 border-0 cursor-default"
     onclick={closePrinterModal}
     onkeydown={(e) => e.key === 'Escape' && closePrinterModal()}
     role="button"
@@ -787,8 +787,8 @@
   >
     <!-- svelte-ignore a11y_interactive_supports_focus -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div 
-      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+    <div
+      class="bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto"
       onclick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
@@ -797,12 +797,12 @@
         <!-- Modal Header -->
         <div class="flex justify-between items-start mb-6">
           <div>
-            <h2 class="text-2xl font-medium text-white mb-1">{selectedPrinter.name}</h2>
-            <p class="text-sm text-slate-400">{selectedPrinter.model}</p>
+            <h2 class="text-2xl font-medium text-zinc-900 dark:text-zinc-50 mb-1">{selectedPrinter.name}</h2>
+            <p class="text-sm text-zinc-500">{selectedPrinter.model}</p>
           </div>
-          <button 
+          <button
             onclick={closePrinterModal}
-            class="text-slate-400 hover:text-white transition-colors"
+            class="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors"
             aria-label="Close modal"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -814,12 +814,12 @@
         <!-- Status Badge -->
         <div class="mb-6">
           {#if selectedPrinter.status === 'printing'}
-            <span class="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-sm">
+            <span class="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 rounded-full text-sm">
               <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
               Printing
             </span>
           {:else if selectedPrinter.status === 'IDLE'}
-            <span class="inline-flex items-center gap-2 px-3 py-1 bg-green-500/20 text-green-400 rounded-full text-sm">
+            <span class="inline-flex items-center gap-2 px-3 py-1 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 rounded-full text-sm">
               <div class="w-2 h-2 bg-green-500 rounded-full"></div>
               Idle
             </span>
@@ -831,24 +831,24 @@
           <!-- PRINTING STATUS MENU -->
           <div class="space-y-4">
             <!-- Module Name -->
-            <div class="bg-slate-800/50 rounded-xl p-4">
-              <p class="text-xs text-slate-500 mb-1">Print Module</p>
-              <p class="text-xl text-white font-medium">{activePrintJob.module_name}</p>
+            <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4">
+              <p class="text-xs text-zinc-500 mb-1">Print Module</p>
+              <p class="text-xl text-zinc-900 dark:text-zinc-50 font-medium">{activePrintJob.module_name}</p>
             </div>
 
             <!-- Print Progress -->
-            <div class="bg-slate-800/50 rounded-xl p-4">
-              <div class="flex justify-between text-sm text-slate-400 mb-2">
+            <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4">
+              <div class="flex justify-between text-sm text-zinc-500 mb-2">
                 <span>Progress</span>
-                <span class="text-white font-medium">{getProgress(activePrintJob.start_time, activePrintJob.expected_time)}%</span>
+                <span class="text-zinc-900 dark:text-zinc-50 font-medium">{getProgress(activePrintJob.start_time, activePrintJob.expected_time)}%</span>
               </div>
-              <div class="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
-                <div 
-                  class="bg-blue-500 h-full rounded-full transition-all duration-300" 
+              <div class="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-2 overflow-hidden">
+                <div
+                  class="bg-blue-500 h-full rounded-full transition-all duration-300"
                   style="width: {getProgress(activePrintJob.start_time, activePrintJob.expected_time)}%"
                 ></div>
               </div>
-              <div class="flex justify-between text-xs text-slate-500 mt-2">
+              <div class="flex justify-between text-xs text-zinc-500 mt-2">
                 <span>{getElapsedTime(activePrintJob.start_time)} elapsed</span>
                 <span>{getRemainingTime(activePrintJob.start_time, activePrintJob.expected_time)} remaining</span>
               </div>
@@ -856,76 +856,76 @@
 
             <!-- Time Info -->
             <div class="grid grid-cols-2 gap-3">
-              <div class="bg-slate-800/50 rounded-lg p-3">
-                <p class="text-xs text-slate-500 mb-1">Total Print Time</p>
-                <p class="text-lg text-white font-medium">{formatTime(activePrintJob.expected_time)}</p>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-3">
+                <p class="text-xs text-zinc-500 mb-1">Total Print Time</p>
+                <p class="text-lg text-zinc-900 dark:text-zinc-50 font-medium">{formatTime(activePrintJob.expected_time)}</p>
               </div>
-              <div class="bg-slate-800/50 rounded-lg p-3">
-                <p class="text-xs text-slate-500 mb-1">Remaining Time</p>
-                <p class="text-lg text-white font-medium">{getRemainingTime(activePrintJob.start_time, activePrintJob.expected_time)}</p>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-3">
+                <p class="text-xs text-zinc-500 mb-1">Remaining Time</p>
+                <p class="text-lg text-zinc-900 dark:text-zinc-50 font-medium">{getRemainingTime(activePrintJob.start_time, activePrintJob.expected_time)}</p>
               </div>
             </div>
 
             <!-- Spool Weight Info -->
             {#if loadedSpool}
-              <div class="bg-slate-800/50 rounded-xl p-4">
-                <p class="text-xs text-slate-500 mb-3">Spool Weight</p>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4">
+                <p class="text-xs text-zinc-500 mb-3">Spool Weight</p>
                 <div class="grid grid-cols-2 gap-4">
                   <div>
-                    <p class="text-xs text-slate-400 mb-1">Before Print</p>
-                    <p class="text-xl text-white font-medium">{loadedSpool.remaining_weight}g</p>
+                    <p class="text-xs text-zinc-500 mb-1">Before Print</p>
+                    <p class="text-xl text-zinc-900 dark:text-zinc-50 font-medium">{loadedSpool.remaining_weight}g</p>
                   </div>
                   <div>
-                    <p class="text-xs text-slate-400 mb-1">Expected After</p>
-                    <p class="text-xl text-blue-400 font-medium">{Math.max(0, loadedSpool.remaining_weight - activePrintJob.expected_weight)}g</p>
+                    <p class="text-xs text-zinc-500 mb-1">Expected After</p>
+                    <p class="text-xl text-blue-600 dark:text-blue-400 font-medium">{Math.max(0, loadedSpool.remaining_weight - activePrintJob.expected_weight)}g</p>
                   </div>
                 </div>
-                <div class="mt-3 pt-3 border-t border-slate-700/50">
+                <div class="mt-3 pt-3 border-t border-zinc-200 dark:border-[#262626]">
                   <div class="flex justify-between text-xs">
-                    <span class="text-slate-400">Material Usage</span>
+                    <span class="text-zinc-500">Material Usage</span>
                     <span class="text-orange-400 font-medium">{activePrintJob.expected_weight}g</span>
                   </div>
                 </div>
               </div>
             {:else}
-              <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
-                <p class="text-sm text-red-400">No spool loaded</p>
+              <div class="bg-red-50 dark:bg-red-950 border border-red-50 dark:border-red-950 rounded-lg p-4">
+                <p class="text-sm text-red-700 dark:text-red-400">No spool loaded</p>
               </div>
             {/if}
 
             <!-- Action Buttons -->
             <div class="grid grid-cols-2 gap-3 pt-2">
-               <button 
+               <button
                 onclick={handlePrintFailed}
-                class="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 px-4 py-3 rounded-lg transition-colors font-medium"
+                class="w-full bg-red-50 dark:bg-red-950 hover:bg-red-50 dark:hover:bg-red-950 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg transition-colors font-medium"
               >
                 ✗ Print Failed
               </button>
-				
-				<form 
-                method="POST" 
-                action="?/completePrint" 
+
+			<form
+                method="POST"
+                action="?/completePrint"
                 use:enhance={() => {
                   return async ({ result }) => {
                     if (result.type === 'success') {
                       // Only regenerate AI queue if the finished job's module isn't already in the suggested queue
                       try {
                          const finishedModuleId = activePrintJob?.module_id;
-							const queue = selectedPrinter?.suggested_queue;
+						const queue = selectedPrinter?.suggested_queue;
 
-							// Consider "inQueue" true only if there is a matching queue item that is NOT DONE.
-							// If matching items exist but all are DONE, we treat it as not in queue (so we regenerate).
-							const inQueue = Array.isArray(queue) && finishedModuleId != null
-								? queue.some(item => item.module_id === finishedModuleId && item.status !== 'DONE')
-								: false;
+						// Consider "inQueue" true only if there is a matching queue item that is NOT DONE.
+						// If matching items exist but all are DONE, we treat it as not in queue (so we regenerate).
+						const inQueue = Array.isArray(queue) && finishedModuleId != null
+							? queue.some(item => item.module_id === finishedModuleId && item.status !== 'DONE')
+							: false;
 
-							if (!inQueue && selectedPrinter?.id) {
-								const resp = await fetch(`/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`);
-								const queueResult = await resp.json();
-								if (queueResult && Array.isArray(queueResult)) {
-								selectedPrinter.suggested_queue = queueResult;
-								}
+						if (!inQueue && selectedPrinter?.id) {
+							const resp = await fetch(`/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`);
+							const queueResult = await resp.json();
+							if (queueResult && Array.isArray(queueResult)) {
+							selectedPrinter.suggested_queue = queueResult;
 							}
+						}
                       } catch (e) {
                         console.error('Failed to refresh suggested queue:', e);
                       }
@@ -940,15 +940,15 @@
                 <input type="hidden" name="success" value="true" />
                 <input type="hidden" name="actualWeight" value={activePrintJob.expected_weight} />
 
-                <button 
+                <button
                   type="submit"
-                  class="w-full bg-green-500/20 hover:bg-green-500/30 text-green-400 px-4 py-3 rounded-lg transition-colors font-medium"
+                  class="w-full bg-green-50 dark:bg-green-950 hover:bg-green-50 dark:hover:bg-green-950 text-green-700 dark:text-green-400 px-4 py-3 rounded-lg transition-colors font-medium"
                 >
                   ✓ Print Successful
                 </button>
               	</form>
-              
-             
+
+
             </div>
           </div>
 
@@ -956,60 +956,60 @@
           <!-- IDLE STATUS MENU -->
           {@const lastPrintJob = getLastPrintJob(selectedPrinter.id)}
           <div class="space-y-4">
-            
+
             <!-- Loaded Spool Info -->
             {#if loadedSpool}
-              <div class="bg-slate-800/50 rounded-xl p-4">
-                <p class="text-xs text-slate-500 mb-3">Loaded Spool</p>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4">
+                <p class="text-xs text-zinc-500 mb-3">Loaded Spool</p>
                 <div class="space-y-2">
                   <div class="flex justify-between items-center">
-                    <span class="text-sm text-slate-400">Name</span>
-                    <span class="text-base text-white font-medium">
+                    <span class="text-sm text-zinc-500">Name</span>
+                    <span class="text-base text-zinc-900 dark:text-zinc-50 font-medium">
                       {loadedSpool.brand} {loadedSpool.material}
                     </span>
                   </div>
                   <div class="flex justify-between items-center">
-                    <span class="text-sm text-slate-400">Color</span>
-                    <span class="text-base text-white">{loadedSpool.color || 'N/A'}</span>
+                    <span class="text-sm text-zinc-500">Color</span>
+                    <span class="text-base text-zinc-900 dark:text-zinc-50">{loadedSpool.color || 'N/A'}</span>
                   </div>
                   <div class="flex justify-between items-center">
-                    <span class="text-sm text-slate-400">Remaining Weight</span>
-                    <span class="text-lg text-green-400 font-medium">{loadedSpool.remaining_weight}g</span>
+                    <span class="text-sm text-zinc-500">Remaining Weight</span>
+                    <span class="text-lg text-green-600 dark:text-green-400 font-medium">{loadedSpool.remaining_weight}g</span>
                   </div>
                 </div>
               </div>
             {:else}
-              <div class="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4">
-                <p class="text-sm text-orange-400"> No spool loaded</p>
-                <p class="text-xs text-slate-500 mt-1">Load a spool to start printing</p>
+              <div class="bg-orange-500/10 border border-orange-500/20 rounded-lg p-4">
+                <p class="text-sm text-amber-600 dark:text-amber-400"> No spool loaded</p>
+                <p class="text-xs text-zinc-500 mt-1">Load a spool to start printing</p>
               </div>
             {/if}
 
             <!-- Last Print Info -->
             {#if lastPrintJob}
-              <div class="bg-slate-800/50 rounded-xl p-4">
-                <p class="text-xs text-slate-500 mb-2">Last Printed Module</p>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4">
+                <p class="text-xs text-zinc-500 mb-2">Last Printed Module</p>
                 <div class="flex justify-between items-center">
-                  <span class="text-base text-white font-medium">{lastPrintJob.module_name || 'Unknown'}</span>
+                  <span class="text-base text-zinc-900 dark:text-zinc-50 font-medium">{lastPrintJob.module_name || 'Unknown'}</span>
                   {#if lastPrintJob.status == 'success'}
-                    <span class="text-green-400 text-xs">✓ Success</span>
+                    <span class="text-green-600 dark:text-green-400 text-xs">✓ Success</span>
                   {:else}
-                    <span class="text-red-400 text-xs">✗ Failed</span>
+                    <span class="text-red-600 dark:text-red-400 text-xs">✗ Failed</span>
                   {/if}
                 </div>
               </div>
             {:else}
-              <div class="bg-slate-800/50 rounded-xl p-4">
-                <p class="text-xs text-slate-500 mb-2">Last Printed Module</p>
-                <p class="text-sm text-slate-600">No previous prints</p>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4">
+                <p class="text-xs text-zinc-500 mb-2">Last Printed Module</p>
+                <p class="text-sm text-zinc-500">No previous prints</p>
               </div>
             {/if}
 
             <!-- Printer Stats -->
-            <div class="bg-slate-800/50 rounded-xl p-4 space-y-2">
+            <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 space-y-2">
               <div class="flex justify-between">
-                <span class="text-slate-400 text-sm">Total Runtime</span>
-                <span class="text-white text-sm">{selectedPrinter.total_hours.toFixed(1)}h</span>
+                <span class="text-zinc-500 text-sm">Total Runtime</span>
+                <span class="text-zinc-900 dark:text-zinc-50 text-sm">{selectedPrinter.total_hours.toFixed(1)}h</span>
               </div>
             </div>
 
@@ -1045,14 +1045,14 @@
       <input type="hidden" name="moduleId" value={nextPrint.module_id} />
       <button
         type="submit"
-        class="w-full text-left bg-green-500/10 border border-green-500/20 rounded-xl p-4 mt-3 hover:bg-green-500/20 transition-colors"
+        class="w-full text-left bg-green-50 dark:bg-green-950 border border-green-50 dark:border-green-950 rounded-lg p-4 mt-3 hover:bg-green-50 dark:hover:bg-green-950 transition-colors"
       >
         <div class="flex items-center gap-3">
           <span class="text-2xl">➡️</span>
           <div>
-            <div class="text-xs text-slate-400 mb-1">Next Suggested Print</div>
-            <div class="text-base text-white font-medium">{nextPrint.module_name}</div>
-            <div class="text-xs text-slate-400">
+            <div class="text-xs text-zinc-500 mb-1">Next Suggested Print</div>
+            <div class="text-base text-zinc-900 dark:text-zinc-50 font-medium">{nextPrint.module_name}</div>
+            <div class="text-xs text-zinc-500">
               {nextPrint.weight_of_print}g • {nextPrint.priority}
             </div>
           </div>
@@ -1063,15 +1063,15 @@
 {/if}
             <!-- Action Buttons -->
             <div class="grid grid-cols-2 gap-3 pt-2">
-              <button 
+              <button
                 onclick={handleLoadSpool}
-                class="bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-3 rounded-lg transition-colors font-medium"
+                class="bg-blue-50 dark:bg-blue-950 hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-700 dark:text-blue-400 px-4 py-3 rounded-lg transition-colors font-medium"
               >
                 Load Spool
               </button>
-              <button 
+              <button
                 onclick={handleStartPrint}
-                class="bg-green-500/20 hover:bg-green-500/30 text-green-400 px-4 py-3 rounded-lg transition-colors font-medium"
+                class="bg-green-50 dark:bg-green-950 hover:bg-green-50 dark:hover:bg-green-950 text-green-700 dark:text-green-400 px-4 py-3 rounded-lg transition-colors font-medium"
               >
                 Start Print
               </button>
@@ -1080,8 +1080,8 @@
 
         {:else}
           <!-- Fallback for other statuses -->
-          <div class="bg-slate-800/50 rounded-xl p-4 text-center">
-            <p class="text-slate-400">Status: {selectedPrinter.status}</p>
+          <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 text-center">
+            <p class="text-zinc-500">Status: {selectedPrinter.status}</p>
           </div>
         {/if}
       </div>
@@ -1092,7 +1092,7 @@
 <!-- Spool Selector Modal - UPDATED with sticky footer -->
 {#if selectedPrinter && showSpoolSelector}
   <div
-    class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-6"
+    class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6"
     onclick={closeSpoolSelector}
     onkeydown={(e) => e.key === 'Escape' && closeSpoolSelector()}
     role="button"
@@ -1101,8 +1101,8 @@
   >
     <!-- svelte-ignore a11y_interactive_supports_focus -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div 
-      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col"
+    <div
+      class="bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg max-w-3xl w-full max-h-[90vh] flex flex-col"
       onclick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
@@ -1113,12 +1113,12 @@
           <!-- Header -->
           <div class="flex justify-between items-start mb-6">
             <div>
-              <h2 class="text-2xl font-medium text-white mb-1">Load Spool</h2>
-              <p class="text-sm text-slate-400">Select a spool preset for {selectedPrinter.name}</p>
+              <h2 class="text-2xl font-medium text-zinc-900 dark:text-zinc-50 mb-1">Load Spool</h2>
+              <p class="text-sm text-zinc-500">Select a spool preset for {selectedPrinter.name}</p>
             </div>
-            <button 
+            <button
               onclick={closeSpoolSelector}
-              class="text-slate-400 hover:text-white transition-colors"
+              class="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors"
               aria-label="Close spool selector"
             >
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1132,18 +1132,18 @@
             {@const sugg = suggestedSpoolSuggestion}
             <div class="mb-4 p-4 rounded-lg border border-green-500/20 bg-green-500/6 flex items-start justify-between gap-4">
               <div>
-                <div class="text-xs text-slate-300">Suggested Spool</div>
-                <div class="text-white font-medium">{sugg.preset_name || `Preset #${sugg.preset_id}`}</div>
+                <div class="text-xs text-zinc-700 dark:text-zinc-300">Suggested Spool</div>
+                <div class="text-zinc-900 dark:text-zinc-50 font-medium">{sugg.preset_name || `Preset #${sugg.preset_id}`}</div>
                 {#if sugg.reason}
-                  <div class="text-xs text-slate-400 mt-1">{sugg.reason}</div>
+                  <div class="text-xs text-zinc-500 mt-1">{sugg.reason}</div>
                 {/if}
               </div>
               <div class="flex items-center gap-2">
-              
+
               </div>
             </div>
           {/if}
-          
+
           <!-- Spool Presets Grid -->
           {#if data.spoolPresets && data.spoolPresets.length > 0}
             <div class="grid grid-cols-2 gap-3">
@@ -1151,11 +1151,11 @@
                 <button
                   type="button"
                   onclick={() => selectSpoolPreset(preset.id)}
-                  class="text-left bg-slate-800/50 hover:bg-slate-800 border-2 rounded-xl p-4 transition-all
-                         {selectedPresetId === preset.id ? 'border-blue-500 bg-slate-800' : 'border-transparent'}"
+                  class="text-left bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 border-2 rounded-lg p-4 transition-all
+                         {selectedPresetId === preset.id ? 'border-blue-500 bg-zinc-100 dark:bg-zinc-800' : 'border-transparent'}"
                 >
                   <div class="flex items-start justify-between mb-2">
-                    <h3 class="text-base font-medium text-white">{preset.name}</h3>
+                    <h3 class="text-base font-medium text-zinc-900 dark:text-zinc-50">{preset.name}</h3>
                     {#if selectedPresetId === preset.id}
                       <div class="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
                         <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1165,18 +1165,18 @@
                     {/if}
                   </div>
                   <div class="space-y-1 text-sm">
-                    <p class="text-slate-400">{preset.brand} • {preset.material}</p>
-                    <p class="text-slate-500 {(preset.storage_count || 0) === 0 ? 'text-red-400' : (preset.storage_count || 0) <= 2 ? 'text-amber-400' : ''}">
+                    <p class="text-zinc-500">{preset.brand} • {preset.material}</p>
+                    <p class="text-zinc-500 {(preset.storage_count || 0) === 0 ? 'text-red-600 dark:text-red-400' : (preset.storage_count || 0) <= 2 ? 'text-amber-600 dark:text-amber-400' : ''}">
                       Stock: {preset.storage_count || 0}
                     </p>
-                    <div class="flex justify-between items-center mt-2 pt-2 border-t border-slate-700/50">
-                      <span class="text-slate-500">Weight:</span>
-                      <span class="text-white font-medium">{preset.default_weight}g</span>
+                    <div class="flex justify-between items-center mt-2 pt-2 border-t border-zinc-200 dark:border-[#262626]">
+                      <span class="text-zinc-500">Weight:</span>
+                      <span class="text-zinc-900 dark:text-zinc-50 font-medium">{preset.default_weight}g</span>
                     </div>
                     {#if preset.cost}
                       <div class="flex justify-between items-center">
-                        <span class="text-slate-500">Cost:</span>
-                        <span class="text-green-400">${preset.cost.toFixed(2)}</span>
+                        <span class="text-zinc-500">Cost:</span>
+                        <span class="text-green-600 dark:text-green-400">${preset.cost.toFixed(2)}</span>
                       </div>
                     {/if}
                   </div>
@@ -1184,11 +1184,11 @@
               {/each}
             </div>
           {:else}
-            <div class="bg-slate-800/50 rounded-xl p-8 text-center">
-              <p class="text-slate-400 mb-4">No spool presets available</p>
-              <a 
-                href="/settings" 
-                class="inline-block bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg transition-colors"
+            <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-8 text-center">
+              <p class="text-zinc-500 mb-4">No spool presets available</p>
+              <a
+                href="/settings"
+                class="inline-block bg-blue-50 dark:bg-blue-950 hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-700 dark:text-blue-400 px-4 py-2 rounded-lg transition-colors"
               >
                 Create Spool Preset
               </a>
@@ -1198,28 +1198,28 @@
       </div>
 
       <!-- ✅ STICKY Footer with Action Buttons -->
-      <div class="sticky bottom-0 bg-slate-900 border-t border-slate-800 p-6">
+      <div class="sticky bottom-0 bg-white dark:bg-[#111111] border-t border-zinc-200 dark:border-[#262626] p-6">
         <div class="flex gap-3">
-          <button 
+          <button
             type="button"
             onclick={closeSpoolSelector}
-            class="flex-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-3 rounded-lg transition-colors"
+            class="flex-1 bg-transparent border border-zinc-200 dark:border-[#262626] hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-4 py-3 rounded-lg transition-colors"
           >
             Cancel
           </button>
-          <form 
-            method="POST" 
-            action="?/loadSpool" 
-            class="flex-1" 
+          <form
+            method="POST"
+            action="?/loadSpool"
+            class="flex-1"
             use:enhance={() => {
               return async ({ result }) => {
                 if (result.type === 'success') {
-					// Trigger queue generation after loading spool
-					const response = await fetch(`/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`);
-					const queueResult = await response.json();
-					if (queueResult && Array.isArray(queueResult)) {
-					selectedPrinter.suggested_queue = queueResult;
-					}
+				// Trigger queue generation after loading spool
+				const response = await fetch(`/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`);
+				const queueResult = await response.json();
+				if (queueResult && Array.isArray(queueResult)) {
+				selectedPrinter.suggested_queue = queueResult;
+				}
                   closePrinterModal();
                   // Reload page data
                   window.location.reload();
@@ -1240,11 +1240,11 @@
                 <input type="hidden" name="cost" value={selectedPreset.cost || ''} />
               {/if}
             {/if}
-            <button 
+            <button
               type="submit"
               disabled={!selectedPresetId}
-              class="w-full bg-blue-500 hover:bg-blue-600 text-white px-4 py-3 rounded-lg transition-colors font-medium
-                     disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-500"
+              class="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-3 rounded-lg transition-colors font-medium
+                     disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-zinc-900 dark:disabled:hover:bg-zinc-100"
             >
               Load Selected Spool
             </button>
@@ -1260,9 +1260,9 @@
   {@const categorizedModules = getCategorizedModules()}
   {@const loadedSpool = getLoadedSpool(selectedPrinter.loaded_spool_id)}
   {@const totalPrintable = categorizedModules.compatiblePrintable.length + categorizedModules.anySpoolPrintable.length}
-  
+
   <div
-    class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-6"
+    class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6"
     onclick={closeModuleSelector}
     onkeydown={(e) => e.key === 'Escape' && closeModuleSelector()}
     role="button"
@@ -1271,8 +1271,8 @@
   >
     <!-- svelte-ignore a11y_interactive_supports_focus -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div 
-      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col"
+    <div
+      class="bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg max-w-6xl w-full max-h-[90vh] flex flex-col"
       onclick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
@@ -1283,21 +1283,21 @@
           <!-- Header -->
           <div class="flex justify-between items-start mb-6">
             <div>
-              <h2 class="text-2xl font-medium text-white mb-1">Start Print</h2>
-              <p class="text-sm text-slate-400">Select a module for {selectedPrinter.name}</p>
+              <h2 class="text-2xl font-medium text-zinc-900 dark:text-zinc-50 mb-1">Start Print</h2>
+              <p class="text-sm text-zinc-500">Select a module for {selectedPrinter.name}</p>
               {#if loadedSpool}
                 {@const loadedPreset = data.spoolPresets.find(p => p.id === loadedSpool.preset_id)}
-                <p class="text-xs text-slate-500 mt-1">
+                <p class="text-xs text-zinc-500 mt-1">
                   Using: {loadedSpool.brand} {loadedSpool.material} - {loadedSpool.color} ({loadedSpool.remaining_weight}g)
                   {#if loadedPreset}
-                    <span class="text-blue-400 ml-1">(Preset: {loadedPreset.name})</span>
+                    <span class="text-blue-600 dark:text-blue-400 ml-1">(Preset: {loadedPreset.name})</span>
                   {/if}
                 </p>
               {/if}
             </div>
-            <button 
+            <button
               onclick={closeModuleSelector}
-              class="text-slate-400 hover:text-white transition-colors"
+              class="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors"
               aria-label="Close module selector"
             >
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1307,23 +1307,23 @@
           </div>
 
           {#if selectedPrinter?.suggested_queue && selectedPrinter.suggested_queue.length > 0}
-  <div class="mb-6 bg-gradient-to-r from-green-500/10 to-blue-500/10 border border-green-500/20 rounded-xl p-4">
+  <div class="mb-6 bg-green-50 dark:bg-green-950 border border-green-50 dark:border-green-950 rounded-lg p-4">
     <div class="flex items-start gap-3">
       <div class="text-2xl">📝</div>
       <div class="flex-1">
-        <h3 class="text-white font-medium mb-2 flex items-center gap-2">
+        <h3 class="text-zinc-900 dark:text-zinc-50 font-medium mb-2 flex items-center gap-2">
           Saved Print Queue
         </h3>
         <div class="space-y-2">
           {#each selectedPrinter.suggested_queue as item, i}
             <div class="flex items-center justify-between text-sm">
-              <span class="text-slate-300">
+              <span class="text-zinc-700 dark:text-zinc-300">
                 {i + 1}. {item.module_name}
                 {#if item.status === 'DONE'}
-                  <span class="ml-2 text-green-400 text-xs">✓ Done</span>
+                  <span class="ml-2 text-green-600 dark:text-green-400 text-xs">✓ Done</span>
                 {/if}
               </span>
-              <span class="text-slate-500">
+              <span class="text-zinc-500">
                 {item.weight_of_print}g ({item.priority})
               </span>
             </div>
@@ -1332,10 +1332,10 @@
         <!-- Waste/leftover display -->
         {#if selectedPrinter.suggested_queue.length > 0 && loadedSpool}
           {@const lastPrint = selectedPrinter.suggested_queue[selectedPrinter.suggested_queue.length - 1]}
-          <div class="mt-4 text-xs text-slate-400">
+          <div class="mt-4 text-xs text-zinc-500">
             <span>
-              Waste after queue: 
-              <span class="text-orange-400 font-semibold">
+              Waste after queue:
+              <span class="text-orange-400 font-medium">
                 {lastPrint.spool_weight_after_print}g
               </span>
               / Start: {loadedSpool.remaining_weight}g
@@ -1346,18 +1346,18 @@
     </div>
   </div>
 {/if}
-                 
-					
+
+
 
           <!-- Module Categories -->
           <div class="space-y-6">
-            
-            <!-- Category 1: 🟢 Compatible & Printable (PRIORITY) -->
+
+            <!-- Category 1: Compatible & Printable (PRIORITY) -->
             {#if categorizedModules.compatiblePrintable.length > 0}
               <div>
                 <div class="flex items-center gap-2 mb-3">
                   <div class="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <h3 class="text-sm font-medium text-green-400">
+                  <h3 class="text-sm font-medium text-green-600 dark:text-green-400">
                     Recommended for this Spool ({categorizedModules.compatiblePrintable.length})
                   </h3>
                 </div>
@@ -1367,26 +1367,26 @@
                     <button
                       type="button"
                       onclick={() => selectModule(module.id)}
-                      class="text-left bg-slate-800/50 border-2 rounded-xl p-3 transition-all hover:bg-slate-800 cursor-pointer
-                             {selectedModuleId === module.id ? 'border-green-500 bg-slate-800' : 'border-transparent'}"
+                      class="text-left bg-zinc-100 dark:bg-zinc-800 border-2 rounded-lg p-3 transition-all hover:bg-zinc-100 dark:hover:bg-zinc-700 cursor-pointer
+                             {selectedModuleId === module.id ? 'border-green-500 bg-zinc-100 dark:bg-zinc-800' : 'border-transparent'}"
                     >
                       <!-- Module card content -->
                       {#if module.image_path}
-                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/50 aspect-square flex items-center justify-center">
-                          <img 
-                            src={module.image_path} 
+                        <div class="mb-2 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-700 aspect-square flex items-center justify-center">
+                          <img
+                            src={module.image_path}
                             alt={module.name}
                             class="max-w-full max-h-full object-contain"
                           />
                         </div>
                       {:else}
-                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/50 aspect-square flex items-center justify-center">
+                        <div class="mb-2 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-700 aspect-square flex items-center justify-center">
                           <span class="text-3xl opacity-50">📦</span>
                         </div>
                       {/if}
 
                       <div class="flex items-start justify-between mb-1">
-                        <h4 class="text-sm font-medium text-white">{module.name}</h4>
+                        <h4 class="text-sm font-medium text-zinc-900 dark:text-zinc-50">{module.name}</h4>
                         {#if selectedModuleId === module.id}
                           <div class="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0 ml-1">
                             <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1398,23 +1398,23 @@
 
                       <div class="space-y-0.5 text-xs">
                         {#if modulePreset}
-                          <div class="flex justify-between items-center text-blue-400">
-                            <span class="text-slate-500">Preset:</span>
+                          <div class="flex justify-between items-center text-blue-600 dark:text-blue-400">
+                            <span class="text-zinc-500">Preset:</span>
                             <span>{modulePreset.name}</span>
                           </div>
                         {/if}
                         <div class="flex justify-between items-center">
-                          <span class="text-slate-500">Weight:</span>
-                          <span class="text-white font-medium">{module.expected_weight}g</span>
+                          <span class="text-zinc-500">Weight:</span>
+                          <span class="text-zinc-900 dark:text-zinc-50 font-medium">{module.expected_weight}g</span>
                         </div>
                         <div class="flex justify-between items-center">
-                          <span class="text-slate-500">Time:</span>
-                          <span class="text-slate-400">{formatTime(module.expected_time)}</span>
+                          <span class="text-zinc-500">Time:</span>
+                          <span class="text-zinc-500">{formatTime(module.expected_time)}</span>
                         </div>
                         {#if loadedSpool}
-                          <div class="flex justify-between items-center pt-1 border-t border-slate-700/50">
-                            <span class="text-slate-500">After print:</span>
-                            <span class="text-green-400">{loadedSpool.remaining_weight - module.expected_weight}g</span>
+                          <div class="flex justify-between items-center pt-1 border-t border-zinc-200 dark:border-[#262626]">
+                            <span class="text-zinc-500">After print:</span>
+                            <span class="text-green-600 dark:text-green-400">{loadedSpool.remaining_weight - module.expected_weight}g</span>
                           </div>
                         {/if}
                       </div>
@@ -1424,7 +1424,7 @@
               </div>
             {/if}
 
-            <!-- Category 2: 🟠 Compatible but Insufficient Material -->
+            <!-- Category 2: Compatible but Insufficient Material -->
             {#if categorizedModules.compatibleInsufficientMaterial.length > 0}
               <div>
                 <div class="flex items-center gap-2 mb-3">
@@ -1440,26 +1440,26 @@
                     <button
                       type="button"
                       onclick={() => selectModule(module.id)}
-                      class="text-left bg-slate-800/30 border-2 rounded-xl p-3 transition-all hover:bg-slate-800/50 cursor-pointer
-                             {selectedModuleId === module.id ? 'border-orange-500 bg-slate-800/50' : 'border-transparent'}"
+                      class="text-left bg-zinc-100 dark:bg-zinc-800 border-2 rounded-lg p-3 transition-all hover:bg-zinc-100 dark:hover:bg-zinc-700 cursor-pointer
+                             {selectedModuleId === module.id ? 'border-orange-500 bg-zinc-100 dark:bg-zinc-800' : 'border-transparent'}"
                     >
                       <!-- Module card content -->
                       {#if module.image_path}
-                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/30 aspect-square flex items-center justify-center">
-                          <img 
-                            src={module.image_path} 
+                        <div class="mb-2 rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800 aspect-square flex items-center justify-center">
+                          <img
+                            src={module.image_path}
                             alt={module.name}
                             class="max-w-full max-h-full object-contain opacity-60"
                           />
                         </div>
                       {:else}
-                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/30 aspect-square flex items-center justify-center">
+                        <div class="mb-2 rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800 aspect-square flex items-center justify-center">
                           <span class="text-3xl opacity-30">📦</span>
                         </div>
                       {/if}
 
                       <div class="flex items-start justify-between mb-1">
-                        <h4 class="text-sm font-medium text-white">{module.name}</h4>
+                        <h4 class="text-sm font-medium text-zinc-900 dark:text-zinc-50">{module.name}</h4>
                         {#if selectedModuleId === module.id}
                           <div class="w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0 ml-1">
                             <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1471,17 +1471,17 @@
 
                       <div class="space-y-0.5 text-xs">
                         {#if modulePreset}
-                          <div class="flex justify-between items-center text-blue-400">
-                            <span class="text-slate-500">Preset:</span>
+                          <div class="flex justify-between items-center text-blue-600 dark:text-blue-400">
+                            <span class="text-zinc-500">Preset:</span>
                             <span>{modulePreset.name}</span>
                           </div>
                         {/if}
                         <div class="flex justify-between items-center">
-                          <span class="text-slate-500">Needs:</span>
-                          <span class="text-white font-medium">{module.expected_weight}g</span>
+                          <span class="text-zinc-500">Needs:</span>
+                          <span class="text-zinc-900 dark:text-zinc-50 font-medium">{module.expected_weight}g</span>
                         </div>
                         <div class="flex justify-between items-center">
-                          <span class="text-slate-500">Short by:</span>
+                          <span class="text-zinc-500">Short by:</span>
                           <span class="text-orange-400 font-medium">{shortfall}g</span>
                         </div>
                       </div>
@@ -1494,12 +1494,12 @@
               </div>
             {/if}
 
-            <!-- Category 3: 🔵 Any Spool & Printable -->
+            <!-- Category 3: Any Spool & Printable -->
             {#if categorizedModules.anySpoolPrintable.length > 0}
               <div>
                 <div class="flex items-center gap-2 mb-3">
                   <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  <h3 class="text-sm font-medium text-blue-400">
+                  <h3 class="text-sm font-medium text-blue-600 dark:text-blue-400">
                     Universal Modules ({categorizedModules.anySpoolPrintable.length})
                   </h3>
                 </div>
@@ -1508,26 +1508,26 @@
                     <button
                       type="button"
                       onclick={() => selectModule(module.id)}
-                      class="text-left bg-slate-800/50 border-2 rounded-xl p-3 transition-all hover:bg-slate-800 cursor-pointer
-                             {selectedModuleId === module.id ? 'border-blue-500 bg-slate-800' : 'border-transparent'}"
+                      class="text-left bg-zinc-100 dark:bg-zinc-800 border-2 rounded-lg p-3 transition-all hover:bg-zinc-100 dark:hover:bg-zinc-700 cursor-pointer
+                             {selectedModuleId === module.id ? 'border-blue-500 bg-zinc-100 dark:bg-zinc-800' : 'border-transparent'}"
                     >
                       <!-- Module card content -->
                       {#if module.image_path}
-                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/50 aspect-square flex items-center justify-center">
-                          <img 
-                            src={module.image_path} 
+                        <div class="mb-2 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-700 aspect-square flex items-center justify-center">
+                          <img
+                            src={module.image_path}
                             alt={module.name}
                             class="max-w-full max-h-full object-contain"
                           />
                         </div>
                       {:else}
-                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/50 aspect-square flex items-center justify-center">
+                        <div class="mb-2 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-700 aspect-square flex items-center justify-center">
                           <span class="text-3xl opacity-50">📦</span>
                         </div>
                       {/if}
 
                       <div class="flex items-start justify-between mb-1">
-                        <h4 class="text-sm font-medium text-white">{module.name}</h4>
+                        <h4 class="text-sm font-medium text-zinc-900 dark:text-zinc-50">{module.name}</h4>
                         {#if selectedModuleId === module.id}
                           <div class="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 ml-1">
                             <svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1538,22 +1538,22 @@
                       </div>
 
                       <div class="space-y-0.5 text-xs">
-                        <div class="flex justify-between items-center text-slate-500">
+                        <div class="flex justify-between items-center text-zinc-500">
                           <span>Preset:</span>
-                          <span class="text-slate-600">Any</span>
+                          <span class="text-zinc-500">Any</span>
                         </div>
                         <div class="flex justify-between items-center">
-                          <span class="text-slate-500">Weight:</span>
-                          <span class="text-white font-medium">{module.expected_weight}g</span>
+                          <span class="text-zinc-500">Weight:</span>
+                          <span class="text-zinc-900 dark:text-zinc-50 font-medium">{module.expected_weight}g</span>
                         </div>
                         <div class="flex justify-between items-center">
-                          <span class="text-slate-500">Time:</span>
-                          <span class="text-slate-400">{formatTime(module.expected_time)}</span>
+                          <span class="text-zinc-500">Time:</span>
+                          <span class="text-zinc-500">{formatTime(module.expected_time)}</span>
                         </div>
                         {#if loadedSpool}
-                          <div class="flex justify-between items-center pt-1 border-t border-slate-700/50">
-                            <span class="text-slate-500">After print:</span>
-                            <span class="text-green-400">{loadedSpool.remaining_weight - module.expected_weight}g</span>
+                          <div class="flex justify-between items-center pt-1 border-t border-zinc-200 dark:border-[#262626]">
+                            <span class="text-zinc-500">After print:</span>
+                            <span class="text-green-600 dark:text-green-400">{loadedSpool.remaining_weight - module.expected_weight}g</span>
                           </div>
                         {/if}
                       </div>
@@ -1563,43 +1563,43 @@
               </div>
             {/if}
 
-            <!-- Category 4: ⚫ Any Spool but Insufficient Material -->
+            <!-- Category 4: Any Spool but Insufficient Material -->
             {#if categorizedModules.anySpoolInsufficientMaterial.length > 0}
               <div>
                 <div class="flex items-center gap-2 mb-3">
-                  <div class="w-2 h-2 bg-slate-500 rounded-full"></div>
-                  <h3 class="text-sm font-medium text-slate-400">
+                  <div class="w-2 h-2 bg-zinc-500 rounded-full"></div>
+                  <h3 class="text-sm font-medium text-zinc-500">
                     Universal - Needs More Material ({categorizedModules.anySpoolInsufficientMaterial.length})
                   </h3>
                 </div>
                 <div class="grid grid-cols-3 gap-3">
                   {#each categorizedModules.anySpoolInsufficientMaterial as module}
                     {@const shortfall = module.expected_weight - (loadedSpool?.remaining_weight || 0)}
-                    <div class="text-left bg-slate-800/20 border border-slate-700/30 rounded-xl p-3 opacity-50 cursor-not-allowed">
+                    <div class="text-left bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-3 opacity-50 cursor-not-allowed">
                       <!-- Module card content -->
                       {#if module.image_path}
-                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/20 aspect-square flex items-center justify-center">
-                          <img 
-                            src={module.image_path} 
+                        <div class="mb-2 rounded-lg overflow-hidden bg-zinc-50 dark:bg-[#111111] aspect-square flex items-center justify-center">
+                          <img
+                            src={module.image_path}
                             alt={module.name}
                             class="max-w-full max-h-full object-contain opacity-40"
                           />
                         </div>
                       {:else}
-                        <div class="mb-2 rounded-lg overflow-hidden bg-slate-700/20 aspect-square flex items-center justify-center">
+                        <div class="mb-2 rounded-lg overflow-hidden bg-zinc-50 dark:bg-[#111111] aspect-square flex items-center justify-center">
                           <span class="text-3xl opacity-20">📦</span>
                         </div>
                       {/if}
 
-                      <h4 class="text-sm font-medium text-white mb-1">{module.name}</h4>
+                      <h4 class="text-sm font-medium text-zinc-900 dark:text-zinc-50 mb-1">{module.name}</h4>
                       <div class="space-y-0.5 text-xs">
                         <div class="flex justify-between items-center">
-                          <span class="text-slate-500">Needs:</span>
-                          <span class="text-white">{module.expected_weight}g</span>
+                          <span class="text-zinc-500">Needs:</span>
+                          <span class="text-zinc-900 dark:text-zinc-50">{module.expected_weight}g</span>
                         </div>
                         <div class="flex justify-between items-center">
-                          <span class="text-slate-500">Short by:</span>
-                          <span class="text-slate-400">{shortfall}g</span>
+                          <span class="text-zinc-500">Short by:</span>
+                          <span class="text-zinc-500">{shortfall}g</span>
                         </div>
                       </div>
                     </div>
@@ -1610,11 +1610,11 @@
 
             <!-- No modules message -->
             {#if totalPrintable === 0 && categorizedModules.compatibleInsufficientMaterial.length === 0}
-              <div class="bg-slate-800/50 rounded-xl p-8 text-center">
-                <p class="text-slate-400 mb-4">No compatible modules found</p>
-                <a 
-                  href="/settings" 
-                  class="inline-block bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-4 py-2 rounded-lg transition-colors text-sm"
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-8 text-center">
+                <p class="text-zinc-500 mb-4">No compatible modules found</p>
+                <a
+                  href="/settings"
+                  class="inline-block bg-blue-50 dark:bg-blue-950 hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-700 dark:text-blue-400 px-4 py-2 rounded-lg transition-colors text-sm"
                 >
                   Create Print Module
                 </a>
@@ -1626,19 +1626,19 @@
       </div>
 
       <!-- ✅ STICKY Footer with Action Buttons -->
-      <div class="sticky bottom-0 bg-slate-900 border-t border-slate-800 p-6">
+      <div class="sticky bottom-0 bg-white dark:bg-[#111111] border-t border-zinc-200 dark:border-[#262626] p-6">
         <div class="flex gap-3">
-          <button 
+          <button
             type="button"
             onclick={closeModuleSelector}
-            class="flex-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-3 rounded-lg transition-colors"
+            class="flex-1 bg-transparent border border-zinc-200 dark:border-[#262626] hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-4 py-3 rounded-lg transition-colors"
           >
             Cancel
           </button>
-          <form 
-            method="POST" 
-            action="?/startPrint" 
-            class="flex-1" 
+          <form
+            method="POST"
+            action="?/startPrint"
+            class="flex-1"
             use:enhance={() => {
               return async ({ result }) => {
                 if (result.type === 'success') {
@@ -1648,15 +1648,15 @@
                     ...categorizedModules.anySpoolPrintable
                   ];
                   const selectedModule = allModules.find(m => m.id === selectedModuleId);
-                  
+
                   if (selectedModule && selectedModule.path) {
                     await openFileLocally(
-                      selectedModule.path, 
+                      selectedModule.path,
                       selectedModule.name,
                       selectedPrinter.id
                     );
                   }
-                  
+
                   closePrinterModal();
                   window.location.reload();
                 }
@@ -1667,11 +1667,11 @@
             {#if selectedModuleId}
               <input type="hidden" name="moduleId" value={selectedModuleId} />
             {/if}
-            <button 
+            <button
               type="submit"
               disabled={!selectedModuleId}
-              class="w-full bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-lg transition-colors font-medium
-                     disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-500"
+              class="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-3 rounded-lg transition-colors font-medium
+                     disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-zinc-900 dark:disabled:hover:bg-zinc-100"
             >
               {#if selectedModuleId}
                 {@const allModules = [
@@ -1702,9 +1702,9 @@
 {#if selectedPrinter && showFailureReasonModal}
   {@const activePrintJob = getActivePrintJob(selectedPrinter.id)}
   {@const loadedSpool = getLoadedSpool(selectedPrinter.loaded_spool_id)}
-  
+
   <div
-    class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-6"
+    class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6"
     onclick={closeFailureReasonModal}
     onkeydown={(e) => e.key === 'Escape' && closeFailureReasonModal()}
     role="button"
@@ -1713,8 +1713,8 @@
   >
     <!-- svelte-ignore a11y_interactive_supports_focus -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div 
-      class="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+    <div
+      class="bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto"
       onclick={(e) => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
@@ -1723,12 +1723,12 @@
         <!-- Header -->
         <div class="flex justify-between items-start mb-6">
           <div>
-            <h2 class="text-2xl font-medium text-white mb-1">Print Failed</h2>
-            <p class="text-sm text-slate-400">What went wrong?</p>
+            <h2 class="text-2xl font-medium text-zinc-900 dark:text-zinc-50 mb-1">Print Failed</h2>
+            <p class="text-sm text-zinc-500">What went wrong?</p>
           </div>
-          <button 
+          <button
             onclick={closeFailureReasonModal}
-            class="text-slate-400 hover:text-white transition-colors"
+            class="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50 transition-colors"
             aria-label="Close failure reason selector"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1739,17 +1739,17 @@
 
         <!-- Material Usage Decision -->
         {#if loadedSpool && activePrintJob}
-          <div class="mb-6 bg-slate-800/50 rounded-xl p-4">
-            <p class="text-sm text-slate-400 mb-3">Did the print consume material before failing?</p>
+          <div class="mb-6 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4">
+            <p class="text-sm text-zinc-500 mb-3">Did the print consume material before failing?</p>
             <div class="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onclick={() => selectedFailureReason = 'deduct'}
-                class="text-left bg-slate-700/50 hover:bg-slate-700 border-2 rounded-lg p-3 transition-all
-                       {selectedFailureReason === 'deduct' ? 'border-orange-500 bg-slate-700' : 'border-transparent'}"
+                class="text-left bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 border-2 rounded-lg p-3 transition-all
+                       {selectedFailureReason === 'deduct' ? 'border-orange-500 bg-zinc-200 dark:bg-zinc-700' : 'border-transparent'}"
               >
                 <div class="flex items-start justify-between mb-2">
-                  <span class="text-white text-sm font-medium">Yes, Material Used</span>
+                  <span class="text-zinc-900 dark:text-zinc-50 text-sm font-medium">Yes, Material Used</span>
                   {#if selectedFailureReason === 'deduct'}
                     <div class="w-5 h-5 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0 ml-2">
                       <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1758,7 +1758,7 @@
                     </div>
                   {/if}
                 </div>
-                <p class="text-xs text-slate-500">
+                <p class="text-xs text-zinc-500">
                   Deduct {activePrintJob.expected_weight}g from spool
                 </p>
               </button>
@@ -1766,11 +1766,11 @@
               <button
                 type="button"
                 onclick={() => selectedFailureReason = 'keep'}
-                class="text-left bg-slate-700/50 hover:bg-slate-700 border-2 rounded-lg p-3 transition-all
-                       {selectedFailureReason === 'keep' ? 'border-blue-500 bg-slate-700' : 'border-transparent'}"
+                class="text-left bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 border-2 rounded-lg p-3 transition-all
+                       {selectedFailureReason === 'keep' ? 'border-blue-500 bg-zinc-200 dark:bg-zinc-700' : 'border-transparent'}"
               >
                 <div class="flex items-start justify-between mb-2">
-                  <span class="text-white text-sm font-medium">No, Keep Weight</span>
+                  <span class="text-zinc-900 dark:text-zinc-50 text-sm font-medium">No, Keep Weight</span>
                   {#if selectedFailureReason === 'keep'}
                     <div class="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 ml-2">
                       <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1779,7 +1779,7 @@
                     </div>
                   {/if}
                 </div>
-                <p class="text-xs text-slate-500">
+                <p class="text-xs text-zinc-500">
                   Spool stays at {loadedSpool.remaining_weight}g
                 </p>
               </button>
@@ -1789,7 +1789,7 @@
 
         <!-- ✅ UPDATED: Failure Reasons List -->
         <div class="mb-4">
-          <p class="text-sm text-slate-400 mb-3">What caused the failure?</p>
+          <p class="text-sm text-zinc-500 mb-3">What caused the failure?</p>
           <div class="space-y-2">
             {#each failureReasons as reason}
               <button
@@ -1803,11 +1803,11 @@
                     customFailureReason = reason;
                   }
                 }}
-                class="w-full text-left bg-slate-800/50 hover:bg-slate-800 border-2 rounded-lg p-3 transition-all
-                       {(customFailureReason === reason && !showCustomInput) || (reason === 'Custom' && showCustomInput) ? 'border-red-500 bg-slate-800' : 'border-transparent'}"
+                class="w-full text-left bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 border-2 rounded-lg p-3 transition-all
+                       {(customFailureReason === reason && !showCustomInput) || (reason === 'Custom' && showCustomInput) ? 'border-red-500 bg-zinc-100 dark:bg-zinc-800' : 'border-transparent'}"
               >
                 <div class="flex items-center justify-between">
-                  <span class="text-white text-sm">{reason}</span>
+                  <span class="text-zinc-900 dark:text-zinc-50 text-sm">{reason}</span>
                   {#if (customFailureReason === reason && !showCustomInput) || (reason === 'Custom' && showCustomInput)}
                     <div class="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
                       <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1823,8 +1823,8 @@
 
         <!-- ✅ FIXED: Only show custom input when "Custom" is clicked -->
         {#if showCustomInput}
-          <div class="mb-6 p-4 bg-slate-800/50 rounded-lg">
-            <label for="customReason" class="block text-sm text-slate-400 mb-2">
+          <div class="mb-6 p-4 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
+            <label for="customReason" class="block text-sm text-zinc-500 mb-2">
               Enter custom failure reason:
             </label>
             <input
@@ -1832,7 +1832,7 @@
               type="text"
               bind:value={customFailureReason}
               placeholder="e.g., User cancelled, Testing issue..."
-              class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-red-500"
+              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50"
               autofocus
             />
           </div>
@@ -1840,26 +1840,26 @@
 
         <!-- Action Buttons -->
         <div class="flex gap-3">
-          <button 
+          <button
             type="button"
             onclick={closeFailureReasonModal}
-            class="flex-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-3 rounded-lg transition-colors"
+            class="flex-1 bg-transparent border border-zinc-200 dark:border-[#262626] hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-4 py-3 rounded-lg transition-colors"
           >
             Cancel
           </button>
-          <form 
-            method="POST" 
-            action="?/completePrint" 
+          <form
+            method="POST"
+            action="?/completePrint"
             class="flex-1"
             use:enhance={() => {
               return async ({ result }) => {
                 if (result.type === 'success') {
-					// Trigger queue generation after print failure
-					const response = await fetch(`/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`);
-					const queueResult = await response.json();
-					if (queueResult && Array.isArray(queueResult)) {
-					selectedPrinter.suggested_queue = queueResult;
-					}
+				// Trigger queue generation after print failure
+				const response = await fetch(`/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`);
+				const queueResult = await response.json();
+				if (queueResult && Array.isArray(queueResult)) {
+				selectedPrinter.suggested_queue = queueResult;
+				}
                   closeFailureReasonModal();
                   closePrinterModal();
                   window.location.reload();
@@ -1870,19 +1870,19 @@
             {#if activePrintJob}
               <input type="hidden" name="jobId" value={activePrintJob.id} />
               <input type="hidden" name="success" value="false" />
-              
+
               <!-- Determine actual weight based on user choice -->
               {#if selectedFailureReason === 'deduct'}
                 <input type="hidden" name="actualWeight" value={activePrintJob.expected_weight} />
               {:else}
                 <input type="hidden" name="actualWeight" value="0" />
               {/if}
-              
+
               <!-- Build failure reason string -->
               <input type="hidden" name="failureReason" value={customFailureReason || 'Unknown failure'} />
             {/if}
-            
-            <button 
+
+            <button
               type="submit"
               disabled={!selectedFailureReason || !customFailureReason}
               class="w-full bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-lg transition-colors font-medium
@@ -1898,18 +1898,18 @@
 {/if}
 
 <!-- Status Indicator (Top-right corner) -->
-<div class="fixed top-4 right-4 z-50 flex items-center gap-2 bg-slate-900/80 backdrop-blur-sm border border-slate-800 rounded-lg px-3 py-2">
+<div class="fixed top-4 right-4 z-50 flex items-center gap-2 bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-2">
   {#if fileHandlerState.checking}
     <div class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>
-    <span class="text-xs text-slate-400">Checking...</span>
+    <span class="text-xs text-zinc-500">Checking...</span>
   {:else if fileHandlerState.connected}
     <div class="w-2 h-2 rounded-full bg-green-400"></div>
-    <span class="text-xs text-slate-400">File Handler Online</span>
+    <span class="text-xs text-zinc-500">File Handler Online</span>
   {:else if fileHandlerState.token}
     <div class="w-2 h-2 rounded-full bg-orange-400"></div>
-    <span class="text-xs text-slate-400">File Handler Offline</span>
+    <span class="text-xs text-zinc-500">File Handler Offline</span>
   {:else}
-    <div class="w-2 h-2 rounded-full bg-slate-600"></div>
-    <span class="text-xs text-slate-500">Not Configured</span>
+    <div class="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-600"></div>
+    <span class="text-xs text-zinc-500">Not Configured</span>
   {/if}
 </div>

@@ -49,11 +49,11 @@
 
   // Color helper
   function getColorStyle(color: string | null): string {
-    if (!color) return 'bg-gradient-to-br from-slate-600 to-slate-700';
-    
+    if (!color) return 'bg-zinc-300';
+
     const colorMap: Record<string, string> = {
-      'black': 'bg-gray-900',
-      'white': 'bg-white border border-slate-300',
+      'black': 'bg-zinc-900',
+      'white': 'bg-white border border-zinc-300',
       'red': 'bg-red-500',
       'blue': 'bg-blue-500',
       'green': 'bg-green-500',
@@ -61,15 +61,15 @@
       'orange': 'bg-orange-500',
       'purple': 'bg-purple-500',
       'pink': 'bg-pink-400',
-      'gray': 'bg-gray-500',
-      'grey': 'bg-gray-500',
-      'silver': 'bg-slate-400',
+      'gray': 'bg-zinc-400',
+      'grey': 'bg-zinc-400',
+      'silver': 'bg-zinc-300',
       'gold': 'bg-amber-400',
-      'clear': 'bg-gradient-to-br from-slate-200 to-slate-400',
-      'transparent': 'bg-gradient-to-br from-slate-200 to-slate-400',
+      'clear': 'bg-zinc-200',
+      'transparent': 'bg-zinc-200',
     };
-    
-    return colorMap[color.toLowerCase()] || 'bg-gradient-to-br from-slate-500 to-slate-600';
+
+    return colorMap[color.toLowerCase()] || 'bg-zinc-300';
   }
 
   // Sort presets: in-stock first, then alphabetically
@@ -96,21 +96,21 @@
   <title>Filament Storage | Print Farm Companion</title>
 </svelte:head>
 
-<div class="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6">
+<div class="min-h-screen bg-white dark:bg-[#0a0a0a] text-zinc-900 dark:text-zinc-50 p-6 sm:p-8">
   <div class="max-w-4xl mx-auto">
     <!-- Header -->
-    <div class="flex items-center justify-between mb-6">
+    <div class="flex items-center justify-between mb-8">
       <div>
-        <h1 class="text-2xl font-bold text-slate-100">📦 Filament Storage</h1>
-        <p class="text-slate-400 text-sm mt-1">
-          {totalSpools} spools in stock • {presetsInStock} types available
+        <h1 class="text-2xl font-medium text-zinc-900 dark:text-zinc-50">Filament Storage</h1>
+        <p class="text-zinc-500 text-sm mt-1">
+          {totalSpools} spools in stock · {presetsInStock} types available
         </p>
       </div>
-      <button 
+      <button
         onclick={() => showAddPresetModal = true}
-        class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors flex items-center gap-2"
+        class="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 text-white rounded-md transition-colors flex items-center gap-2 text-sm"
       >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
         </svg>
         New Preset
@@ -118,11 +118,11 @@
     </div>
 
     <!-- Quick Add Section -->
-    <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-4 mb-6">
-      <h2 class="text-sm font-medium text-slate-400 mb-3">Quick Add Stock</h2>
-      <form 
-        method="POST" 
-        action="?/addStock" 
+    <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-4 mb-6">
+      <h2 class="text-sm font-medium text-zinc-500 mb-3">Quick Add Stock</h2>
+      <form
+        method="POST"
+        action="?/addStock"
         use:enhance={() => {
           return async ({ update }) => {
             await update();
@@ -132,11 +132,11 @@
         class="flex flex-wrap items-end gap-3"
       >
         <div class="flex-1 min-w-[200px]">
-          <label class="block text-xs text-slate-500 mb-1">Preset</label>
-          <select 
-            name="presetId" 
+          <label class="block text-xs text-zinc-500 mb-1">Preset</label>
+          <select
+            name="presetId"
             bind:value={quickAddPresetId}
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
           >
             <option value={null}>Select a preset...</option>
             {#each sortedPresets as preset}
@@ -147,19 +147,19 @@
           </select>
         </div>
         <div class="w-24">
-          <label class="block text-xs text-slate-500 mb-1">Quantity</label>
-          <input 
-            type="number" 
-            name="quantity" 
+          <label class="block text-xs text-zinc-500 mb-1">Quantity</label>
+          <input
+            type="number"
+            name="quantity"
             bind:value={quickAddQuantity}
             min="1"
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
           />
         </div>
-        <button 
+        <button
           type="submit"
           disabled={!quickAddPresetId}
-          class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+          class="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white rounded-md transition-colors text-sm"
         >
           Add
         </button>
@@ -167,41 +167,41 @@
     </div>
 
     <!-- Inventory List -->
-    <div class="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
-      <div class="px-4 py-3 border-b border-slate-800">
-        <h2 class="text-sm font-medium text-slate-400">Inventory</h2>
+    <div class="bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-zinc-200 dark:border-[#262626]">
+        <h2 class="text-sm font-medium text-zinc-500">Inventory</h2>
       </div>
-      
+
       {#if sortedPresets.length === 0}
-        <div class="p-8 text-center text-slate-500">
+        <div class="p-8 text-center text-zinc-400 dark:text-zinc-500">
           <p>No presets yet. Create one to start tracking your inventory.</p>
         </div>
       {:else}
-        <div class="divide-y divide-slate-800/50">
+        <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
           {#each sortedPresets as preset}
-            <div class="flex items-center gap-4 px-4 py-3 hover:bg-slate-800/30 transition-colors {(preset.storage_count || 0) === 0 ? 'opacity-50' : ''}">
+            <div class="flex items-center gap-4 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors {(preset.storage_count || 0) === 0 ? 'opacity-40' : ''}">
               <!-- Color indicator -->
-              <div class="w-4 h-4 rounded-full {getColorStyle(preset.color)} shrink-0"></div>
-              
+              <div class="w-3 h-3 rounded-full {getColorStyle(preset.color)} shrink-0"></div>
+
               <!-- Info -->
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
-                  <span class="font-medium text-slate-100 truncate">{preset.name}</span>
-                  <span class="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded">{preset.material}</span>
+                  <span class="font-medium text-zinc-900 dark:text-zinc-50 truncate text-sm">{preset.name}</span>
+                  <span class="text-xs text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-sm">{preset.material}</span>
                 </div>
-                <div class="text-xs text-slate-500 truncate">
+                <div class="text-xs text-zinc-400 dark:text-zinc-500 truncate">
                   {preset.brand}
                   {#if preset.cost}
-                    • ${preset.cost.toFixed(2)}
+                    · ${preset.cost.toFixed(2)}
                   {/if}
-                  • {preset.default_weight}g
+                  · {preset.default_weight}g
                 </div>
               </div>
 
               <!-- Stock count / Edit -->
               {#if editingPresetId === preset.id}
-                <form 
-                  method="POST" 
+                <form
+                  method="POST"
                   action="?/setStock"
                   use:enhance={() => {
                     return async ({ update }) => {
@@ -212,20 +212,20 @@
                   class="flex items-center gap-2"
                 >
                   <input type="hidden" name="presetId" value={preset.id} />
-                  <input 
-                    type="number" 
-                    name="count" 
+                  <input
+                    type="number"
+                    name="count"
                     bind:value={editCount}
                     min="0"
-                    class="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-center text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    class="w-16 bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-sm px-2 py-1 text-center text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
                   />
-                  <button type="submit" class="p-1 text-emerald-400 hover:text-emerald-300">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <button type="submit" class="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                     </svg>
                   </button>
-                  <button type="button" onclick={cancelEdit} class="p-1 text-slate-400 hover:text-slate-300">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <button type="button" onclick={cancelEdit} class="p-1 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
                   </button>
@@ -236,30 +236,30 @@
                   <form method="POST" action="?/removeStock" use:enhance>
                     <input type="hidden" name="presetId" value={preset.id} />
                     <input type="hidden" name="quantity" value="1" />
-                    <button 
+                    <button
                       type="submit"
                       disabled={(preset.storage_count || 0) === 0}
-                      class="w-8 h-8 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      class="w-7 h-7 flex items-center justify-center rounded-sm bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm"
                     >
                       −
                     </button>
                   </form>
-                  
+
                   <!-- Count (clickable to edit) -->
-                  <button 
+                  <button
                     onclick={() => startEdit(preset.id, preset.storage_count || 0)}
-                    class="w-12 h-8 flex items-center justify-center rounded bg-slate-800/50 hover:bg-slate-800 text-lg font-semibold {(preset.storage_count || 0) === 0 ? 'text-slate-500' : (preset.storage_count || 0) <= 2 ? 'text-amber-400' : 'text-slate-100'} transition-colors"
+                    class="w-10 h-7 flex items-center justify-center rounded-sm bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-sm font-medium {(preset.storage_count || 0) === 0 ? 'text-zinc-300' : (preset.storage_count || 0) <= 2 ? 'text-amber-600' : 'text-zinc-900'} transition-colors"
                   >
                     {preset.storage_count || 0}
                   </button>
-                  
+
                   <!-- Increment -->
                   <form method="POST" action="?/addStock" use:enhance>
                     <input type="hidden" name="presetId" value={preset.id} />
                     <input type="hidden" name="quantity" value="1" />
-                    <button 
+                    <button
                       type="submit"
-                      class="w-8 h-8 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 transition-colors"
+                      class="w-7 h-7 flex items-center justify-center rounded-sm bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50 transition-colors text-sm"
                     >
                       +
                     </button>
@@ -273,30 +273,30 @@
     </div>
 
     <!-- Back to Dashboard -->
-    <div class="mt-6 text-center">
-      <a href="/" class="text-slate-400 hover:text-slate-300 text-sm">← Back to Dashboard</a>
+    <div class="mt-8 text-center">
+      <a href="/" class="text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 text-sm">← Back to Dashboard</a>
     </div>
   </div>
 </div>
 
 <!-- Add Preset Modal -->
 {#if showAddPresetModal}
-  <div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl">
-      <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-        <h2 class="text-lg font-semibold text-slate-100">New Filament Preset</h2>
-        <button 
+  <div class="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+    <div class="bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg w-full max-w-md">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-[#262626]">
+        <h2 class="text-base font-medium text-zinc-900 dark:text-zinc-50">New Filament Preset</h2>
+        <button
           onclick={() => { showAddPresetModal = false; resetNewPreset(); }}
-          class="p-1 text-slate-400 hover:text-slate-200 transition-colors"
+          class="p-1 text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 transition-colors"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
           </svg>
         </button>
       </div>
-      
-      <form 
-        method="POST" 
+
+      <form
+        method="POST"
         action="?/createPreset"
         use:enhance={() => {
           return async ({ result, update }) => {
@@ -310,35 +310,35 @@
         class="p-5 space-y-4"
       >
         <div>
-          <label class="block text-sm text-slate-400 mb-1">Preset Name *</label>
-          <input 
-            type="text" 
-            name="name" 
+          <label class="block text-sm text-zinc-500 mb-1">Preset Name *</label>
+          <input
+            type="text"
+            name="name"
             bind:value={newPreset.name}
             placeholder="e.g. Black PLA Basic"
             required
-            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
           />
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm text-slate-400 mb-1">Brand *</label>
-            <input 
-              type="text" 
-              name="brand" 
+            <label class="block text-sm text-zinc-500 mb-1">Brand *</label>
+            <input
+              type="text"
+              name="brand"
               bind:value={newPreset.brand}
               placeholder="e.g. Bambu Lab"
               required
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
             />
           </div>
           <div>
-            <label class="block text-sm text-slate-400 mb-1">Material *</label>
-            <select 
-              name="material" 
+            <label class="block text-sm text-zinc-500 mb-1">Material *</label>
+            <select
+              name="material"
               bind:value={newPreset.material}
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
             >
               <option value="PLA">PLA</option>
               <option value="PETG">PETG</option>
@@ -356,63 +356,63 @@
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm text-slate-400 mb-1">Color</label>
-            <input 
-              type="text" 
-              name="color" 
+            <label class="block text-sm text-zinc-500 mb-1">Color</label>
+            <input
+              type="text"
+              name="color"
               bind:value={newPreset.color}
               placeholder="e.g. Black"
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
             />
           </div>
           <div>
-            <label class="block text-sm text-slate-400 mb-1">Weight (g)</label>
-            <input 
-              type="number" 
-              name="defaultWeight" 
+            <label class="block text-sm text-zinc-500 mb-1">Weight (g)</label>
+            <input
+              type="number"
+              name="defaultWeight"
               bind:value={newPreset.defaultWeight}
               min="1"
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
             />
           </div>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm text-slate-400 mb-1">Cost ($)</label>
-            <input 
-              type="number" 
-              name="cost" 
+            <label class="block text-sm text-zinc-500 mb-1">Cost ($)</label>
+            <input
+              type="number"
+              name="cost"
               bind:value={newPreset.cost}
               min="0"
               step="0.01"
               placeholder="Optional"
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
             />
           </div>
           <div>
-            <label class="block text-sm text-slate-400 mb-1">Initial Stock</label>
-            <input 
-              type="number" 
-              name="initialStock" 
+            <label class="block text-sm text-zinc-500 mb-1">Initial Stock</label>
+            <input
+              type="number"
+              name="initialStock"
               bind:value={newPreset.initialStock}
               min="0"
-              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
             />
           </div>
         </div>
 
         <div class="flex gap-3 pt-2">
-          <button 
+          <button
             type="button"
             onclick={() => { showAddPresetModal = false; resetNewPreset(); }}
-            class="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
+            class="flex-1 px-4 py-2 bg-transparent border border-zinc-200 dark:border-[#262626] hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-md transition-colors text-sm"
           >
             Cancel
           </button>
-          <button 
+          <button
             type="submit"
-            class="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
+            class="flex-1 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 text-white rounded-md transition-colors text-sm"
           >
             Create Preset
           </button>
