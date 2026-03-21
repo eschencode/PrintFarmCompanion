@@ -246,8 +246,18 @@ export async function loadSpool(db: D1Database, params: {
 
 // Print Modules
 export async function getAllPrintModules(db: D1Database) {
-  const result = await db.prepare('SELECT * FROM print_modules').all();
-  return result.results || [];
+  const result = await db.prepare(`
+    SELECT pm.*, GROUP_CONCAT(msp.spool_preset_id) as spool_preset_ids
+    FROM print_modules pm
+    LEFT JOIN module_spool_presets msp ON pm.id = msp.module_id
+    GROUP BY pm.id
+  `).all();
+  return (result.results || []).map((m: any) => ({
+    ...m,
+    spool_preset_ids: m.spool_preset_ids
+      ? m.spool_preset_ids.split(',').map(Number)
+      : []
+  }));
 }
 
 // Print Jobs
@@ -501,6 +511,45 @@ export async function getSpoolPresetById(db: D1Database, id: number): Promise<Sp
   return result as SpoolPreset | null;
 }
 
+export async function updateSpoolPreset(db: D1Database, id: number, preset: {
+  name: string;
+  brand: string;
+  material: string;
+  color?: string | null;
+  defaultWeight: number;
+  cost?: number | null;
+}): Promise<ServerResponse> {
+  try {
+    await db.prepare(`
+      UPDATE spool_presets SET name = ?, brand = ?, material = ?, color = ?, default_weight = ?, cost = ?
+      WHERE id = ?
+    `).bind(
+      preset.name,
+      preset.brand,
+      preset.material,
+      preset.color ?? null,
+      preset.defaultWeight,
+      preset.cost ?? null,
+      id
+    ).run();
+    return { success: true, message: `Spool preset "${preset.name}" updated successfully` };
+  } catch (error) {
+    console.error('Error updating spool preset:', error);
+    return { success: false, error: 'Failed to update spool preset' };
+  }
+}
+
+export async function deleteSpoolPreset(db: D1Database, id: number): Promise<ServerResponse> {
+  try {
+    await db.prepare('DELETE FROM module_spool_presets WHERE spool_preset_id = ?').bind(id).run();
+    await db.prepare('DELETE FROM spool_presets WHERE id = ?').bind(id).run();
+    return { success: true, message: 'Spool preset deleted successfully' };
+  } catch (error) {
+    console.error('Error deleting spool preset:', error);
+    return { success: false, error: 'Failed to delete spool preset' };
+  }
+}
+
 // Print Module Functions
 export async function createPrintModule(db: D1Database, module: {
   name: string;
@@ -508,36 +557,39 @@ export async function createPrintModule(db: D1Database, module: {
   expectedTime: number;
   objectsPerPrint?: number;
   defaultSpoolPresetId?: number | null;
+  spoolPresetIds?: number[];
   path: string;
   imagePath?: string | null;
   printerModel?: string | null;
 }) {
   const result = await db.prepare(`
     INSERT INTO print_modules (
-      name, 
-      expected_weight, 
-      expected_time, 
-      objects_per_print, 
-      default_spool_preset_id, 
-      path,
-      image_path
-	  model
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+      name, expected_weight, expected_time, objects_per_print,
+      default_spool_preset_id, path, image_path, printer_model
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     module.name,
     module.expectedWeight,
     module.expectedTime,
     module.objectsPerPrint ?? 1,
-    module.defaultSpoolPresetId ?? null,
+    module.spoolPresetIds?.[0] ?? module.defaultSpoolPresetId ?? null,
     module.path,
     module.imagePath || null,
-	module.printerModel ?? null
+    module.printerModel ?? null
   ).run();
+
+  const moduleId = result.meta.last_row_id as number;
+
+  // Insert into junction table for each preset
+  const presetIds = module.spoolPresetIds ?? (module.defaultSpoolPresetId ? [module.defaultSpoolPresetId] : []);
+  for (const presetId of presetIds) {
+    await db.prepare('INSERT OR IGNORE INTO module_spool_presets (module_id, spool_preset_id) VALUES (?, ?)')
+      .bind(moduleId, presetId).run();
+  }
 
   return {
     success: true,
-    moduleId: result.meta.last_row_id,
+    moduleId,
     message: `Print module "${module.name}" created successfully`
   };
 }
@@ -566,6 +618,7 @@ export async function updatePrintModule(
     expectedTime?: number;
     objectsPerPrint?: number;
     defaultSpoolPresetId?: number | null;
+    spoolPresetIds?: number[];
     path?: string;
     imagePath?: string | null;
     printerModel?: string | null;
@@ -607,15 +660,30 @@ export async function updatePrintModule(
     values.push(module.printerModel);
   }
 
-  if (updates.length === 0) {
+  if (updates.length === 0 && module.spoolPresetIds === undefined) {
     return { success: false, error: 'No changes provided' };
   }
 
-  values.push(id);
-  await db
-    .prepare(`UPDATE print_modules SET ${updates.join(', ')} WHERE id = ?`)
-    .bind(...values)
-    .run();
+  if (updates.length > 0) {
+    values.push(id);
+    await db
+      .prepare(`UPDATE print_modules SET ${updates.join(', ')} WHERE id = ?`)
+      .bind(...values)
+      .run();
+  }
+
+  // Update junction table if preset IDs were provided
+  if (module.spoolPresetIds !== undefined) {
+    await db.prepare('DELETE FROM module_spool_presets WHERE module_id = ?').bind(id).run();
+    for (const presetId of module.spoolPresetIds) {
+      await db.prepare('INSERT OR IGNORE INTO module_spool_presets (module_id, spool_preset_id) VALUES (?, ?)')
+        .bind(id, presetId).run();
+    }
+    // Keep default_spool_preset_id in sync with first preset
+    const firstPreset = module.spoolPresetIds[0] ?? null;
+    await db.prepare('UPDATE print_modules SET default_spool_preset_id = ? WHERE id = ?')
+      .bind(firstPreset, id).run();
+  }
 
   return { success: true, message: 'Print module updated' };
 }
