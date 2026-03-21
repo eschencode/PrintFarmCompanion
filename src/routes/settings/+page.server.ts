@@ -1,5 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
+import { getAllInventoryItems } from '$lib/inventory_handler';
 import type { GridCell } from '$lib/types';
 import { ShopifyClient, ShopifySyncService } from '$lib/shopify';
 import { fail } from '@sveltejs/kit';
@@ -9,7 +10,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   
   if (!database) {
     console.log('⚠️ Database not available.');
-    return { printModules: [], spoolPresets: [], availableImages: [], gridPresets: [], printers: [], shopifyConfig: null };
+    return { printModules: [], spoolPresets: [], availableImages: [], gridPresets: [], printers: [], shopifyConfig: null, skuMappings: [], inventoryItems: [] };
   }
 
   const printModules = await db.getAllPrintModules(database);
@@ -17,6 +18,11 @@ export const load: PageServerLoad = async ({ platform }) => {
   const gridPresets = await db.getAllGridPresets(database);
   const printers = await db.getAllPrinters(database);
   
+  // Load SKU mappings and inventory items
+  const skuMappingsRaw = await database.prepare('SELECT id, shopify_sku, inventory_slug, quantity, source_type, spool_preset_id FROM shopify_sku_mapping ORDER BY shopify_sku, inventory_slug').all();
+  const skuMappings = (skuMappingsRaw.results || []) as { id: number; shopify_sku: string; inventory_slug: string; quantity: number; source_type: string; spool_preset_id: number | null }[];
+  const inventoryItems = await getAllInventoryItems(database);
+
   // Shopify configuration status
   const shopifyConfigured = !!(platform?.env?.SHOPIFY_STORE_DOMAIN && platform?.env?.SHOPIFY_ACCESS_TOKEN);
   
@@ -47,15 +53,17 @@ export const load: PageServerLoad = async ({ platform }) => {
     'vase.JPG'
   ];
 
-  return { 
-    printModules, 
-    spoolPresets, 
-    availableImages, 
-    gridPresets, 
+  return {
+    printModules,
+    spoolPresets,
+    availableImages,
+    gridPresets,
     printers,
     shopifyConfigured,
     shopifySyncState,
-    shopifyRecentOrders
+    shopifyRecentOrders,
+    skuMappings,
+    inventoryItems
   };
 };
 
@@ -73,15 +81,17 @@ export const actions: Actions = {
     // ✅ Only set imagePath if something was selected (not empty string)
     const normalizedImagePath = imagePath && imagePath !== '' ? `/images/${imagePath}` : null;
 
+    const spoolPresetIds = formData.getAll('spoolPresetIds').map(Number).filter(Boolean);
+
     const result = await db.createPrintModule(database, {
       name: formData.get('name') as string,
       expectedWeight: Number(formData.get('expectedWeight')),
       expectedTime: Number(formData.get('expectedTime')),
       objectsPerPrint: Number(formData.get('objectsPerPrint')) || 1,
-      defaultSpoolPresetId: Number(formData.get('defaultSpoolPresetId')) || null,
+      spoolPresetIds,
       path: formData.get('path') as string,
       imagePath: normalizedImagePath,
-	  printerModel: (formData.get('printerModel') as string) || null
+      printerModel: (formData.get('printerModel') as string) || null
     });
 
     return result;
@@ -112,12 +122,14 @@ export const actions: Actions = {
     const normalizedImagePath =
       imagePath && imagePath !== '' ? `/images/${imagePath}` : null;
 
+    const spoolPresetIds = form.getAll('spoolPresetIds').map(Number).filter(Boolean);
+
     return db.updatePrintModule(database, moduleId, {
       name: form.get('name') as string,
       expectedWeight: Number(form.get('expectedWeight')),
       expectedTime: Number(form.get('expectedTime')),
       objectsPerPrint: Number(form.get('objectsPerPrint')) || 1,
-      defaultSpoolPresetId: Number(form.get('defaultSpoolPresetId')) || null,
+      spoolPresetIds,
       path: form.get('path') as string,
       imagePath: normalizedImagePath,
       printerModel: (form.get('printerModel') as string) || null
@@ -142,6 +154,36 @@ export const actions: Actions = {
       cost: Number(formData.get('cost')) || null
     });
 
+    return result;
+  },
+
+  updateSpoolPreset: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) return { success: false, error: 'Database not available' };
+
+    const formData = await request.formData();
+    const presetId = Number(formData.get('presetId'));
+
+    const result = await db.updateSpoolPreset(database, presetId, {
+      name: formData.get('name') as string,
+      brand: formData.get('brand') as string,
+      material: formData.get('material') as string,
+      color: formData.get('color') as string || null,
+      defaultWeight: Number(formData.get('defaultWeight')),
+      cost: Number(formData.get('cost')) || null
+    });
+
+    return result;
+  },
+
+  deleteSpoolPreset: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) return { success: false, error: 'Database not available' };
+
+    const formData = await request.formData();
+    const presetId = Number(formData.get('presetId'));
+
+    const result = await db.deleteSpoolPreset(database, presetId);
     return result;
   },
 
@@ -324,5 +366,59 @@ export const actions: Actions = {
 
     const result = await client.testConnection();
     return { success: result.success, shopName: result.shopName, error: result.error };
+  },
+
+  saveSkuSet: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) return fail(400, { error: 'Database not available' });
+
+    const form = await request.formData();
+    const shopifySku = (form.get('shopifySku') as string).trim();
+    const originalSku = (form.get('originalSku') as string || '').trim();
+    const itemsJson = form.get('items') as string;
+
+    if (!shopifySku) return fail(400, { error: 'Shopify SKU is required' });
+
+    let items: { source_type: string; inventory_slug: string; spool_preset_id: number | null; quantity: number }[];
+    try {
+      items = JSON.parse(itemsJson);
+    } catch {
+      return fail(400, { error: 'Invalid items data' });
+    }
+
+    if (items.length === 0) return fail(400, { error: 'At least one item is required' });
+
+    try {
+      // Delete existing mappings for this SKU (handles both new and edit)
+      if (originalSku) {
+        await database.prepare('DELETE FROM shopify_sku_mapping WHERE shopify_sku = ?').bind(originalSku).run();
+      }
+
+      // Insert all items
+      for (const item of items) {
+        await database.prepare(
+          'INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity, source_type, spool_preset_id) VALUES (?, ?, ?, ?, ?)'
+        ).bind(shopifySku, item.inventory_slug || '', item.quantity, item.source_type, item.spool_preset_id).run();
+      }
+
+      return { success: true };
+    } catch (err) {
+      return fail(400, { error: `Failed to save set: ${err}` });
+    }
+  },
+
+  deleteSkuSet: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) return fail(400, { error: 'Database not available' });
+
+    const form = await request.formData();
+    const shopifySku = (form.get('shopifySku') as string).trim();
+
+    try {
+      await database.prepare('DELETE FROM shopify_sku_mapping WHERE shopify_sku = ?').bind(shopifySku).run();
+      return { success: true };
+    } catch (err) {
+      return fail(400, { error: `Failed to delete set: ${err}` });
+    }
   }
 };

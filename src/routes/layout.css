@@ -22,13 +22,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg: #0a0a0a;
-    --color-surface: #111111;
-    --color-border: #262626;
-    --color-text: #fafafa;
-    --color-text-muted: #737373;
-    --color-accent: #fafafa;
-    --color-accent-fg: #0a0a0a;
+    --color-bg: #060608;
+    --color-surface: #0c0c0f;
+    --color-border: #1a1a22;
+    --color-text: #f0f0f5;
+    --color-text-muted: #6b6b80;
+    --color-accent: #f0f0f5;
+    --color-accent-fg: #060608;
   }
 }
 
@@ -38,4 +38,91 @@ html, body {
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-family-sans);
+}
+
+/* Status glow effects */
+@keyframes glow-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-glow-green {
+  box-shadow: 0 0 8px 2px rgba(34, 197, 94, 0.4);
+}
+.status-glow-blue {
+  box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.4);
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+.status-glow-violet {
+  box-shadow: 0 0 8px 2px rgba(139, 92, 246, 0.4);
+  animation: glow-pulse 1.5s ease-in-out infinite;
+}
+.status-glow-red {
+  box-shadow: 0 0 8px 2px rgba(239, 68, 68, 0.3);
+}
+.status-glow-yellow {
+  box-shadow: 0 0 8px 2px rgba(234, 179, 8, 0.3);
+}
+
+/* Card hover lift */
+.card-lift {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px -8px rgba(0, 0, 0, 0.3);
+}
+
+/* Mouse-following card shine */
+.card-shine {
+  position: relative;
+  overflow: hidden;
+  --shine-x: 50%;
+  --shine-y: 50%;
+  --shine-opacity: 0;
+}
+.card-shine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle 150px at var(--shine-x) var(--shine-y),
+    rgba(255, 255, 255, 0.06) 0%,
+    transparent 100%
+  );
+  opacity: var(--shine-opacity);
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+/* Modal backdrop blur */
+.modal-backdrop {
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
+}
+
+/* Smooth modal entrance */
+@keyframes modal-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.modal-panel {
+  animation: modal-enter 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Progress bar shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.progress-shimmer {
+  background-size: 200% 100%;
+  background-image: linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%);
+  animation: shimmer 2s ease-in-out infinite;
 }

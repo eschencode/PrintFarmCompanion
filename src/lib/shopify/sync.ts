@@ -12,6 +12,8 @@ export interface SkuMapping {
     shopify_sku: string;
     inventory_slug: string;
     quantity: number;
+    source_type: 'inventory' | 'storage';
+    spool_preset_id: number | null;
 }
 
 export interface SyncState {
@@ -60,7 +62,7 @@ export class ShopifySyncService {
      */
     async getSkuMappings(): Promise<Map<string, SkuMapping[]>> {
         const results = await this.db
-            .prepare('SELECT shopify_sku, inventory_slug, quantity FROM shopify_sku_mapping')
+            .prepare('SELECT shopify_sku, inventory_slug, quantity, source_type, spool_preset_id FROM shopify_sku_mapping')
             .all<SkuMapping>();
 
         const mappings = new Map<string, SkuMapping[]>();
@@ -114,41 +116,54 @@ export class ShopifySyncService {
                 continue;
             }
 
-            // Deduct inventory for each mapping
+            // Deduct inventory/storage for each mapping
             for (const mapping of mappings) {
                 const deductAmount = mapping.quantity * item.quantity;
 
                 try {
-                    // Deduct stock
-                    await this.db
-                        .prepare(`
-                            UPDATE inventory 
-                            SET stock_count = stock_count - ?,
-                                total_sold = total_sold + ?,
-                                total_sold_b2c = total_sold_b2c + ?
-                            WHERE slug = ?
-                        `)
-                        .bind(deductAmount, deductAmount, deductAmount, mapping.inventory_slug)
-                        .run();
+                    if (mapping.source_type === 'storage' && mapping.spool_preset_id) {
+                        // Deduct from spool preset storage count
+                        await this.db
+                            .prepare(`
+                                UPDATE spool_presets
+                                SET storage_count = MAX(0, COALESCE(storage_count, 0) - ?)
+                                WHERE id = ?
+                            `)
+                            .bind(deductAmount, mapping.spool_preset_id)
+                            .run();
+                    } else {
+                        // Deduct from inventory stock
+                        await this.db
+                            .prepare(`
+                                UPDATE inventory
+                                SET stock_count = stock_count - ?,
+                                    total_sold = total_sold + ?,
+                                    total_sold_b2c = total_sold_b2c + ?
+                                WHERE slug = ?
+                            `)
+                            .bind(deductAmount, deductAmount, deductAmount, mapping.inventory_slug)
+                            .run();
 
-                    // Log the deduction
-                    await this.db
-                        .prepare(`
-                            INSERT INTO inventory_log (inventory_id, change_type, quantity, reason, created_at)
-                            SELECT id, 'sold_b2c', ?, ?, ?
-                            FROM inventory WHERE slug = ?
-                        `)
-                        .bind(
-                            -deductAmount, 
-                            `Shopify ${order.name} - ${item.sku}`,
-                            Date.now(),
-                            mapping.inventory_slug
-                        )
-                        .run();
+                        // Log the deduction
+                        await this.db
+                            .prepare(`
+                                INSERT INTO inventory_log (inventory_id, change_type, quantity, reason, created_at)
+                                SELECT id, 'sold_b2c', ?, ?, ?
+                                FROM inventory WHERE slug = ?
+                            `)
+                            .bind(
+                                -deductAmount,
+                                `Shopify ${order.name} - ${item.sku}`,
+                                Date.now(),
+                                mapping.inventory_slug
+                            )
+                            .run();
+                    }
 
                     itemsDeducted += deductAmount;
                 } catch (err) {
-                    errors.push(`Order ${order.name}: Failed to deduct ${mapping.inventory_slug}: ${err}`);
+                    const label = mapping.source_type === 'storage' ? `preset #${mapping.spool_preset_id}` : mapping.inventory_slug;
+                    errors.push(`Order ${order.name}: Failed to deduct ${label}: ${err}`);
                 }
             }
         }

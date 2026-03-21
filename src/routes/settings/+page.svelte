@@ -19,6 +19,68 @@
   let syncingShopify = false;
   let shopifySyncResult: { success: boolean; ordersProcessed?: number; itemsDeducted?: number; skippedOrders?: number; error?: string; errors?: string[] } | null = null;
 
+  // SKU Set editor state
+  type SetItem = { source_type: 'inventory' | 'storage'; inventory_slug: string; spool_preset_id: number | null; quantity: number };
+  let editingSetSku: string | null = null; // null = not editing, '' = new set, 'SKU' = editing existing
+  let editingSetSkuInput = '';
+  let editingSetItems: SetItem[] = [];
+  let skuSearch = '';
+
+  function openSetEditor(sku: string | null) {
+    if (sku) {
+      editingSetSku = sku;
+      editingSetSkuInput = sku;
+      const existing = (data.skuMappings || []).filter((m: any) => m.shopify_sku === sku);
+      editingSetItems = existing.map((m: any) => ({
+        source_type: m.source_type || 'inventory',
+        inventory_slug: m.inventory_slug || '',
+        spool_preset_id: m.spool_preset_id ?? null,
+        quantity: m.quantity
+      }));
+    } else {
+      editingSetSku = '';
+      editingSetSkuInput = '';
+      editingSetItems = [{ source_type: 'inventory', inventory_slug: '', spool_preset_id: null, quantity: 1 }];
+    }
+  }
+
+  function closeSetEditor() {
+    editingSetSku = null;
+    editingSetItems = [];
+  }
+
+  function addSetItem() {
+    editingSetItems = [...editingSetItems, { source_type: 'inventory', inventory_slug: '', spool_preset_id: null, quantity: 1 }];
+  }
+
+  function removeSetItem(index: number) {
+    editingSetItems = editingSetItems.filter((_, i) => i !== index);
+  }
+
+  function getItemLabel(mapping: any): string {
+    if (mapping.source_type === 'storage' && mapping.spool_preset_id) {
+      const preset = data.spoolPresets?.find((p: any) => p.id === mapping.spool_preset_id);
+      return preset ? `${preset.name} (${preset.brand})` : `Preset #${mapping.spool_preset_id}`;
+    }
+    const item = (data.inventoryItems || []).find((i: any) => i.slug === mapping.inventory_slug);
+    return item ? item.name : mapping.inventory_slug;
+  }
+
+  $: groupedMappings = (() => {
+    const search = skuSearch.toLowerCase();
+    const filtered = (data.skuMappings || []).filter((m: any) =>
+      m.shopify_sku.toLowerCase().includes(search) ||
+      (m.inventory_slug || '').toLowerCase().includes(search) ||
+      getItemLabel(m).toLowerCase().includes(search)
+    );
+    const groups: Record<string, typeof filtered> = {};
+    for (const m of filtered) {
+      if (!groups[m.shopify_sku]) groups[m.shopify_sku] = [];
+      groups[m.shopify_sku].push(m);
+    }
+    return groups;
+  })();
+
   // ✅ Image selection
   let selectedImagePath = '';
   let imagePreviewUrl = '';
@@ -48,13 +110,15 @@
 
 	let showModuleEditor = false;
 let editingModule: any = null; // module being edited
+let showPresetEditor = false;
+let editingPreset: any = null;
 
 
 let moduleName = '';
 let modulePath = '';
 let moduleImage = '';
 let modulePrinterModel = '';
-let modulePresetId: number | '' = '';
+let modulePresetIds: number[] = [];
 let moduleWeight = '';
 let moduleTime = '';
 let moduleObjects = 1;
@@ -66,7 +130,9 @@ function populateFields() {
     modulePath = editingModule.path;
     moduleImage = editingModule.image_path || '';
     modulePrinterModel = editingModule.printer_model || '';
-    modulePresetId = editingModule.default_spool_preset_id || '';
+    modulePresetIds = editingModule.spool_preset_ids?.length
+      ? editingModule.spool_preset_ids
+      : (editingModule.default_spool_preset_id ? [editingModule.default_spool_preset_id] : []);
     moduleWeight = editingModule.expected_weight ?? '';
     moduleTime = editingModule.expected_time ?? '';
     moduleObjects = editingModule.objects_per_print || 1;
@@ -252,7 +318,7 @@ function populateFields() {
         <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Printers</p>
         <button
           onclick={() => showPrinterEditor = true}
-          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors"
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-white text-zinc-900 hover:bg-zinc-100 transition-colors"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -281,12 +347,13 @@ function populateFields() {
               <div class="flex items-center gap-0.5">
                 <button
                   onclick={() => openEditPrinter(printer)}
-                  class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#1e1e1e] transition-colors"
+                  class="flex items-center gap-1 px-2 py-1 rounded-md text-amber-50 hover:text-white hover:bg-white/10 transition-colors text-xs"
                   title="Edit"
                 >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                   </svg>
+                  Edit
                 </button>
                 <form method="POST" action="?/deletePrinter" use:enhance={() => {
                   return async ({ result, update }) => {
@@ -300,13 +367,14 @@ function populateFields() {
                   <input type="hidden" name="printerId" value={printer.id} />
                   <button
                     type="submit"
-                    class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                    class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-300 hover:text-red-400 hover:bg-red-500/10 transition-colors text-xs"
                     title="Delete"
                     onclick={(e) => { if (!confirm(`Delete ${printer.name}?`)) e.preventDefault(); }}
                   >
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                     </svg>
+                    Delete
                   </button>
                 </form>
               </div>
@@ -332,11 +400,11 @@ function populateFields() {
           onclick={() => {
             editingModule = null;
             moduleName = ''; modulePath = ''; moduleImage = '';
-            modulePrinterModel = ''; modulePresetId = '';
+            modulePrinterModel = ''; modulePresetIds = [];
             moduleWeight = ''; moduleTime = ''; moduleObjects = 1;
             showModuleEditor = true;
           }}
-          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors"
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-white text-zinc-900 hover:bg-zinc-100 transition-colors"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -354,9 +422,12 @@ function populateFields() {
         />
       </div>
       {#if filteredModules.length > 0}
-        <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a]">
+        <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a] overflow-y-auto" style="max-height: calc(5 * 68px);">
           {#each filteredModules as module}
-            {@const linkedPreset = data.spoolPresets.find(p => p.id === module.default_spool_preset_id)}
+            {@const linkedPresets = data.spoolPresets.filter(p =>
+              module.spool_preset_ids?.includes(p.id) ||
+              (!module.spool_preset_ids?.length && p.id === module.default_spool_preset_id)
+            )}
             <div class="px-5 py-3.5 flex items-center gap-4 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
               {#if module.image_path}
                 <div class="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a] shrink-0">
@@ -373,32 +444,40 @@ function populateFields() {
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{module.name}</p>
                 <p class="text-xs text-zinc-400 font-mono truncate">{module.path}</p>
-                <div class="flex items-center gap-3 mt-0.5">
+                <div class="flex items-center gap-3 mt-0.5 flex-wrap">
                   {#if module.printer_model}<span class="text-[10px] text-zinc-400">{module.printer_model}</span>{/if}
-                  <span class="text-[10px] text-zinc-400">{linkedPreset ? linkedPreset.name : 'Any spool'}</span>
+                  {#if linkedPresets.length > 0}
+                    {#each linkedPresets as p}
+                      <span class="text-[10px] bg-zinc-100 dark:bg-[#1e1e1e] text-zinc-500 dark:text-zinc-400 px-1.5 py-0.5 rounded">{p.name}</span>
+                    {/each}
+                  {:else}
+                    <span class="text-[10px] text-zinc-400">Any spool</span>
+                  {/if}
                   <span class="text-[10px] text-zinc-400">{module.expected_weight}g · {module.expected_time}min · {module.objects_per_print}×</span>
                 </div>
               </div>
-              <div class="flex items-center gap-0.5">
+              <div class="flex items-center gap-0.5 shrink-0">
                 <button
                   onclick={() => { editingModule = module; showModuleEditor = true; populateFields(); }}
-                  class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#1e1e1e] transition-colors"
+                  class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-300 hover:text-white hover:bg-white/10 transition-colors text-xs"
                   title="Edit"
                 >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                   </svg>
+                  Edit
                 </button>
                 <form method="POST" action="?/deleteModule">
                   <input type="hidden" name="moduleId" value={module.id} />
                   <button
                     type="submit"
-                    class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                    class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-300 hover:text-red-400 hover:bg-red-500/10 transition-colors text-xs"
                     title="Delete"
                   >
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                     </svg>
+                    Delete
                   </button>
                 </form>
               </div>
@@ -417,7 +496,7 @@ function populateFields() {
       <details class="group">
         <summary class="px-5 py-4 flex items-center justify-between cursor-pointer list-none border-b border-zinc-50 dark:border-[#1a1a1a]">
           <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Spool Presets</p>
-          <span class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors">
+          <span class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-white text-zinc-900 hover:bg-zinc-100 transition-colors">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>
@@ -460,7 +539,7 @@ function populateFields() {
           </div>
           <div class="flex justify-end">
             <button type="submit"
-              class="inline-flex items-center h-9 px-4 rounded-lg text-sm font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors">
+              class="inline-flex items-center h-9 px-4 rounded-lg text-sm font-medium bg-white text-zinc-900 hover:bg-zinc-100 transition-colors">
               Add Spool Preset
             </button>
           </div>
@@ -480,6 +559,40 @@ function populateFields() {
                   <span class="text-emerald-600 dark:text-emerald-400">€{preset.cost.toFixed(2)}</span>
                 {/if}
               </div>
+              <div class="flex items-center gap-0.5 shrink-0">
+                <button
+                  onclick={() => { editingPreset = preset; showPresetEditor = true; }}
+                  class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-300 hover:text-white hover:bg-white/10 transition-colors text-xs"
+                  title="Edit"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                  </svg>
+                  Edit
+                </button>
+                <form method="POST" action="?/deleteSpoolPreset" use:enhance={() => {
+                  return async ({ result, update }) => {
+                    if (result.type === 'success' || result.type === 'redirect') {
+                      await update();
+                    } else if (result.type === 'failure') {
+                      alert(result.data?.error || 'Failed to delete preset');
+                    }
+                  };
+                }}>
+                  <input type="hidden" name="presetId" value={preset.id} />
+                  <button
+                    type="submit"
+                    class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-300 hover:text-red-400 hover:bg-red-500/10 transition-colors text-xs"
+                    title="Delete"
+                    onclick={(e) => { if (!confirm(`Delete ${preset.name}?`)) e.preventDefault(); }}
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    Delete
+                  </button>
+                </form>
+              </div>
             </div>
           {/each}
         </div>
@@ -496,7 +609,7 @@ function populateFields() {
         <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Dashboard Grid Presets</p>
         <button
           onclick={() => openGridEditor()}
-          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors"
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-white text-zinc-900 hover:bg-zinc-100 transition-colors"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -529,7 +642,7 @@ function populateFields() {
                 <div class="flex items-center gap-2">
                   <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{preset.name}</p>
                   {#if preset.is_default}
-                    <span class="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900">Default</span>
+                    <span class="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-white text-zinc-900">Default</span>
                   {/if}
                 </div>
                 <p class="text-xs text-zinc-400 mt-0.5">{presetRows}×{presetCols} grid</p>
@@ -537,33 +650,36 @@ function populateFields() {
               <div class="flex items-center gap-0.5">
                 <button
                   onclick={() => openGridEditor(preset)}
-                  class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#1e1e1e] transition-colors"
+                  class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-300 hover:text-white hover:bg-white/10 transition-colors text-xs"
                   title="Edit"
                 >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                   </svg>
+                  Edit
                 </button>
                 {#if !preset.is_default}
                   <form method="POST" action="?/setDefaultGridPreset" use:enhance>
                     <input type="hidden" name="presetId" value={preset.id}/>
                     <button type="submit"
-                      class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-emerald-500 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors"
+                      class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-300 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors text-xs"
                       title="Set as default">
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                       </svg>
+                      Default
                     </button>
                   </form>
                 {/if}
                 <form method="POST" action="?/deleteGridPreset" use:enhance>
                   <input type="hidden" name="presetId" value={preset.id}/>
                   <button type="submit"
-                    class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                    class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-300 hover:text-red-400 hover:bg-red-500/10 transition-colors text-xs"
                     title="Delete">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                     </svg>
+                    Delete
                   </button>
                 </form>
               </div>
@@ -597,7 +713,7 @@ function populateFields() {
             };
           }}>
             <button type="submit" disabled={syncingShopify}
-              class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 disabled:opacity-40 transition-colors">
+              class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-white text-zinc-900 hover:bg-zinc-100 disabled:opacity-40 transition-colors">
               {#if syncingShopify}
                 <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -679,6 +795,197 @@ function populateFields() {
       </div>
     </div>
 
+    <!-- ── Shopify SKU Mappings ──────────────────────────────────────── -->
+    <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-6">
+      <div class="px-5 py-4 flex items-center justify-between border-b border-zinc-50 dark:border-[#1a1a1a]">
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Shopify SKU Mappings</p>
+          <p class="text-xs text-zinc-400 mt-0.5">{Object.keys(groupedMappings).length} SKUs · {(data.skuMappings || []).length} mappings</p>
+        </div>
+        <button
+          type="button"
+          onclick={() => openSetEditor(null)}
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-[#1a1a1a] text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-[#222] transition-colors"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+          </svg>
+          New Set
+        </button>
+      </div>
+
+      <div class="p-5">
+        <!-- Set Editor -->
+        {#if editingSetSku !== null}
+          <form method="POST" action="?/saveSkuSet" use:enhance={() => {
+            return async ({ update }) => {
+              closeSetEditor();
+              await update();
+            };
+          }}>
+            <input type="hidden" name="originalSku" value={editingSetSku} />
+            <input type="hidden" name="items" value={JSON.stringify(editingSetItems)} />
+            <div class="mb-5 p-4 rounded-xl bg-zinc-50 dark:bg-[#161616] border border-zinc-100 dark:border-[#1e1e1e] space-y-4">
+              <!-- SKU input -->
+              <div>
+                <label class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500 block mb-1.5">Shopify SKU</label>
+                <input
+                  type="text"
+                  name="shopifySku"
+                  bind:value={editingSetSkuInput}
+                  placeholder="WH/K5/BL"
+                  required
+                  class="w-full max-w-xs h-9 px-3 rounded-lg text-sm bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#2a2a2a] text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-600 font-mono"
+                />
+              </div>
+
+              <!-- Items in the set -->
+              <div>
+                <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500 mb-2">Items in set</p>
+                <div class="space-y-2">
+                  {#each editingSetItems as item, i}
+                    <div class="grid gap-2" style="grid-template-columns: 90px 1fr 56px 32px;">
+                      <!-- Source type toggle -->
+                      <select
+                        bind:value={item.source_type}
+                        onchange={() => { item.inventory_slug = ''; item.spool_preset_id = null; }}
+                        class="h-9 px-2 rounded-lg text-xs bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#2a2a2a] text-zinc-700 dark:text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-600"
+                      >
+                        <option value="inventory">Inventory</option>
+                        <option value="storage">Storage</option>
+                      </select>
+
+                      <!-- Item selector -->
+                      {#if item.source_type === 'inventory'}
+                        <select
+                          bind:value={item.inventory_slug}
+                          required
+                          class="h-9 px-3 rounded-lg text-sm bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#2a2a2a] text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-600 min-w-0"
+                        >
+                          <option value="">Select item...</option>
+                          {#each data.inventoryItems || [] as inv}
+                            <option value={inv.slug}>{inv.name}</option>
+                          {/each}
+                        </select>
+                      {:else}
+                        <select
+                          bind:value={item.spool_preset_id}
+                          required
+                          class="h-9 px-3 rounded-lg text-sm bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#2a2a2a] text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-600 min-w-0"
+                        >
+                          <option value={null}>Select preset...</option>
+                          {#each data.spoolPresets || [] as preset}
+                            <option value={preset.id}>{preset.name} — {preset.brand} {preset.material}{preset.color ? ` (${preset.color})` : ''}</option>
+                          {/each}
+                        </select>
+                      {/if}
+
+                      <!-- Quantity -->
+                      <input
+                        type="number"
+                        bind:value={item.quantity}
+                        min="1"
+                        class="h-9 px-2 rounded-lg text-sm text-center bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#2a2a2a] text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-600 tabular-nums"
+                      />
+
+                      <!-- Remove item -->
+                      <button type="button" onclick={() => removeSetItem(i)}
+                        class="h-9 flex items-center justify-center rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                        disabled={editingSetItems.length <= 1}
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+                        </svg>
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+
+                <button type="button" onclick={addSetItem}
+                  class="mt-2 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+                  </svg>
+                  Add item
+                </button>
+              </div>
+
+              <!-- Actions -->
+              <div class="flex gap-2 pt-1 border-t border-zinc-100 dark:border-[#1e1e1e]">
+                <button type="submit" class="h-9 px-4 rounded-lg text-xs font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-colors">
+                  {editingSetSku ? 'Save Set' : 'Create Set'}
+                </button>
+                <button type="button" onclick={closeSetEditor}
+                  class="h-9 px-3 rounded-lg text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-[#1a1a1a] transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </form>
+        {/if}
+
+        <!-- Search -->
+        <div class="mb-4">
+          <input
+            type="text"
+            bind:value={skuSearch}
+            placeholder="Search SKUs or items..."
+            class="w-full h-9 px-3 rounded-lg text-sm bg-zinc-50 dark:bg-[#161616] border border-zinc-100 dark:border-[#1e1e1e] text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-600"
+          />
+        </div>
+
+        <!-- Grouped by SKU — scrollable, max 5 visible -->
+        {#if Object.keys(groupedMappings).length > 0}
+          <div class="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+            {#each Object.entries(groupedMappings) as [sku, mappings]}
+              <div class="rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden">
+                <div class="px-4 py-2.5 bg-zinc-50 dark:bg-[#161616] flex items-center justify-between">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-sm font-mono font-medium text-zinc-700 dark:text-zinc-300">{sku}</span>
+                    <span class="text-xs text-zinc-400">{mappings.length} item{mappings.length > 1 ? 's' : ''}</span>
+                  </div>
+                  <div class="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      type="button"
+                      onclick={() => openSetEditor(sku)}
+                      class="p-1.5 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#1a1a1a] transition-colors"
+                      title="Edit set"
+                    >
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z"/>
+                      </svg>
+                    </button>
+                    <form method="POST" action="?/deleteSkuSet" use:enhance class="inline">
+                      <input type="hidden" name="shopifySku" value={sku} />
+                      <button type="submit" class="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors" title="Delete set">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/>
+                        </svg>
+                      </button>
+                    </form>
+                  </div>
+                </div>
+                <div class="px-4 py-2 flex flex-wrap gap-2">
+                  {#each mappings as mapping}
+                    <span class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#111] border border-zinc-100 dark:border-[#1e1e1e]">
+                      <span class="text-zinc-500 tabular-nums font-medium">{mapping.quantity}x</span>
+                      {#if mapping.source_type === 'storage'}
+                        <span class="text-[8px] font-semibold uppercase tracking-wider px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">spool</span>
+                      {/if}
+                      <span class="text-zinc-700 dark:text-zinc-300">{getItemLabel(mapping)}</span>
+                    </span>
+                  {/each}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <p class="text-sm text-zinc-400 text-center py-6">{skuSearch ? 'No matches found' : 'No SKU mappings configured'}</p>
+        {/if}
+      </div>
+    </div>
+
     <!-- ── Local File Handler ────────────────────────────────────────── -->
     <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-10">
       <div class="px-5 py-4 border-b border-zinc-50 dark:border-[#1a1a1a]">
@@ -699,7 +1006,7 @@ function populateFields() {
         </div>
         <div class="flex gap-2">
           <button onclick={saveFileHandlerToken}
-            class="flex-1 h-9 rounded-lg text-sm font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 transition-colors">
+            class="flex-1 h-9 rounded-lg text-sm font-medium bg-white text-zinc-900 hover:bg-zinc-100 transition-colors">
             Save Token
           </button>
           <button onclick={testConnection} disabled={testingConnection || !fileHandlerToken}
@@ -855,7 +1162,7 @@ function populateFields() {
             Cancel
           </button>
           <button type="submit" disabled={!gridPresetName.trim()}
-            class="h-9 px-4 rounded-lg text-sm font-medium bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+            class="h-9 px-4 rounded-lg text-sm font-medium bg-white text-zinc-900 hover:bg-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
             {editingGridId ? 'Save Changes' : 'Create Preset'}
           </button>
         </div>
@@ -970,7 +1277,7 @@ function populateFields() {
           <button
             type="submit"
             disabled={!printerName.trim()}
-            class="bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:bg-zinc-200 disabled:text-zinc-400 disabled:cursor-not-allowed text-white dark:text-zinc-900 font-medium px-6 py-2.5 rounded-md transition-colors"
+            class="bg-white hover:bg-zinc-100 disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed text-zinc-900 font-medium px-6 py-2.5 rounded-md transition-colors"
           >
             {editingPrinter ? 'Save Changes' : 'Add Printer'}
           </button>
@@ -994,25 +1301,22 @@ function populateFields() {
   >
     <!-- stop background clicks bubbling to outer div -->
     <div
-      class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg max-w-lg w-full overflow-y-auto"
+      class="bg-white dark:bg-[#111] border border-zinc-100 dark:border-[#1e1e1e] rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl"
       onclick={(e) => e.stopPropagation()}
       role="dialog" aria-modal="true"
     >
-      <div class="px-6 py-4 border-b border-zinc-200 dark:border-[#262626] bg-zinc-50 dark:bg-[#111111] flex justify-between items-center">
-        <h2 class="text-xl font-medium">
-          {editingModule ? 'Edit print module' : 'Add print module'}
-        </h2>
+      <div class="px-6 py-4 border-b border-zinc-50 dark:border-[#1a1a1a] flex justify-between items-center sticky top-0 bg-white dark:bg-[#111] z-10">
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">{editingModule ? 'Edit Module' : 'New Module'}</p>
+          <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200 mt-0.5">{editingModule ? editingModule.name : 'Add a print module'}</p>
+        </div>
         <button
-          onclick={() => {
-            showModuleEditor = false;
-            editingModule = null;
-          }}
-          class="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50 p-2"
+          onclick={() => { showModuleEditor = false; editingModule = null; }}
+          class="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#1e1e1e] transition-colors"
           aria-label="Close"
         >
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M6 18L18 6M6 6l12 12" />
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
           </svg>
         </button>
       </div>
@@ -1037,62 +1341,33 @@ function populateFields() {
 
         <!-- module name -->
         <div>
-          <label for="editModuleName" class="block text-sm text-zinc-500 mb-2">Module
-            Name</label>
-          <input
-            id="editModuleName"
-            type="text"
-            name="name"
-            bind:value={moduleName}
-            required
-            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
-          />
+          <label for="editModuleName" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Module Name</label>
+          <input id="editModuleName" type="text" name="name" bind:value={moduleName} required
+            class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
         </div>
 
         <!-- printer model -->
         <div>
-          <label for="editPrinterModel" class="block text-sm text-zinc-500 mb-2">Printer
-            Model</label>
-          <input
-            id="editPrinterModel"
-            type="text"
-            name="printerModel"
-            bind:value={modulePrinterModel}
-            placeholder="e.g. P1S, H2S"
-            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
-          />
-          <p class="text-xs text-zinc-500 mt-1">
-            Restrict this module to a specific printer model.
-          </p>
+          <label for="editPrinterModel" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Printer Model</label>
+          <input id="editPrinterModel" type="text" name="printerModel" bind:value={modulePrinterModel} placeholder="e.g. P1S, H2S"
+            class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+          <p class="text-xs text-zinc-400 mt-1">Restrict this module to a specific printer model</p>
         </div>
 
         <!-- path -->
         <div>
-          <label for="editModulePath" class="block text-sm text-zinc-500 mb-2">File
-            Path</label>
-          <input
-            id="editModulePath"
-            type="text"
-            name="path"
-            bind:value={modulePath}
-            required
-            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors font-mono text-sm"
-          />
-          <p class="text-xs text-zinc-500 mt-1">Must be an absolute path</p>
+          <label for="editModulePath" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">File Path</label>
+          <input id="editModulePath" type="text" name="path" bind:value={modulePath} required
+            class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 font-mono focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+          <p class="text-xs text-zinc-400 mt-1">Must be an absolute path</p>
         </div>
 
         <!-- image selector -->
         <div>
-          <label for="editImagePath" class="block text-sm text-zinc-500 mb-2">
-            Module Image (Optional)
-          </label>
-          <select
-            id="editImagePath"
-            name="imagePath"
-            bind:value={moduleImage}
+          <label for="editImagePath" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Module Image <span class="font-normal text-zinc-400">(optional)</span></label>
+          <select id="editImagePath" name="imagePath" bind:value={moduleImage}
             onchange={(e) => updateImagePreview(e.currentTarget.value)}
-            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
-          >
+            class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors">
             <option value="">No image</option>
             {#if data.availableImages && data.availableImages.length > 0}
               {#each data.availableImages as img}
@@ -1102,88 +1377,147 @@ function populateFields() {
               <option value="" disabled>No images available</option>
             {/if}
           </select>
+          {#if imagePreviewUrl}
+            <div class="mt-2 w-16 h-16 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a]">
+              <img src={imagePreviewUrl} alt="Preview" class="w-full h-full object-cover"
+                onerror={(e) => e.currentTarget.style.display = 'none'}/>
+            </div>
+          {/if}
         </div>
 
-        <!-- spool preset dropdown -->
+        <!-- spool presets — multi-select via pill toggles -->
         <div>
-          <label for="editDefaultSpoolPresetId" class="block text-sm text-zinc-500 mb-2">
-            Preferred Spool Preset (Optional)
-          </label>
-          <select
-            id="editDefaultSpoolPresetId"
-            name="defaultSpoolPresetId"
-            bind:value={modulePresetId}
-            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
-          >
-            <option value="">Any spool (no preference)</option>
-            {#if data.spoolPresets && data.spoolPresets.length > 0}
+          <p class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">Spool Presets <span class="font-normal text-zinc-400">(optional — leave empty for any)</span></p>
+          {#if data.spoolPresets && data.spoolPresets.length > 0}
+            <div class="flex flex-wrap gap-1.5">
               {#each data.spoolPresets as preset}
-                <option value={preset.id}>
-                  {preset.name} ({preset.brand} {preset.material})
-                </option>
+                <button
+                  type="button"
+                  onclick={() => {
+                    if (modulePresetIds.includes(preset.id)) {
+                      modulePresetIds = modulePresetIds.filter(id => id !== preset.id);
+                    } else {
+                      modulePresetIds = [...modulePresetIds, preset.id];
+                    }
+                  }}
+                  class="px-2.5 py-1 rounded-full text-xs font-medium transition-colors {modulePresetIds.includes(preset.id) ? 'bg-white text-zinc-900 hover:bg-zinc-100' : 'bg-zinc-100 dark:bg-[#1e1e1e] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-[#262626]'}"
+                >
+                  {preset.name}
+                </button>
               {/each}
-            {/if}
-          </select>
-          <p class="text-xs text-zinc-500 mt-1">
-            This module will only appear when a matching spool is loaded
-          </p>
+            </div>
+            <!-- hidden inputs for form submission -->
+            {#each modulePresetIds as id}
+              <input type="hidden" name="spoolPresetIds" value={id} />
+            {/each}
+          {:else}
+            <p class="text-xs text-zinc-400 py-2">No spool presets yet — create some first.</p>
+          {/if}
         </div>
 
-        <!-- weight/time/objects grid -->
-        <div class="grid grid-cols-2 gap-4">
+        <!-- weight/time/objects -->
+        <div class="grid grid-cols-3 gap-3">
           <div>
-            <label for="editExpectedWeight" class="block text-sm text-zinc-500 mb-2">Weight
-              (g)</label>
-            <input
-              id="editExpectedWeight"
-              type="number"
-              name="expectedWeight"
-              bind:value={moduleWeight}
-              required
-              min="0"
-              step="0.1"
-              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
-            />
+            <label for="editExpectedWeight" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Weight (g)</label>
+            <input id="editExpectedWeight" type="number" name="expectedWeight" bind:value={moduleWeight} required min="0" step="0.1"
+              class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
           </div>
           <div>
-            <label for="editExpectedTime" class="block text-sm text-zinc-500 mb-2">Time
-              (min)</label>
-            <input
-              id="editExpectedTime"
-              type="number"
-              name="expectedTime"
-              bind:value={moduleTime}
-              required
-              min="0"
-              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
-            />
+            <label for="editExpectedTime" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Time (min)</label>
+            <input id="editExpectedTime" type="number" name="expectedTime" bind:value={moduleTime} required min="0"
+              class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
           </div>
-        </div>
-        <div>
-          <label for="editObjectsPerPrint" class="block text-sm text-zinc-500 mb-2">
-            Objects Per Print</label>
-          <input
-            id="editObjectsPerPrint"
-            type="number"
-            name="objectsPerPrint"
-            bind:value={moduleObjects}
-            required
-            min="1"
-            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
-          />
+          <div>
+            <label for="editObjectsPerPrint" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Objects ×</label>
+            <input id="editObjectsPerPrint" type="number" name="objectsPerPrint" bind:value={moduleObjects} required min="1"
+              class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+          </div>
         </div>
 
-        <button
-          type="submit"
-          class="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 font-medium py-3 rounded-md transition-colors"
-        >
-          {editingModule ? 'Save Changes' : 'Add Module'}
-        </button>
+        <div class="pt-2 flex justify-end gap-2">
+          <button type="button" onclick={() => { showModuleEditor = false; editingModule = null; }}
+            class="h-9 px-4 rounded-lg text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors">
+            Cancel
+          </button>
+          <button type="submit"
+            class="h-9 px-4 rounded-lg text-sm font-medium bg-white text-zinc-900 hover:bg-zinc-100 transition-colors">
+            {editingModule ? 'Save Changes' : 'Add Module'}
+          </button>
+        </div>
       </form>
     </div>
   </div>
 {/if}
 
+{#if showPresetEditor && editingPreset}
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+      onclick={() => { showPresetEditor = false; editingPreset = null; }}
+      onkeydown={(e) => e.key === 'Escape' && (showPresetEditor = false)}
+      role="button" tabindex="-1"></div>
+    <div class="relative w-full max-w-lg bg-white dark:bg-[#111] rounded-2xl border border-zinc-200 dark:border-[#1e1e1e] shadow-2xl overflow-hidden">
+      <div class="px-6 py-5 border-b border-zinc-100 dark:border-[#1a1a1a]">
+        <h2 class="text-xl font-medium text-zinc-900 dark:text-zinc-50">Edit Spool Preset</h2>
+        <p class="text-sm text-zinc-500 mt-0.5">Editing {editingPreset.name}</p>
+      </div>
+      <form method="POST" action="?/updateSpoolPreset"
+        use:enhance={() => {
+          return async ({ result, update }) => {
+            if (result.type === 'success' || result.type === 'redirect') {
+              showPresetEditor = false;
+              editingPreset = null;
+              await update();
+            }
+          };
+        }}
+        class="px-6 py-5 space-y-4">
+        <input type="hidden" name="presetId" value={editingPreset.id} />
+        <div class="grid grid-cols-2 gap-4">
+          <div class="col-span-2">
+            <label for="editPresetName" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Name</label>
+            <input type="text" id="editPresetName" name="name" required value={editingPreset.name}
+              class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+          </div>
+          <div>
+            <label for="editPresetBrand" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Brand</label>
+            <input type="text" id="editPresetBrand" name="brand" required value={editingPreset.brand}
+              class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+          </div>
+          <div>
+            <label for="editPresetMaterial" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Material</label>
+            <input type="text" id="editPresetMaterial" name="material" required value={editingPreset.material}
+              class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+          </div>
+          <div>
+            <label for="editPresetColor" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Color</label>
+            <input type="text" id="editPresetColor" name="color" value={editingPreset.color || ''}
+              class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+          </div>
+          <div>
+            <label for="editPresetWeight" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Weight (g)</label>
+            <input type="number" id="editPresetWeight" name="defaultWeight" required min="0" value={editingPreset.default_weight}
+              class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+          </div>
+          <div>
+            <label for="editPresetCost" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Cost (€)</label>
+            <input type="number" id="editPresetCost" name="cost" min="0" step="0.01" value={editingPreset.cost || ''}
+              class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"/>
+          </div>
+        </div>
+        <div class="flex justify-end gap-3 pt-2">
+          <button type="button" onclick={() => { showPresetEditor = false; editingPreset = null; }}
+            class="h-9 px-4 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors">
+            Cancel
+          </button>
+          <button type="submit"
+            class="h-9 px-4 rounded-lg text-sm font-medium bg-white text-zinc-900 hover:bg-zinc-100 transition-colors">
+            Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
 
 <style>
   label {
