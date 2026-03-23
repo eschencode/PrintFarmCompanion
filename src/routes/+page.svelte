@@ -341,6 +341,9 @@
     };
 
     data.printModules.forEach((module: any) => {
+      // Filter by printer model: skip if module requires a different model
+      if (module.printer_model_id && selectedPrinter.printer_model_id && module.printer_model_id !== selectedPrinter.printer_model_id) return;
+
       const hasEnoughMaterial = loadedSpool.remaining_weight >= module.expected_weight;
       const moduleHasPreference = module.default_spool_preset_id !== null;
       const presetMatches = loadedSpool.preset_id === module.default_spool_preset_id;
@@ -355,7 +358,7 @@
             categories.compatibleInsufficientMaterial.push(module);
           }
         }
-        // If preset doesn't match, we don't show it (🔴 Wrong Preset - hidden)
+        // If preset doesn't match, we don't show it
       } else {
         // Module works with any spool (no preset preference)
         if (hasEnoughMaterial) {
@@ -591,6 +594,7 @@
                   {@const spoolForDot = printer.loaded_spool_id ? getLoadedSpool(printer.loaded_spool_id) : null}
                   {@const weightAfterPrint = spoolForDot ? (spoolForDot as any).remaining_weight - (activePrintForDot?.expected_weight || 0) : 0}
                   {@const compatModules = data.printModules.filter((m: any) => {
+                    if (m.printer_model_id && printer.printer_model_id && m.printer_model_id !== printer.printer_model_id) return false;
                     const hasPreset = m.default_spool_preset_id !== null;
                     const presetOk = spoolForDot && (spoolForDot as any).preset_id === m.default_spool_preset_id;
                     return !hasPreset || presetOk;
@@ -613,6 +617,7 @@
                 {@const loadedSpoolForDot = printer.loaded_spool_id ? getLoadedSpool(printer.loaded_spool_id) : null}
                 {@const remainingWeight = loadedSpoolForDot ? (loadedSpoolForDot as any).remaining_weight : 0}
                 {@const compatibleModules = data.printModules.filter((m: any) => {
+                  if (m.printer_model_id && printer.printer_model_id && m.printer_model_id !== printer.printer_model_id) return false;
                   const moduleHasPresetPreference = m.default_spool_preset_id !== null;
                   const presetMatches = loadedSpoolForDot && (loadedSpoolForDot as any).preset_id === m.default_spool_preset_id;
                   return !moduleHasPresetPreference || presetMatches;

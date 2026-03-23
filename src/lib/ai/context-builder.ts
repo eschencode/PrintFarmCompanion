@@ -70,7 +70,9 @@ export class AIContextBuilder {
         pm.expected_time,
         pm.objects_per_print,
         pm.default_spool_preset_id as preset_id,
-        sp.name as preset_name
+        sp.name as preset_name,
+        pm.printer_model,
+        pm.printer_model_id
       FROM print_modules pm
       LEFT JOIN spool_presets sp ON pm.default_spool_preset_id = sp.id
     `).all<ModuleContext>();
