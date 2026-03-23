@@ -1,6 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type {
   Printer,
+  PrinterModel,
   Spool,
   SpoolPreset,
   PrintModule,
@@ -19,14 +20,95 @@ import type {
 } from './types';
 import { addStockBySlug } from './inventory_handler';
 
+// Printer Models
+export async function getAllPrinterModels(db: D1Database): Promise<PrinterModel[]> {
+  const result = await db.prepare('SELECT * FROM printer_models ORDER BY name').all();
+  return (result.results || []) as PrinterModel[];
+}
+
+export async function createPrinterModel(db: D1Database, model: {
+  name: string;
+  description?: string | null;
+  buildVolumeX?: number | null;
+  buildVolumeY?: number | null;
+  buildVolumeZ?: number | null;
+}): Promise<ServerResponse> {
+  try {
+    const result = await db.prepare(`
+      INSERT INTO printer_models (name, description, build_volume_x, build_volume_y, build_volume_z)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(
+      model.name,
+      model.description ?? null,
+      model.buildVolumeX ?? null,
+      model.buildVolumeY ?? null,
+      model.buildVolumeZ ?? null
+    ).run();
+    return { success: true, message: 'Printer model created', data: { id: result.meta.last_row_id } };
+  } catch (error) {
+    console.error('Error creating printer model:', error);
+    return { success: false, error: 'Failed to create printer model' };
+  }
+}
+
+export async function updatePrinterModel(db: D1Database, id: number, model: {
+  name?: string;
+  description?: string | null;
+  buildVolumeX?: number | null;
+  buildVolumeY?: number | null;
+  buildVolumeZ?: number | null;
+}): Promise<ServerResponse> {
+  try {
+    const updates: string[] = [];
+    const values: any[] = [];
+    if (model.name !== undefined) { updates.push('name = ?'); values.push(model.name); }
+    if (model.description !== undefined) { updates.push('description = ?'); values.push(model.description); }
+    if (model.buildVolumeX !== undefined) { updates.push('build_volume_x = ?'); values.push(model.buildVolumeX); }
+    if (model.buildVolumeY !== undefined) { updates.push('build_volume_y = ?'); values.push(model.buildVolumeY); }
+    if (model.buildVolumeZ !== undefined) { updates.push('build_volume_z = ?'); values.push(model.buildVolumeZ); }
+    if (updates.length === 0) return { success: false, error: 'No updates provided' };
+    values.push(id);
+    await db.prepare(`UPDATE printer_models SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
+    return { success: true, message: 'Printer model updated' };
+  } catch (error) {
+    console.error('Error updating printer model:', error);
+    return { success: false, error: 'Failed to update printer model' };
+  }
+}
+
+export async function deletePrinterModel(db: D1Database, id: number): Promise<ServerResponse> {
+  try {
+    // Check if any printers or modules reference this model
+    const printerCount = await db.prepare('SELECT COUNT(*) as count FROM printers WHERE printer_model_id = ?').bind(id).first() as { count: number };
+    const moduleCount = await db.prepare('SELECT COUNT(*) as count FROM print_modules WHERE printer_model_id = ?').bind(id).first() as { count: number };
+    if ((printerCount?.count || 0) > 0 || (moduleCount?.count || 0) > 0) {
+      return { success: false, error: 'Cannot delete: printer model is still referenced by printers or modules' };
+    }
+    await db.prepare('DELETE FROM printer_models WHERE id = ?').bind(id).run();
+    return { success: true, message: 'Printer model deleted' };
+  } catch (error) {
+    console.error('Error deleting printer model:', error);
+    return { success: false, error: 'Failed to delete printer model' };
+  }
+}
+
 // Printers
 export async function getAllPrinters(db: D1Database) {
-  const result = await db.prepare('SELECT * FROM printers').all();
+  const result = await db.prepare(`
+    SELECT p.*, pm.name as printer_model_name
+    FROM printers p
+    LEFT JOIN printer_models pm ON p.printer_model_id = pm.id
+  `).all();
   return result.results || [];
 }
 
 export async function getPrinterById(db: D1Database, id: number): Promise<Printer | null> {
-  const result = await db.prepare('SELECT * FROM printers WHERE id = ?').bind(id).first();
+  const result = await db.prepare(`
+    SELECT p.*, pm.name as printer_model_name
+    FROM printers p
+    LEFT JOIN printer_models pm ON p.printer_model_id = pm.id
+    WHERE p.id = ?
+  `).bind(id).first();
   return result as Printer | null;
 }
 
@@ -46,14 +128,22 @@ export async function updatePrinterStatus(db: D1Database, id: number | null, sta
 export async function createPrinter(db: D1Database, printer: {
   name: string;
   model?: string | null;
+  printerModelId?: number | null;
 }): Promise<ServerResponse> {
   try {
+    // If printerModelId is provided, also set the model text from the printer_models table
+    let modelName = printer.model ?? null;
+    if (printer.printerModelId) {
+      const pm = await db.prepare('SELECT name FROM printer_models WHERE id = ?').bind(printer.printerModelId).first() as { name: string } | null;
+      if (pm) modelName = pm.name;
+    }
     const result = await db.prepare(`
-      INSERT INTO printers (name, model, status, total_hours)
-      VALUES (?, ?, 'IDLE', 0)
+      INSERT INTO printers (name, model, printer_model_id, status, total_hours)
+      VALUES (?, ?, ?, 'IDLE', 0)
     `).bind(
       printer.name,
-      printer.model ?? null
+      modelName,
+      printer.printerModelId ?? null
     ).run();
     
     return { 
@@ -73,6 +163,7 @@ export async function updatePrinter(
   printer: {
     name?: string;
     model?: string | null;
+    printerModelId?: number | null;
     suggested_queue?: string | null;
   }
 ): Promise<ServerResponse> {
@@ -85,7 +176,19 @@ export async function updatePrinter(
       values.push(printer.name);
     }
 
-    if (printer.model !== undefined) {
+    if (printer.printerModelId !== undefined) {
+      updates.push('printer_model_id = ?');
+      values.push(printer.printerModelId);
+      // Also sync the model text field
+      if (printer.printerModelId) {
+        const pm = await db.prepare('SELECT name FROM printer_models WHERE id = ?').bind(printer.printerModelId).first() as { name: string } | null;
+        updates.push('model = ?');
+        values.push(pm?.name ?? null);
+      } else {
+        updates.push('model = ?');
+        values.push(null);
+      }
+    } else if (printer.model !== undefined) {
       updates.push('model = ?');
       values.push(printer.model);
     }
@@ -247,9 +350,10 @@ export async function loadSpool(db: D1Database, params: {
 // Print Modules
 export async function getAllPrintModules(db: D1Database) {
   const result = await db.prepare(`
-    SELECT pm.*, GROUP_CONCAT(msp.spool_preset_id) as spool_preset_ids
+    SELECT pm.*, pmod.name as printer_model_name, GROUP_CONCAT(msp.spool_preset_id) as spool_preset_ids
     FROM print_modules pm
     LEFT JOIN module_spool_presets msp ON pm.id = msp.module_id
+    LEFT JOIN printer_models pmod ON pm.printer_model_id = pmod.id
     GROUP BY pm.id
   `).all();
   return (result.results || []).map((m: any) => ({
@@ -561,12 +665,19 @@ export async function createPrintModule(db: D1Database, module: {
   path: string;
   imagePath?: string | null;
   printerModel?: string | null;
+  printerModelId?: number | null;
 }) {
+  // If printerModelId provided, sync printer_model text
+  let printerModelText = module.printerModel ?? null;
+  if (module.printerModelId) {
+    const pm = await db.prepare('SELECT name FROM printer_models WHERE id = ?').bind(module.printerModelId).first() as { name: string } | null;
+    if (pm) printerModelText = pm.name;
+  }
   const result = await db.prepare(`
     INSERT INTO print_modules (
       name, expected_weight, expected_time, objects_per_print,
-      default_spool_preset_id, path, image_path, printer_model
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      default_spool_preset_id, path, image_path, printer_model, printer_model_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     module.name,
     module.expectedWeight,
@@ -575,7 +686,8 @@ export async function createPrintModule(db: D1Database, module: {
     module.spoolPresetIds?.[0] ?? module.defaultSpoolPresetId ?? null,
     module.path,
     module.imagePath || null,
-    module.printerModel ?? null
+    printerModelText,
+    module.printerModelId ?? null
   ).run();
 
   const moduleId = result.meta.last_row_id as number;
@@ -622,6 +734,7 @@ export async function updatePrintModule(
     path?: string;
     imagePath?: string | null;
     printerModel?: string | null;
+    printerModelId?: number | null;
   }
 ): Promise<ServerResponse> {
   const updates: string[] = [];
@@ -655,7 +768,19 @@ export async function updatePrintModule(
     updates.push('image_path = ?');
     values.push(module.imagePath);
   }
-  if (module.printerModel !== undefined) {
+  if (module.printerModelId !== undefined) {
+    updates.push('printer_model_id = ?');
+    values.push(module.printerModelId);
+    // Sync text field
+    if (module.printerModelId) {
+      const pm = await db.prepare('SELECT name FROM printer_models WHERE id = ?').bind(module.printerModelId).first() as { name: string } | null;
+      updates.push('printer_model = ?');
+      values.push(pm?.name ?? null);
+    } else {
+      updates.push('printer_model = ?');
+      values.push(null);
+    }
+  } else if (module.printerModel !== undefined) {
     updates.push('printer_model = ?');
     values.push(module.printerModel);
   }

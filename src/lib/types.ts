@@ -1,4 +1,17 @@
 /**
+ * Printer Model - Represents a printer model preset (e.g., P1S, H2S)
+ */
+export interface PrinterModel {
+  id: number;
+  name: string;
+  description: string | null;
+  build_volume_x: number | null;
+  build_volume_y: number | null;
+  build_volume_z: number | null;
+  created_at: number;
+}
+
+/**
  * Spool - Represents a physical spool of filament
  */
 export interface Spool {
@@ -19,6 +32,8 @@ export interface Printer {
   id: number;
   name: string;
   model: string | null;
+  printer_model_id: number | null;
+  printer_model_name?: string | null;
   status: string; // 'WAITING' | 'IDLE' | 'PRINTING' | etc.
   loaded_spool_id: number | null;
   suggested_queue?: SuggestedPrintQueueItem[];
@@ -39,6 +54,8 @@ export interface PrintModule {
   path: string;
   image_path: string | null;
   printer_model?: string;
+  printer_model_id?: number | null;
+  printer_model_name?: string | null;
 }
 
 /**
@@ -217,6 +234,7 @@ export interface NewSpoolPreset {
 export interface NewPrinter {
   name: string;
   model?: string | null;
+  printer_model_id?: number | null;
 }
 
 /**
@@ -346,6 +364,7 @@ export interface ModuleContext {
   preset_id: number | null;
   preset_name: string | null;
   printer_model: string | null;
+  printer_model_id: number | null;
 }
 
 

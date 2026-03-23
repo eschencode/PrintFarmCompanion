@@ -10,13 +10,14 @@ export const load: PageServerLoad = async ({ platform }) => {
   
   if (!database) {
     console.log('⚠️ Database not available.');
-    return { printModules: [], spoolPresets: [], availableImages: [], gridPresets: [], printers: [], shopifyConfig: null, skuMappings: [], inventoryItems: [] };
+    return { printModules: [], spoolPresets: [], availableImages: [], gridPresets: [], printers: [], printerModels: [], shopifyConfig: null, skuMappings: [], inventoryItems: [] };
   }
 
   const printModules = await db.getAllPrintModules(database);
   const spoolPresets = await db.getAllSpoolPresets(database);
   const gridPresets = await db.getAllGridPresets(database);
   const printers = await db.getAllPrinters(database);
+  const printerModels = await db.getAllPrinterModels(database);
   
   // Load SKU mappings and inventory items
   const skuMappingsRaw = await database.prepare('SELECT id, shopify_sku, inventory_slug, quantity, source_type, spool_preset_id FROM shopify_sku_mapping ORDER BY shopify_sku, inventory_slug').all();
@@ -59,6 +60,7 @@ export const load: PageServerLoad = async ({ platform }) => {
     availableImages,
     gridPresets,
     printers,
+    printerModels,
     shopifyConfigured,
     shopifySyncState,
     shopifyRecentOrders,
@@ -83,6 +85,8 @@ export const actions: Actions = {
 
     const spoolPresetIds = formData.getAll('spoolPresetIds').map(Number).filter(Boolean);
 
+    const printerModelId = Number(formData.get('printerModelId')) || null;
+
     const result = await db.createPrintModule(database, {
       name: formData.get('name') as string,
       expectedWeight: Number(formData.get('expectedWeight')),
@@ -91,7 +95,7 @@ export const actions: Actions = {
       spoolPresetIds,
       path: formData.get('path') as string,
       imagePath: normalizedImagePath,
-      printerModel: (formData.get('printerModel') as string) || null
+      printerModelId
     });
 
     return result;
@@ -124,6 +128,8 @@ export const actions: Actions = {
 
     const spoolPresetIds = form.getAll('spoolPresetIds').map(Number).filter(Boolean);
 
+    const printerModelId = Number(form.get('printerModelId')) || null;
+
     return db.updatePrintModule(database, moduleId, {
       name: form.get('name') as string,
       expectedWeight: Number(form.get('expectedWeight')),
@@ -132,7 +138,7 @@ export const actions: Actions = {
       spoolPresetIds,
       path: form.get('path') as string,
       imagePath: normalizedImagePath,
-      printerModel: (form.get('printerModel') as string) || null
+      printerModelId
     });
   },
 
@@ -278,7 +284,7 @@ export const actions: Actions = {
   // Printer Actions
   addPrinter: async ({ platform, request }) => {
     const database = platform?.env?.DB;
-    
+
     if (!database) {
       return { success: false, error: 'Database not available' };
     }
@@ -287,7 +293,7 @@ export const actions: Actions = {
 
     const result = await db.createPrinter(database, {
       name: formData.get('name') as string,
-      model: formData.get('model') as string || null
+      printerModelId: Number(formData.get('printerModelId')) || null
     });
 
     return result;
@@ -295,7 +301,7 @@ export const actions: Actions = {
 
   updatePrinter: async ({ platform, request }) => {
     const database = platform?.env?.DB;
-    
+
     if (!database) {
       return { success: false, error: 'Database not available' };
     }
@@ -305,7 +311,7 @@ export const actions: Actions = {
 
     const result = await db.updatePrinter(database, printerId, {
       name: formData.get('name') as string,
-      model: formData.get('model') as string || null
+      printerModelId: Number(formData.get('printerModelId')) || null
     });
 
     return result;
@@ -324,6 +330,45 @@ export const actions: Actions = {
     const result = await db.deletePrinter(database, printerId);
 
     return result;
+  },
+
+  // Printer Model Actions
+  addPrinterModel: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) return { success: false, error: 'Database not available' };
+
+    const formData = await request.formData();
+    return db.createPrinterModel(database, {
+      name: formData.get('name') as string,
+      description: (formData.get('description') as string) || null,
+      buildVolumeX: Number(formData.get('buildVolumeX')) || null,
+      buildVolumeY: Number(formData.get('buildVolumeY')) || null,
+      buildVolumeZ: Number(formData.get('buildVolumeZ')) || null
+    });
+  },
+
+  updatePrinterModel: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) return { success: false, error: 'Database not available' };
+
+    const formData = await request.formData();
+    const modelId = Number(formData.get('modelId'));
+    return db.updatePrinterModel(database, modelId, {
+      name: formData.get('name') as string,
+      description: (formData.get('description') as string) || null,
+      buildVolumeX: Number(formData.get('buildVolumeX')) || null,
+      buildVolumeY: Number(formData.get('buildVolumeY')) || null,
+      buildVolumeZ: Number(formData.get('buildVolumeZ')) || null
+    });
+  },
+
+  deletePrinterModel: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) return { success: false, error: 'Database not available' };
+
+    const formData = await request.formData();
+    const modelId = Number(formData.get('modelId'));
+    return db.deletePrinterModel(database, modelId);
   },
 
   syncShopify: async ({ platform }) => {

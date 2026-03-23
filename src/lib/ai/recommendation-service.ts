@@ -67,7 +67,9 @@ export class AIRecommendationService {
       const module = modules.find(m => {
         if (m.inventory_slug !== invItem.slug) return false;
         if (m.preset_id === null || m.preset_id === undefined) return false;
-        if (printer?.model && m.printer_model && m.printer_model !== printer.model) return false;
+        // Use printer_model_id for matching when available, fall back to text
+        if (printer?.printer_model_id && m.printer_model_id && m.printer_model_id !== printer.printer_model_id) return false;
+        if (!printer?.printer_model_id && printer?.model && m.printer_model && m.printer_model !== printer.model) return false;
         return true;
       });
       if (!module || !module.preset_id || !module.preset_name) continue;
@@ -171,11 +173,14 @@ export async function getSuggestedPrintQueue(
     modules = await contextBuilder.getModulesContext();
   }
 
-  const printableModules = modules.filter(m =>
-    m.preset_id === loadedSpool.preset_id &&
-    (!m.printer_model || m.printer_model === printer.model) &&
-    m.inventory_slug
-  );
+  const printableModules = modules.filter(m => {
+    if (m.preset_id !== loadedSpool.preset_id) return false;
+    if (!m.inventory_slug) return false;
+    // Use printer_model_id for matching when available, fall back to text
+    if (m.printer_model_id && printer.printer_model_id) return m.printer_model_id === printer.printer_model_id;
+    if (m.printer_model && printer.model) return m.printer_model === printer.model;
+    return true; // No model restriction
+  });
 
   const remainingWeight = Math.floor(loadedSpool.remaining_weight);
   if (remainingWeight <= 0) return [];
