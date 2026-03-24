@@ -67,6 +67,8 @@
   let topModulesChart: HTMLDivElement;
   let failureReasonsChart: HTMLDivElement;
   let printerUtilizationChart: HTMLDivElement;
+  let stockFlowChart: HTMLDivElement;
+  let shopifyOrdersChart: HTMLDivElement;
 
   // Toggle states
   let showSpools = false;
@@ -466,6 +468,130 @@
       }]
     });
 
+    // Stock Flow Chart (Production vs Sales)
+    let stockFlowChartInstance: echarts.ECharts | undefined;
+    if (data.inventoryStats?.dailyStockFlow && stockFlowChart) {
+      const flow = data.inventoryStats.dailyStockFlow;
+      stockFlowChartInstance = echarts.init(stockFlowChart);
+      stockFlowChartInstance.setOption({
+        title: {
+          text: 'Production vs Sales (Last 30 Days)',
+          textStyle: { color: textColor }
+        },
+        tooltip: {
+          trigger: 'axis',
+          backgroundColor: tooltipBg,
+          borderColor: tooltipBorder,
+          textStyle: { color: tooltipText }
+        },
+        legend: {
+          data: ['Produced', 'Sold B2C', 'Sold B2B'],
+          textStyle: { color: textColor },
+          top: 30
+        },
+        grid: { left: '3%', right: '4%', bottom: '3%', top: 70, containLabel: true },
+        xAxis: {
+          type: 'category',
+          data: flow.map((d: any) => d.label),
+          axisLine: { lineStyle: { color: axisColor } },
+          axisLabel: { color: textColor }
+        },
+        yAxis: {
+          type: 'value',
+          axisLine: { lineStyle: { color: axisColor } },
+          axisLabel: { color: textColor },
+          splitLine: { lineStyle: { color: gridColor } }
+        },
+        series: [
+          {
+            name: 'Produced',
+            type: 'bar',
+            stack: 'in',
+            data: flow.map((d: any) => d.produced),
+            itemStyle: { color: '#22c55e' }
+          },
+          {
+            name: 'Sold B2C',
+            type: 'bar',
+            stack: 'out',
+            data: flow.map((d: any) => d.sold_b2c),
+            itemStyle: { color: '#3b82f6' }
+          },
+          {
+            name: 'Sold B2B',
+            type: 'bar',
+            stack: 'out',
+            data: flow.map((d: any) => d.sold_b2b),
+            itemStyle: { color: '#f59e0b' }
+          }
+        ]
+      });
+    }
+
+    // Shopify Daily Orders Chart
+    let shopifyChartInstance: echarts.ECharts | undefined;
+    if (data.shopifyStats?.dailyOrders && shopifyOrdersChart) {
+      const orders = data.shopifyStats.dailyOrders;
+      shopifyChartInstance = echarts.init(shopifyOrdersChart);
+      shopifyChartInstance.setOption({
+        title: {
+          text: 'Shopify Orders (Last 30 Days)',
+          textStyle: { color: textColor }
+        },
+        tooltip: {
+          trigger: 'axis',
+          backgroundColor: tooltipBg,
+          borderColor: tooltipBorder,
+          textStyle: { color: tooltipText }
+        },
+        legend: {
+          data: ['Orders', 'Items Sold'],
+          textStyle: { color: textColor },
+          top: 30
+        },
+        grid: { left: '3%', right: '4%', bottom: '3%', top: 70, containLabel: true },
+        xAxis: {
+          type: 'category',
+          data: orders.map((d: any) => d.label),
+          axisLine: { lineStyle: { color: axisColor } },
+          axisLabel: { color: textColor }
+        },
+        yAxis: [
+          {
+            type: 'value',
+            name: 'Orders',
+            axisLine: { lineStyle: { color: axisColor } },
+            axisLabel: { color: textColor },
+            splitLine: { lineStyle: { color: gridColor } }
+          },
+          {
+            type: 'value',
+            name: 'Items',
+            axisLine: { lineStyle: { color: axisColor } },
+            axisLabel: { color: textColor },
+            splitLine: { show: false }
+          }
+        ],
+        series: [
+          {
+            name: 'Orders',
+            type: 'bar',
+            data: orders.map((d: any) => d.orders),
+            itemStyle: { color: '#8b5cf6' }
+          },
+          {
+            name: 'Items Sold',
+            type: 'line',
+            yAxisIndex: 1,
+            data: orders.map((d: any) => d.items),
+            smooth: true,
+            lineStyle: { color: '#f43f5e', width: 2 },
+            itemStyle: { color: '#f43f5e' }
+          }
+        ]
+      });
+    }
+
     // Update charts when color scheme changes
     const colorSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleColorSchemeChange = (e: MediaQueryListEvent) => {
@@ -536,6 +662,8 @@
       modulesChart.resize();
       failureChart?.resize();
       utilizationChart.resize();
+      stockFlowChartInstance?.resize();
+      shopifyChartInstance?.resize();
     };
 
     window.addEventListener('resize', handleResize);
@@ -550,6 +678,8 @@
       modulesChart.dispose();
       failureChart?.dispose();
       utilizationChart.dispose();
+      stockFlowChartInstance?.dispose();
+      shopifyChartInstance?.dispose();
     };
   });
 </script>
@@ -1370,7 +1500,205 @@
       </div>
     </div>
 
-    <!-- ✅ NEW: Product Sets Cost Analysis -->
+    <!-- Inventory & Sales Section -->
+    {#if data.inventoryStats || data.shopifyStats}
+      <!-- Inventory Health Overview -->
+      {#if data.inventoryStats}
+        <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden">
+          <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
+            <h2 class="text-xl font-medium">Inventory Health</h2>
+            <p class="text-sm text-zinc-500 mt-1">Stock levels, sales velocity, and production balance</p>
+          </div>
+
+          <!-- Summary Cards -->
+          <div class="p-6">
+            <div class="grid grid-cols-5 gap-4 mb-6">
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Stock</p>
+                <p class="text-3xl font-medium text-zinc-900 dark:text-zinc-50">{data.inventoryStats.totalStock}</p>
+              </div>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Produced (30d)</p>
+                <p class="text-3xl font-medium text-green-600 dark:text-green-400">{data.inventoryStats.totalProduced30d}</p>
+              </div>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Sold (30d)</p>
+                <p class="text-3xl font-medium text-blue-600 dark:text-blue-400">{data.inventoryStats.totalSold30d}</p>
+              </div>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Net Flow (30d)</p>
+                <p class="text-3xl font-medium {(data.inventoryStats.totalProduced30d - data.inventoryStats.totalSold30d) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
+                  {(data.inventoryStats.totalProduced30d - data.inventoryStats.totalSold30d) >= 0 ? '+' : ''}{data.inventoryStats.totalProduced30d - data.inventoryStats.totalSold30d}
+                </p>
+              </div>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626] {data.inventoryStats.lowStockCount > 0 ? 'border-amber-400 dark:border-amber-600' : ''}">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Low Stock</p>
+                <p class="text-3xl font-medium {data.inventoryStats.lowStockCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-900 dark:text-zinc-50'}">
+                  {data.inventoryStats.lowStockCount}
+                </p>
+              </div>
+            </div>
+
+            <!-- Critical / Low Stock Alerts -->
+            {#if data.inventoryStats.criticalItems.length > 0}
+              <div class="mb-6 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-4">
+                <h3 class="text-sm font-medium text-red-700 dark:text-red-400 mb-3">Critical: Stockout Risk (&lt;7 days)</h3>
+                <div class="grid grid-cols-3 gap-3">
+                  {#each data.inventoryStats.criticalItems as item}
+                    <div class="bg-white dark:bg-[#111111] rounded-md p-3 border border-red-200 dark:border-red-900">
+                      <div class="flex items-center justify-between">
+                        <span class="text-sm font-medium text-zinc-900 dark:text-zinc-50">{item.name}</span>
+                        <span class="text-xs font-mono text-red-600 dark:text-red-400">{item.days_until_stockout}d left</span>
+                      </div>
+                      <div class="flex items-center justify-between mt-1">
+                        <span class="text-xs text-zinc-500">Stock: {item.stock_count}</span>
+                        <span class="text-xs text-zinc-500">{item.daily_velocity}/day</span>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            <!-- Stock Levels Table -->
+            <div class="border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden">
+              <table class="w-full">
+                <thead class="bg-zinc-100 dark:bg-zinc-800">
+                  <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Item</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Stock</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Min</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">7d Sales</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">30d Sales</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Velocity</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Days Left</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each data.inventoryStats.items as item}
+                    {@const isLow = item.stock_count < item.min_threshold}
+                    {@const isCritical = item.days_until_stockout < 7 && item.days_until_stockout !== 999}
+                    <tr class="border-t border-zinc-200 dark:border-[#262626] hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                      <td class="px-4 py-2.5 text-sm font-medium text-zinc-900 dark:text-zinc-50">{item.name}</td>
+                      <td class="px-4 py-2.5 text-sm text-right font-mono {isLow ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-zinc-700 dark:text-zinc-300'}">{item.stock_count}</td>
+                      <td class="px-4 py-2.5 text-sm text-right text-zinc-500">{item.min_threshold}</td>
+                      <td class="px-4 py-2.5 text-sm text-right text-zinc-500">{item.sold_7d}</td>
+                      <td class="px-4 py-2.5 text-sm text-right text-zinc-500">{item.sold_30d}</td>
+                      <td class="px-4 py-2.5 text-sm text-right text-zinc-500">{item.daily_velocity}/d</td>
+                      <td class="px-4 py-2.5 text-sm text-right font-mono {isCritical ? 'text-red-600 dark:text-red-400 font-bold' : item.days_until_stockout === 999 ? 'text-zinc-400' : 'text-zinc-700 dark:text-zinc-300'}">
+                        {item.days_until_stockout === 999 ? '-' : item.days_until_stockout + 'd'}
+                      </td>
+                      <td class="px-4 py-2.5 text-sm">
+                        {#if isCritical}
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400">Critical</span>
+                        {:else if isLow}
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400">Low</span>
+                        {:else}
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400">OK</span>
+                        {/if}
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      {/if}
+
+      <!-- Production vs Sales Chart + Shopify Orders Chart -->
+      <div class="grid grid-cols-2 gap-6 mb-8">
+        {#if data.inventoryStats?.dailyStockFlow}
+          <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
+            <div bind:this={stockFlowChart} style="width: 100%; height: 400px;"></div>
+          </div>
+        {/if}
+        {#if data.shopifyStats?.dailyOrders}
+          <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
+            <div bind:this={shopifyOrdersChart} style="width: 100%; height: 400px;"></div>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Shopify Summary -->
+      {#if data.shopifyStats}
+        <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden">
+          <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-xl font-medium">Shopify Sales</h2>
+                <p class="text-sm text-zinc-500 mt-1">Order history and sync status</p>
+              </div>
+              {#if data.shopifyStats.syncState}
+                <div class="text-right text-xs text-zinc-500">
+                  <p>Last sync: {data.shopifyStats.syncState.last_sync_at ? new Date(data.shopifyStats.syncState.last_sync_at).toLocaleString() : 'Never'}</p>
+                  <p>{data.shopifyStats.syncState.orders_processed} orders processed / {data.shopifyStats.syncState.items_deducted} items deducted</p>
+                </div>
+              {/if}
+            </div>
+          </div>
+
+          <div class="p-6">
+            <!-- Shopify Summary Cards -->
+            <div class="grid grid-cols-4 gap-4 mb-6">
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Orders</p>
+                <p class="text-3xl font-medium text-purple-400">{data.shopifyStats.totalOrders}</p>
+              </div>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Items Sold</p>
+                <p class="text-3xl font-medium text-rose-400">{data.shopifyStats.totalItems}</p>
+              </div>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">First Order</p>
+                <p class="text-lg font-medium text-zinc-700 dark:text-zinc-300">
+                  {data.shopifyStats.firstOrder ? new Date(data.shopifyStats.firstOrder).toLocaleDateString() : '-'}
+                </p>
+              </div>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Latest Order</p>
+                <p class="text-lg font-medium text-zinc-700 dark:text-zinc-300">
+                  {data.shopifyStats.lastOrder ? new Date(data.shopifyStats.lastOrder).toLocaleDateString() : '-'}
+                </p>
+              </div>
+            </div>
+
+            <!-- Recent Orders Table -->
+            {#if data.shopifyStats.recentOrders.length > 0}
+              <div class="border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden">
+                <table class="w-full">
+                  <thead class="bg-zinc-100 dark:bg-zinc-800">
+                    <tr>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Order #</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Date</th>
+                      <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Items</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each data.shopifyStats.recentOrders as order}
+                      <tr class="border-t border-zinc-200 dark:border-[#262626] hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                        <td class="px-4 py-2.5 text-sm font-mono text-zinc-900 dark:text-zinc-50">#{order.shopify_order_number}</td>
+                        <td class="px-4 py-2.5 text-sm text-zinc-500">{new Date(order.processed_at).toLocaleString()}</td>
+                        <td class="px-4 py-2.5 text-sm text-right font-medium text-zinc-700 dark:text-zinc-300">{order.total_items}</td>
+                        <td class="px-4 py-2.5 text-sm">
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400">{order.status}</span>
+                        </td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            {:else}
+              <p class="text-center text-zinc-500 py-8">No Shopify orders found</p>
+            {/if}
+          </div>
+        </div>
+      {/if}
+    {/if}
+
+    <!-- Product Sets Cost Analysis -->
     <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden">
       <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
         <h2 class="text-xl font-medium">Product Sets Cost Analysis</h2>

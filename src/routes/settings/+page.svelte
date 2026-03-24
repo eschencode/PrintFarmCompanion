@@ -44,9 +44,42 @@
     }
   }
 
+  // Inline inventory item creator
+  let showNewInventoryItem = false;
+  let newInvName = '';
+  let newInvSlug = '';
+  let creatingInventoryItem = false;
+
+  function slugify(text: string): string {
+    return text.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  }
+
+  async function createNewInventoryItem() {
+    if (!newInvName.trim() || !newInvSlug.trim()) return;
+    creatingInventoryItem = true;
+    try {
+      const res = await fetch('?/addInventoryItem', {
+        method: 'POST',
+        body: new URLSearchParams({ name: newInvName.trim(), slug: newInvSlug.trim() })
+      });
+      const result = await res.json();
+      if (result.type === 'success') {
+        // Add to local data so it appears in dropdowns immediately
+        data.inventoryItems = [...(data.inventoryItems || []), { slug: newInvSlug.trim(), name: newInvName.trim(), stock_count: 0 }];
+        showNewInventoryItem = false;
+        newInvName = '';
+        newInvSlug = '';
+      }
+    } catch (e) {
+      console.error('Failed to create inventory item:', e);
+    }
+    creatingInventoryItem = false;
+  }
+
   function closeSetEditor() {
     editingSetSku = null;
     editingSetItems = [];
+    showNewInventoryItem = false;
   }
 
   function addSetItem() {
@@ -122,6 +155,7 @@ let modulePresetIds: number[] = [];
 let moduleWeight = '';
 let moduleTime = '';
 let moduleObjects = 1;
+let moduleInventorySlug = '';
 
 $: populateFields();
 function populateFields() {
@@ -136,6 +170,7 @@ function populateFields() {
     moduleWeight = editingModule.expected_weight ?? '';
     moduleTime = editingModule.expected_time ?? '';
     moduleObjects = editingModule.objects_per_print || 1;
+    moduleInventorySlug = editingModule.inventory_slug || '';
   }
 }
 
@@ -1010,14 +1045,57 @@ function populateFields() {
                   {/each}
                 </div>
 
-                <button type="button" onclick={addSetItem}
-                  class="mt-2 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
-                >
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
-                  </svg>
-                  Add item
-                </button>
+                <div class="mt-2 flex items-center gap-3">
+                  <button type="button" onclick={addSetItem}
+                    class="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+                    </svg>
+                    Add item
+                  </button>
+                  <button type="button" onclick={() => { showNewInventoryItem = !showNewInventoryItem; newInvName = ''; newInvSlug = ''; }}
+                    class="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+                    </svg>
+                    New inventory item
+                  </button>
+                </div>
+
+                {#if showNewInventoryItem}
+                  <div class="mt-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/30 space-y-2">
+                    <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-500 dark:text-blue-400">Create Inventory Item</p>
+                    <div class="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        bind:value={newInvName}
+                        oninput={() => { newInvSlug = slugify(newInvName); }}
+                        placeholder="Item name"
+                        class="h-8 px-3 rounded-lg text-sm bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#2a2a2a] text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-blue-300 dark:focus:ring-blue-600"
+                      />
+                      <input
+                        type="text"
+                        bind:value={newInvSlug}
+                        placeholder="slug (auto-generated)"
+                        class="h-8 px-3 rounded-lg text-sm bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#2a2a2a] text-zinc-800 dark:text-zinc-200 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-blue-300 dark:focus:ring-blue-600 font-mono"
+                      />
+                    </div>
+                    <div class="flex gap-2">
+                      <button type="button" onclick={createNewInventoryItem} disabled={creatingInventoryItem || !newInvName.trim() || !newInvSlug.trim()}
+                        class="h-7 px-3 rounded-md text-xs font-medium bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {creatingInventoryItem ? 'Creating...' : 'Create'}
+                      </button>
+                      <button type="button" onclick={() => { showNewInventoryItem = false; }}
+                        class="h-7 px-3 rounded-md text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-[#1a1a1a] transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                {/if}
               </div>
 
               <!-- Actions -->
@@ -1469,6 +1547,19 @@ function populateFields() {
             {/each}
           </select>
           <p class="text-xs text-zinc-400 mt-1">Restrict this module to a specific printer model</p>
+        </div>
+
+        <!-- inventory item -->
+        <div>
+          <label for="editInventorySlug" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Inventory Item <span class="font-normal text-zinc-400">(optional)</span></label>
+          <select id="editInventorySlug" name="inventorySlug" bind:value={moduleInventorySlug}
+            class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors">
+            <option value="">No inventory tracking</option>
+            {#each data.inventoryItems || [] as item}
+              <option value={item.slug}>{item.name} ({item.slug})</option>
+            {/each}
+          </select>
+          <p class="text-xs text-zinc-400 mt-1">Auto-update inventory when print completes</p>
         </div>
 
         <!-- path -->

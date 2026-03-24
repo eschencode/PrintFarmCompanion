@@ -666,6 +666,7 @@ export async function createPrintModule(db: D1Database, module: {
   imagePath?: string | null;
   printerModel?: string | null;
   printerModelId?: number | null;
+  inventorySlug?: string | null;
 }) {
   // If printerModelId provided, sync printer_model text
   let printerModelText = module.printerModel ?? null;
@@ -676,8 +677,8 @@ export async function createPrintModule(db: D1Database, module: {
   const result = await db.prepare(`
     INSERT INTO print_modules (
       name, expected_weight, expected_time, objects_per_print,
-      default_spool_preset_id, path, image_path, printer_model, printer_model_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      default_spool_preset_id, path, image_path, printer_model, printer_model_id, inventory_slug
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     module.name,
     module.expectedWeight,
@@ -687,7 +688,8 @@ export async function createPrintModule(db: D1Database, module: {
     module.path,
     module.imagePath || null,
     printerModelText,
-    module.printerModelId ?? null
+    module.printerModelId ?? null,
+    module.inventorySlug ?? null
   ).run();
 
   const moduleId = result.meta.last_row_id as number;
@@ -735,10 +737,16 @@ export async function updatePrintModule(
     imagePath?: string | null;
     printerModel?: string | null;
     printerModelId?: number | null;
+    inventorySlug?: string | null;
   }
 ): Promise<ServerResponse> {
   const updates: string[] = [];
   const values: any[] = [];
+
+  if (module.inventorySlug !== undefined) {
+    updates.push('inventory_slug = ?');
+    values.push(module.inventorySlug);
+  }
 
   if (module.name !== undefined) {
     updates.push('name = ?');

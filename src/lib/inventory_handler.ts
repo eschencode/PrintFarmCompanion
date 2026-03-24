@@ -70,6 +70,7 @@ export async function getAllRecentLogs(db: D1Database, limit = 100): Promise<(In
 // Create new inventory item
 export async function createInventoryItem(db: D1Database, item: {
   name: string;
+  slug: string;
   sku?: string | null;
   description?: string | null;
   image_path?: string | null;
@@ -78,10 +79,11 @@ export async function createInventoryItem(db: D1Database, item: {
 }): Promise<ServerResponse> {
   try {
     const result = await db.prepare(`
-      INSERT INTO inventory (name, sku, description, image_path, stock_count, min_threshold)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO inventory (name, slug, sku, description, image_path, stock_count, min_threshold)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).bind(
       item.name,
+      item.slug,
       item.sku ?? null,
       item.description ?? null,
       item.image_path ?? null,
@@ -92,7 +94,7 @@ export async function createInventoryItem(db: D1Database, item: {
     return {
       success: true,
       message: `Inventory item "${item.name}" created`,
-      data: { id: result.meta.last_row_id }
+      data: { id: result.meta.last_row_id, slug: item.slug }
     };
   } catch (error) {
     console.error('Error creating inventory item:', error);

@@ -1,6 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
-import { getAllInventoryItems } from '$lib/inventory_handler';
+import { getAllInventoryItems, createInventoryItem } from '$lib/inventory_handler';
 import type { GridCell } from '$lib/types';
 import { ShopifyClient, ShopifySyncService } from '$lib/shopify';
 import { fail } from '@sveltejs/kit';
@@ -87,6 +87,8 @@ export const actions: Actions = {
 
     const printerModelId = Number(formData.get('printerModelId')) || null;
 
+    const inventorySlug = (formData.get('inventorySlug') as string)?.trim() || null;
+
     const result = await db.createPrintModule(database, {
       name: formData.get('name') as string,
       expectedWeight: Number(formData.get('expectedWeight')),
@@ -95,7 +97,8 @@ export const actions: Actions = {
       spoolPresetIds,
       path: formData.get('path') as string,
       imagePath: normalizedImagePath,
-      printerModelId
+      printerModelId,
+      inventorySlug
     });
 
     return result;
@@ -130,6 +133,8 @@ export const actions: Actions = {
 
     const printerModelId = Number(form.get('printerModelId')) || null;
 
+    const inventorySlug = (form.get('inventorySlug') as string)?.trim() || null;
+
     return db.updatePrintModule(database, moduleId, {
       name: form.get('name') as string,
       expectedWeight: Number(form.get('expectedWeight')),
@@ -138,7 +143,8 @@ export const actions: Actions = {
       spoolPresetIds,
       path: form.get('path') as string,
       imagePath: normalizedImagePath,
-      printerModelId
+      printerModelId,
+      inventorySlug
     });
   },
 
@@ -465,5 +471,18 @@ export const actions: Actions = {
     } catch (err) {
       return fail(400, { error: `Failed to delete set: ${err}` });
     }
+  },
+
+  addInventoryItem: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) return fail(400, { error: 'Database not available' });
+
+    const form = await request.formData();
+    const name = (form.get('name') as string).trim();
+    const slug = (form.get('slug') as string).trim();
+
+    if (!name || !slug) return fail(400, { error: 'Name and slug are required' });
+
+    return createInventoryItem(database, { name, slug });
   }
 };
