@@ -1,12 +1,13 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
+import { getAllInventoryItems } from '$lib/inventory_handler';
 
 export const load: PageServerLoad = async ({ platform }) => {
   const database = platform?.env?.DB;
   
   if (!database) {
-    return { 
-      printJobs: [], 
+    return {
+      printJobs: [],
       printers: [],
       modules: [],
       spools: [],
@@ -14,7 +15,7 @@ export const load: PageServerLoad = async ({ platform }) => {
         totalPrints: 0,
         successfulPrints: 0,
         failedPrints: 0,
-        pendingPrints: 0,  
+        pendingPrints: 0,
         totalMaterialUsed: 0,
         totalHours: 0,
         last30Days: [],
@@ -24,7 +25,9 @@ export const load: PageServerLoad = async ({ platform }) => {
         topModules: [],
         printerUtilization: [],
         moduleBreakdown: { last30Days: {}, thisMonth: {}, last90Days: {} }
-      }
+      },
+      inventoryStats: null,
+      shopifyStats: null
     };
   }
 
@@ -511,10 +514,144 @@ function buildModuleBreakdown(jobs: any[]) {
     topModules,
     printerUtilization,
     moduleBreakdown,
-    setCosts  // ✅ NEW
+    setCosts
   };
-  
-  return { printJobs: sortedJobs, printers, modules, spools, stats };
+
+  // Inventory & Shopify stats
+  let inventoryStats = null;
+  let shopifyStats = null;
+
+  try {
+    const inventoryItems = await getAllInventoryItems(database);
+
+    // Inventory velocity from the view
+    const velocityResult = await database.prepare(
+      'SELECT * FROM inventory_sales_velocity ORDER BY days_until_stockout ASC'
+    ).all();
+    const velocityItems = (velocityResult.results || []) as {
+      id: number; slug: string; name: string; stock_count: number;
+      min_threshold: number; stock_above_min: number;
+      sold_7d: number; sold_14d: number; sold_30d: number;
+      daily_velocity: number; days_until_stockout: number;
+    }[];
+
+    // Daily stock flow from inventory_log (last 30 days)
+    const stockFlowResult = await database.prepare(`
+      SELECT
+        DATE(created_at / 1000, 'unixepoch') as day,
+        SUM(CASE WHEN change_type = 'add' THEN quantity ELSE 0 END) as produced,
+        SUM(CASE WHEN change_type = 'sold_b2c' THEN ABS(quantity) ELSE 0 END) as sold_b2c,
+        SUM(CASE WHEN change_type = 'sold_b2b' THEN ABS(quantity) ELSE 0 END) as sold_b2b,
+        SUM(CASE WHEN change_type = 'remove' THEN ABS(quantity) ELSE 0 END) as removed
+      FROM inventory_log
+      WHERE created_at > ?
+      GROUP BY day
+      ORDER BY day ASC
+    `).bind(thirtyDaysAgo).all();
+    const stockFlow = (stockFlowResult.results || []) as {
+      day: string; produced: number; sold_b2c: number; sold_b2b: number; removed: number;
+    }[];
+
+    // Fill in missing days for a complete 30-day series
+    const stockFlowByDay = new Map(stockFlow.map(r => [r.day, r]));
+    const dailyStockFlow = Array.from({ length: 30 }, (_, i) => {
+      const d = new Date(now - ((29 - i) * 24 * 60 * 60 * 1000));
+      const dayStr = d.toISOString().split('T')[0];
+      const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const row = stockFlowByDay.get(dayStr);
+      return {
+        label,
+        produced: row?.produced || 0,
+        sold_b2c: row?.sold_b2c || 0,
+        sold_b2b: row?.sold_b2b || 0,
+        removed: row?.removed || 0
+      };
+    });
+
+    // Aggregate totals
+    const totalStock = inventoryItems.reduce((s, i) => s + (i.stock_count || 0), 0);
+    const lowStockItems = velocityItems.filter(i => i.stock_count < i.min_threshold);
+    const criticalItems = velocityItems.filter(i => i.days_until_stockout < 7 && i.days_until_stockout !== 999);
+    const totalSold30d = velocityItems.reduce((s, i) => s + i.sold_30d, 0);
+    const totalProduced30d = dailyStockFlow.reduce((s, d) => s + d.produced, 0);
+
+    inventoryStats = {
+      items: velocityItems,
+      totalStock,
+      lowStockCount: lowStockItems.length,
+      criticalItems,
+      totalSold30d,
+      totalProduced30d,
+      dailyStockFlow
+    };
+  } catch (e) {
+    console.error('Failed to load inventory stats:', e);
+  }
+
+  try {
+    // Shopify orders summary
+    const ordersResult = await database.prepare(`
+      SELECT
+        COUNT(*) as total_orders,
+        SUM(total_items) as total_items,
+        MIN(processed_at) as first_order,
+        MAX(processed_at) as last_order
+      FROM shopify_orders
+    `).first<{ total_orders: number; total_items: number; first_order: number; last_order: number }>();
+
+    const recentOrdersResult = await database.prepare(`
+      SELECT shopify_order_id, shopify_order_number, processed_at, total_items, status
+      FROM shopify_orders
+      ORDER BY processed_at DESC
+      LIMIT 15
+    `).all();
+    const recentOrders = (recentOrdersResult.results || []) as {
+      shopify_order_id: string; shopify_order_number: string;
+      processed_at: number; total_items: number; status: string;
+    }[];
+
+    // Orders per day (last 30 days)
+    const dailyOrdersResult = await database.prepare(`
+      SELECT
+        DATE(processed_at / 1000, 'unixepoch') as day,
+        COUNT(*) as order_count,
+        SUM(total_items) as items_count
+      FROM shopify_orders
+      WHERE processed_at > ?
+      GROUP BY day
+      ORDER BY day ASC
+    `).bind(thirtyDaysAgo).all();
+    const dailyOrdersMap = new Map(
+      ((dailyOrdersResult.results || []) as { day: string; order_count: number; items_count: number }[])
+        .map(r => [r.day, r])
+    );
+    const dailyOrders = Array.from({ length: 30 }, (_, i) => {
+      const d = new Date(now - ((29 - i) * 24 * 60 * 60 * 1000));
+      const dayStr = d.toISOString().split('T')[0];
+      const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const row = dailyOrdersMap.get(dayStr);
+      return { label, orders: row?.order_count || 0, items: row?.items_count || 0 };
+    });
+
+    // Sync state
+    const syncState = await database.prepare(
+      'SELECT last_sync_at, orders_processed, items_deducted FROM shopify_sync LIMIT 1'
+    ).first<{ last_sync_at: number; orders_processed: number; items_deducted: number }>();
+
+    shopifyStats = {
+      totalOrders: ordersResult?.total_orders || 0,
+      totalItems: ordersResult?.total_items || 0,
+      firstOrder: ordersResult?.first_order || null,
+      lastOrder: ordersResult?.last_order || null,
+      recentOrders,
+      dailyOrders,
+      syncState: syncState || null
+    };
+  } catch (e) {
+    console.error('Failed to load Shopify stats:', e);
+  }
+
+  return { printJobs: sortedJobs, printers, modules, spools, stats, inventoryStats, shopifyStats };
 };
 
 export const actions: Actions = {

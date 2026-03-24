@@ -212,9 +212,9 @@ export async function getSuggestedPrintQueue(
       }
 
       const baseScore = PRIORITY_SCORES[currentPriority] || 0;
-      // Fill bonus: reward heavier prints (less waste) up to 15% of the priority score.
-      // Scales within a tier so it never overrides a priority difference.
-      const fillBonus = (module.expected_weight / remainingWeight) * baseScore * 0.15;
+      // Fill bonus: reward heavier prints (less waste) up to 40% of the priority score.
+      // Higher weight means better spool utilization within the same priority tier.
+      const fillBonus = (module.expected_weight / remainingWeight) * baseScore * 0.40;
       const score = baseScore + fillBonus;
 
       unrolledItems.push({

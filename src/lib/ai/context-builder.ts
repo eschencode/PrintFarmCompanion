@@ -19,23 +19,23 @@ export class AIContextBuilder {
    */
   async getInventoryWithVelocity(): Promise<InventoryWithVelocity[]> {
     const result = await this.db.prepare(`
-      SELECT 
+      SELECT
         i.slug,
         i.name,
         i.stock_count,
         i.min_threshold,
         i.stock_count - i.min_threshold as stock_above_min,
-        COALESCE(SUM(CASE 
-          WHEN l.change_type = 'sold_b2c' AND l.created_at > strftime('%s', 'now', '-7 days') * 1000 
-          THEN ABS(l.quantity) ELSE 0 
+        COALESCE(SUM(CASE
+          WHEN l.change_type IN ('sold_b2c', 'sold_b2b') AND l.created_at > strftime('%s', 'now', '-7 days') * 1000
+          THEN ABS(l.quantity) ELSE 0
         END), 0) as sold_7d,
-        COALESCE(SUM(CASE 
-          WHEN l.change_type = 'sold_b2c' AND l.created_at > strftime('%s', 'now', '-14 days') * 1000 
-          THEN ABS(l.quantity) ELSE 0 
+        COALESCE(SUM(CASE
+          WHEN l.change_type IN ('sold_b2c', 'sold_b2b') AND l.created_at > strftime('%s', 'now', '-14 days') * 1000
+          THEN ABS(l.quantity) ELSE 0
         END), 0) as sold_14d,
-        COALESCE(SUM(CASE 
-          WHEN l.change_type = 'sold_b2c' AND l.created_at > strftime('%s', 'now', '-30 days') * 1000 
-          THEN ABS(l.quantity) ELSE 0 
+        COALESCE(SUM(CASE
+          WHEN l.change_type IN ('sold_b2c', 'sold_b2b') AND l.created_at > strftime('%s', 'now', '-30 days') * 1000
+          THEN ABS(l.quantity) ELSE 0
         END), 0) as sold_30d
       FROM inventory i
       LEFT JOIN inventory_log l ON l.inventory_id = i.id

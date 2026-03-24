@@ -67,6 +67,8 @@
   let topModulesChart: HTMLDivElement;
   let failureReasonsChart: HTMLDivElement;
   let printerUtilizationChart: HTMLDivElement;
+  let stockFlowChart: HTMLDivElement;
+  let shopifyOrdersChart: HTMLDivElement;
 
   // Toggle states
   let showSpools = false;
@@ -466,6 +468,130 @@
       }]
     });
 
+    // Stock Flow Chart (Production vs Sales)
+    let stockFlowChartInstance: echarts.ECharts | undefined;
+    if (data.inventoryStats?.dailyStockFlow && stockFlowChart) {
+      const flow = data.inventoryStats.dailyStockFlow;
+      stockFlowChartInstance = echarts.init(stockFlowChart);
+      stockFlowChartInstance.setOption({
+        title: {
+          text: 'Production vs Sales (Last 30 Days)',
+          textStyle: { color: textColor }
+        },
+        tooltip: {
+          trigger: 'axis',
+          backgroundColor: tooltipBg,
+          borderColor: tooltipBorder,
+          textStyle: { color: tooltipText }
+        },
+        legend: {
+          data: ['Produced', 'Sold B2C', 'Sold B2B'],
+          textStyle: { color: textColor },
+          top: 30
+        },
+        grid: { left: '3%', right: '4%', bottom: '3%', top: 70, containLabel: true },
+        xAxis: {
+          type: 'category',
+          data: flow.map((d: any) => d.label),
+          axisLine: { lineStyle: { color: axisColor } },
+          axisLabel: { color: textColor }
+        },
+        yAxis: {
+          type: 'value',
+          axisLine: { lineStyle: { color: axisColor } },
+          axisLabel: { color: textColor },
+          splitLine: { lineStyle: { color: gridColor } }
+        },
+        series: [
+          {
+            name: 'Produced',
+            type: 'bar',
+            stack: 'in',
+            data: flow.map((d: any) => d.produced),
+            itemStyle: { color: '#22c55e' }
+          },
+          {
+            name: 'Sold B2C',
+            type: 'bar',
+            stack: 'out',
+            data: flow.map((d: any) => d.sold_b2c),
+            itemStyle: { color: '#3b82f6' }
+          },
+          {
+            name: 'Sold B2B',
+            type: 'bar',
+            stack: 'out',
+            data: flow.map((d: any) => d.sold_b2b),
+            itemStyle: { color: '#f59e0b' }
+          }
+        ]
+      });
+    }
+
+    // Shopify Daily Orders Chart
+    let shopifyChartInstance: echarts.ECharts | undefined;
+    if (data.shopifyStats?.dailyOrders && shopifyOrdersChart) {
+      const orders = data.shopifyStats.dailyOrders;
+      shopifyChartInstance = echarts.init(shopifyOrdersChart);
+      shopifyChartInstance.setOption({
+        title: {
+          text: 'Shopify Orders (Last 30 Days)',
+          textStyle: { color: textColor }
+        },
+        tooltip: {
+          trigger: 'axis',
+          backgroundColor: tooltipBg,
+          borderColor: tooltipBorder,
+          textStyle: { color: tooltipText }
+        },
+        legend: {
+          data: ['Orders', 'Items Sold'],
+          textStyle: { color: textColor },
+          top: 30
+        },
+        grid: { left: '3%', right: '4%', bottom: '3%', top: 70, containLabel: true },
+        xAxis: {
+          type: 'category',
+          data: orders.map((d: any) => d.label),
+          axisLine: { lineStyle: { color: axisColor } },
+          axisLabel: { color: textColor }
+        },
+        yAxis: [
+          {
+            type: 'value',
+            name: 'Orders',
+            axisLine: { lineStyle: { color: axisColor } },
+            axisLabel: { color: textColor },
+            splitLine: { lineStyle: { color: gridColor } }
+          },
+          {
+            type: 'value',
+            name: 'Items',
+            axisLine: { lineStyle: { color: axisColor } },
+            axisLabel: { color: textColor },
+            splitLine: { show: false }
+          }
+        ],
+        series: [
+          {
+            name: 'Orders',
+            type: 'bar',
+            data: orders.map((d: any) => d.orders),
+            itemStyle: { color: '#8b5cf6' }
+          },
+          {
+            name: 'Items Sold',
+            type: 'line',
+            yAxisIndex: 1,
+            data: orders.map((d: any) => d.items),
+            smooth: true,
+            lineStyle: { color: '#f43f5e', width: 2 },
+            itemStyle: { color: '#f43f5e' }
+          }
+        ]
+      });
+    }
+
     // Update charts when color scheme changes
     const colorSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleColorSchemeChange = (e: MediaQueryListEvent) => {
@@ -536,6 +662,8 @@
       modulesChart.resize();
       failureChart?.resize();
       utilizationChart.resize();
+      stockFlowChartInstance?.resize();
+      shopifyChartInstance?.resize();
     };
 
     window.addEventListener('resize', handleResize);
@@ -550,6 +678,8 @@
       modulesChart.dispose();
       failureChart?.dispose();
       utilizationChart.dispose();
+      stockFlowChartInstance?.dispose();
+      shopifyChartInstance?.dispose();
     };
   });
 </script>
@@ -1370,7 +1500,103 @@
       </div>
     </div>
 
-    <!-- ✅ NEW: Product Sets Cost Analysis -->
+    <!-- Inventory & Sales Section -->
+    {#if data.inventoryStats || data.shopifyStats}
+      <!-- Inventory Health Overview -->
+      
+
+      <!-- Production vs Sales Chart + Shopify Orders Chart -->
+      <div class="grid grid-cols-2 gap-6 mb-8">
+        {#if data.inventoryStats?.dailyStockFlow}
+          <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
+            <div bind:this={stockFlowChart} style="width: 100%; height: 400px;"></div>
+          </div>
+        {/if}
+        {#if data.shopifyStats?.dailyOrders}
+          <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
+            <div bind:this={shopifyOrdersChart} style="width: 100%; height: 400px;"></div>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Shopify Summary -->
+      {#if data.shopifyStats}
+        <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden">
+          <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-xl font-medium">Shopify Sales</h2>
+                <p class="text-sm text-zinc-500 mt-1">Order history and sync status</p>
+              </div>
+              {#if data.shopifyStats.syncState}
+                <div class="text-right text-xs text-zinc-500">
+                  <p>Last sync: {data.shopifyStats.syncState.last_sync_at ? new Date(data.shopifyStats.syncState.last_sync_at).toLocaleString() : 'Never'}</p>
+                  <p>{data.shopifyStats.syncState.orders_processed} orders processed / {data.shopifyStats.syncState.items_deducted} items deducted</p>
+                </div>
+              {/if}
+            </div>
+          </div>
+
+          <div class="p-6">
+            <!-- Shopify Summary Cards -->
+            <div class="grid grid-cols-4 gap-4 mb-6">
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Orders</p>
+                <p class="text-3xl font-medium text-purple-400">{data.shopifyStats.totalOrders}</p>
+              </div>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Items Sold</p>
+                <p class="text-3xl font-medium text-rose-400">{data.shopifyStats.totalItems}</p>
+              </div>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">First Order</p>
+                <p class="text-lg font-medium text-zinc-700 dark:text-zinc-300">
+                  {data.shopifyStats.firstOrder ? new Date(data.shopifyStats.firstOrder).toLocaleDateString() : '-'}
+                </p>
+              </div>
+              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
+                <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Latest Order</p>
+                <p class="text-lg font-medium text-zinc-700 dark:text-zinc-300">
+                  {data.shopifyStats.lastOrder ? new Date(data.shopifyStats.lastOrder).toLocaleDateString() : '-'}
+                </p>
+              </div>
+            </div>
+
+            <!-- Recent Orders Table -->
+            {#if data.shopifyStats.recentOrders.length > 0}
+              <div class="border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden">
+                <table class="w-full">
+                  <thead class="bg-zinc-100 dark:bg-zinc-800">
+                    <tr>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Order #</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Date</th>
+                      <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Items</th>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each data.shopifyStats.recentOrders as order}
+                      <tr class="border-t border-zinc-200 dark:border-[#262626] hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                        <td class="px-4 py-2.5 text-sm font-mono text-zinc-900 dark:text-zinc-50">#{order.shopify_order_number}</td>
+                        <td class="px-4 py-2.5 text-sm text-zinc-500">{new Date(order.processed_at).toLocaleString()}</td>
+                        <td class="px-4 py-2.5 text-sm text-right font-medium text-zinc-700 dark:text-zinc-300">{order.total_items}</td>
+                        <td class="px-4 py-2.5 text-sm">
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400">{order.status}</span>
+                        </td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            {:else}
+              <p class="text-center text-zinc-500 py-8">No Shopify orders found</p>
+            {/if}
+          </div>
+        </div>
+      {/if}
+    {/if}
+
+    <!-- Product Sets Cost Analysis -->
     <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden">
       <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
         <h2 class="text-xl font-medium">Product Sets Cost Analysis</h2>
