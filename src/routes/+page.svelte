@@ -340,13 +340,21 @@
       anySpoolInsufficientMaterial: [] as any[]
     };
 
+    console.log('[DEBUG getCategorizedModules] printer:', selectedPrinter.name, 'printer_model_id:', selectedPrinter.printer_model_id, '(type:', typeof selectedPrinter.printer_model_id, ')');
+    console.log('[DEBUG getCategorizedModules] loadedSpool preset_id:', loadedSpool.preset_id, '(type:', typeof loadedSpool.preset_id, ')');
+
     data.printModules.forEach((module: any) => {
       // Filter by printer model: skip if module requires a different model
-      if (module.printer_model_id && selectedPrinter.printer_model_id && module.printer_model_id !== selectedPrinter.printer_model_id) return;
+      const modelFilteredOut = module.printer_model_id && selectedPrinter.printer_model_id && module.printer_model_id !== selectedPrinter.printer_model_id;
+      if (modelFilteredOut) {
+        console.log('[DEBUG] FILTERED OUT by model:', module.name, 'module_model_id:', module.printer_model_id, '(type:', typeof module.printer_model_id, ') vs printer_model_id:', selectedPrinter.printer_model_id, '(type:', typeof selectedPrinter.printer_model_id, ')');
+        return;
+      }
 
       const hasEnoughMaterial = loadedSpool.remaining_weight >= module.expected_weight;
       const moduleHasPreference = module.default_spool_preset_id !== null;
       const presetMatches = loadedSpool.preset_id === module.default_spool_preset_id;
+      console.log('[DEBUG] Module:', module.name, '| model_id:', module.printer_model_id, '| preset:', module.default_spool_preset_id, '| spool_preset:', loadedSpool.preset_id, '| presetMatch:', presetMatches, '| hasPreference:', moduleHasPreference, '| enoughMaterial:', hasEnoughMaterial);
 
       if (moduleHasPreference) {
         // Module has a preset preference
