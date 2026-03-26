@@ -8,6 +8,9 @@
 
 <svelte:head>
   <title>Printer Kiosk</title>
+  {#if viewData.view === 'printers'}
+    <meta http-equiv="refresh" content="30" />
+  {/if}
 </svelte:head>
 
 <style>
@@ -48,6 +51,24 @@
     padding: 20px;
     margin-bottom: 20px;
     background: #fff;
+  }
+
+  .card.needs-spool {
+    border-color: #ea4335;
+    -webkit-box-shadow: 0 0 0 3px rgba(234, 67, 53, 0.25), 0 2px 8px rgba(234, 67, 53, 0.15);
+    box-shadow: 0 0 0 3px rgba(234, 67, 53, 0.25), 0 2px 8px rgba(234, 67, 53, 0.15);
+  }
+
+  .card.last-print {
+    border-color: #f5a623;
+    -webkit-box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.25), 0 2px 8px rgba(245, 166, 35, 0.15);
+    box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.25), 0 2px 8px rgba(245, 166, 35, 0.15);
+  }
+
+  .card.print-done {
+    border-color: #34a853;
+    -webkit-box-shadow: 0 0 0 3px rgba(52, 168, 83, 0.25), 0 2px 8px rgba(52, 168, 83, 0.15);
+    box-shadow: 0 0 0 3px rgba(52, 168, 83, 0.25), 0 2px 8px rgba(52, 168, 83, 0.15);
   }
 
   .card-header {
@@ -340,26 +361,7 @@
     color: #111;
   }
 
-  /* --- Job Info Card --- */
-  .job-card {
-    border: 1px solid #ddd;
-    border-radius: 10px;
-    padding: 16px;
-    margin-bottom: 20px;
-    background: #fff;
-  }
-
-  .job-card div {
-    margin: 4px 0;
-    font-size: 15px;
-    color: #555;
-  }
-
-  .job-card strong {
-    color: #111;
-  }
-
-  /* --- Currently Loaded --- */
+/* --- Currently Loaded --- */
   .current-spool {
     border: 1px solid #ddd;
     border-radius: 10px;
@@ -405,16 +407,117 @@
     padding: 16px 0;
   }
 
-  /* Full width button in complete view */
-  .full-btn {
-    display: block;
-    width: 100%;
-    padding: 18px;
-    font-size: 16px;
+/* --- Print Time Progress --- */
+  .time-bar {
+    height: 8px;
+    background: #e0e0e0;
+    border-radius: 4px;
+    margin-bottom: 6px;
+    overflow: hidden;
   }
 
-  .full-btn-form {
+  .time-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: #4285f4;
+  }
+
+  .time-bar-fill.done {
+    background: #34a853;
+  }
+
+  .time-info {
+    display: -webkit-flex;
+    display: flex;
+    -webkit-justify-content: space-between;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 16px;
+  }
+
+  .time-done {
+    font-weight: bold;
+    color: #34a853;
+  }
+
+  /* --- Inline Fail Panel --- */
+  .fail-wrap {
+    -webkit-flex: 1;
+    flex: 1;
+    margin-left: 12px;
+  }
+
+  .fail-details summary {
     display: block;
+    width: 100%;
+    padding: 16px 12px;
+    border: 1px solid #ea4335;
+    border-radius: 8px;
+    background: #ea4335;
+    color: #fff;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+    text-align: center;
+    -webkit-appearance: none;
+    appearance: none;
+    font-family: Arial, sans-serif;
+    list-style: none;
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
+  }
+
+  .fail-details summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .fail-details summary:active {
+    background: #d33426;
+  }
+
+  .fail-reasons {
+    margin-top: 12px;
+  }
+
+  .fail-reason-btn {
+    display: block;
+    width: 100%;
+    padding: 14px 12px;
+    margin-bottom: 8px;
+    border: 1px solid #ea4335;
+    border-radius: 8px;
+    background: #fff;
+    color: #ea4335;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    text-align: center;
+    -webkit-appearance: none;
+    appearance: none;
+    font-family: Arial, sans-serif;
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
+  }
+
+  .fail-reason-btn:active {
+    background: #fef0ee;
+  }
+
+  .fail-reason-btn:last-child {
+    margin-bottom: 0;
+  }
+
+  /* --- Spool Warning Banner --- */
+  .spool-warn {
+    background: #fef3e8;
+    border: 1px solid #f5a623;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: bold;
+    color: #b5700a;
+    margin-bottom: 16px;
   }
 </style>
 
@@ -432,7 +535,12 @@
       {@const statusClass = isIdle ? 'idle' : isPrinting ? 'printing' : 'other'}
       {@const pct = spool ? Math.round((spool.remaining_weight / spool.initial_weight) * 100) : 0}
 
-      <div class="card">
+      {@const flags = viewData.printerFlags[printer.id]}
+      {@const printDone = flags && flags.printDone}
+      {@const needsSpool = !isPrinting && flags && flags.needsNewSpool}
+      {@const lastPrint = !isPrinting && flags && !flags.needsNewSpool && flags.printableCount === 1}
+      {@const cardClass = printDone ? 'print-done' : needsSpool ? 'needs-spool' : lastPrint ? 'last-print' : ''}
+      <div class="card {cardClass}">
         <div class="card-header">
           <div class="status-dot {statusClass}"></div>
           <div>
@@ -456,21 +564,61 @@
           </div>
 
           {#if activeJob}
+            {@const elapsedMin = Math.round((viewData.serverTime - activeJob.start_time) / 60000)}
+            {@const expectedMin = activeJob.expected_time || 0}
+            {@const timePct = expectedMin > 0 ? Math.min(Math.round((elapsedMin / expectedMin) * 100), 100) : 0}
+            {@const isDone = expectedMin > 0 && elapsedMin >= expectedMin}
+            {@const remainMin = Math.max(0, expectedMin - elapsedMin)}
+
             <div class="job-row">
-              Job: <strong>{activeJob.module_name || activeJob.name}</strong> &middot; {activeJob.expected_weight} g used &middot; after: <strong>{spool.remaining_weight - activeJob.expected_weight} g</strong>
+              Job: <strong>{activeJob.module_name || activeJob.name}</strong> &middot; {activeJob.expected_weight} g &middot; after: <strong>{spool.remaining_weight - activeJob.expected_weight} g</strong>
             </div>
+
+            {#if expectedMin > 0}
+              <div class="time-bar">
+                <div class="time-bar-fill {isDone ? 'done' : ''}" style="width: {timePct}%;"></div>
+              </div>
+              <div class="time-info">
+                <span>{elapsedMin} min / {expectedMin} min</span>
+                {#if isDone}
+                  <span class="time-done">Should be done</span>
+                {:else}
+                  <span>~{remainMin} min left</span>
+                {/if}
+              </div>
+            {/if}
+          {/if}
+
+          {#if !isPrinting && flags && flags.needsNewSpool}
+            <div class="spool-warn">Spool low -- no matching module printable, load new spool</div>
           {/if}
         {:else}
           <div class="no-spool">No spool loaded</div>
         {/if}
 
         <div class="btn-row">
-          {#if isPrinting}
-            <form method="POST" action="?/navigate">
-              <input type="hidden" name="view" value="completePrint" />
-              <input type="hidden" name="printerId" value={printer.id} />
-              <button type="submit" class="green">Finish / Fail</button>
+          {#if isPrinting && activeJob}
+            <form method="POST" action="?/completePrint">
+              <input type="hidden" name="jobId" value={activeJob.id} />
+              <input type="hidden" name="success" value="true" />
+              <input type="hidden" name="actualWeight" value={activeJob.expected_weight} />
+              <button type="submit" class="green">Done</button>
             </form>
+            <div class="fail-wrap">
+              <details class="fail-details">
+                <summary>Failed</summary>
+                <div class="fail-reasons">
+                  {#each ['Spaghetti / Layer Adhesion', 'Nozzle clogged', 'Filament Runout', 'Poor Quality', 'Power Outage', 'Poor First Layer', 'Other'] as reason}
+                    <form method="POST" action="?/completePrint">
+                      <input type="hidden" name="jobId" value={activeJob.id} />
+                      <input type="hidden" name="success" value="false" />
+                      <input type="hidden" name="failureReason" value={reason} />
+                      <button type="submit" class="fail-reason-btn">{reason}</button>
+                    </form>
+                  {/each}
+                </div>
+              </details>
+            </div>
           {:else}
             <form method="POST" action="?/navigate">
               <input type="hidden" name="view" value="loadSpool" />
@@ -606,50 +754,5 @@
       </form>
     {/if}
 
-  {:else if viewData.view === 'completePrint' && viewData.selectedPrinter && viewData.activeJob}
-    <!-- COMPLETE PRINT -->
-    <form method="POST" action="?/navigate" class="back-form">
-      <input type="hidden" name="view" value="printers" />
-      <button type="submit" class="back-btn">Back to Overview</button>
-    </form>
-
-    <div class="label">{viewData.selectedPrinter.name}</div>
-    <h1>Complete Print</h1>
-
-    <div class="job-card">
-      <div><strong>Module:</strong> {viewData.activeJob.module_name || viewData.activeJob.name}</div>
-      <div><strong>Weight:</strong> {viewData.activeJob.expected_weight} g</div>
-      {#if viewData.selectedSpool}
-        <div><strong>Spool now:</strong> {viewData.selectedSpool.remaining_weight} g</div>
-        <div><strong>After print:</strong> {viewData.selectedSpool.remaining_weight - viewData.activeJob.expected_weight} g</div>
-      {/if}
-    </div>
-
-    <div class="section">Print Successful</div>
-    <form method="POST" action="?/completePrint" class="full-btn-form">
-      <input type="hidden" name="jobId" value={viewData.activeJob.id} />
-      <input type="hidden" name="success" value="true" />
-      <input type="hidden" name="actualWeight" value={viewData.activeJob.expected_weight} />
-      <button type="submit" class="green full-btn">Print Finished</button>
-    </form>
-
-    <hr />
-
-    <div class="section">Print Failed</div>
-    <form method="POST" action="?/completePrint" class="full-btn-form">
-      <input type="hidden" name="jobId" value={viewData.activeJob.id} />
-      <input type="hidden" name="success" value="false" />
-      <select name="failureReason" required>
-        <option value="">Select failure reason...</option>
-        <option value="Spaghetti / Layer Adhesion">Spaghetti / Layer Adhesion</option>
-        <option value="Nozzle clogged">Nozzle clogged</option>
-        <option value="Filament Runout">Filament Runout</option>
-        <option value="Poor Quality">Poor Quality</option>
-        <option value="Power Outage">Power Outage</option>
-        <option value="Poor First Layer">Poor First Layer</option>
-        <option value="Other">Other</option>
-      </select>
-      <button type="submit" class="red full-btn">Print Failed</button>
-    </form>
   {/if}
 </div>
