@@ -38,7 +38,7 @@
   }
 
   :global(body) {
-    background: #ffffff;
+    background: #f2f2f7;
     color: #000000;
     font-family: Arial, sans-serif;
     height: 100vh;
