@@ -1,69 +1,150 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
 import { markSuggestedQueueItemDone } from '$lib/server';
+import { generateAndSaveSuggestedQueue } from '$lib/ai/recommendation-service';
 
 export const load: PageServerLoad = async ({ platform }) => {
   const database = platform?.env?.DB;
-
   if (!database) {
-    return { printers: [], spools: [], printModules: [], activePrintJobs: [] };
+    return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null };
   }
 
   const printers = await db.getAllPrinters(database);
   const spools = await db.getAllSpools(database);
+  const spoolPresets = await db.getAllSpoolPresets(database);
   const printModules = await db.getAllPrintModules(database);
   const activePrintJobs = await db.getActivePrintJobs(database);
 
-  return { printers, spools, printModules, activePrintJobs };
+  return { view: 'printers', printers, spools, spoolPresets, printModules, activePrintJobs, selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null };
 };
 
+async function loadFullData(database: any, view: string, printerId: number | null) {
+  const printers = await db.getAllPrinters(database);
+  const spools = await db.getAllSpools(database);
+  const spoolPresets = await db.getAllSpoolPresets(database);
+  const printModules = await db.getAllPrintModules(database);
+  const activePrintJobs = await db.getActivePrintJobs(database);
+
+  const selectedPrinter = printerId ? printers.find((p: any) => p.id === printerId) || null : null;
+  const selectedSpool = selectedPrinter?.loaded_spool_id ? spools.find((s: any) => s.id === selectedPrinter.loaded_spool_id) || null : null;
+  const activeJob = selectedPrinter ? activePrintJobs.find((j: any) => j.printer_id === selectedPrinter.id) || null : null;
+
+  let suggestedQueue: any[] = [];
+  let filteredModules = printModules;
+
+  if (view === 'startPrint' && selectedPrinter) {
+    // Filter modules by printer model
+    if (selectedPrinter.printer_model_id) {
+      filteredModules = filteredModules.filter((m: any) =>
+        !m.printer_model_id || m.printer_model_id === selectedPrinter.printer_model_id
+      );
+    }
+
+    // Filter modules by spool material match
+    if (selectedSpool) {
+      filteredModules = filteredModules.filter((m: any) => {
+        if (!m.default_spool_preset_id) return true;
+        const preset = spoolPresets.find((sp: any) => sp.id === m.default_spool_preset_id);
+        if (!preset) return true;
+        return preset.material === selectedSpool.material;
+      });
+    }
+
+    try {
+      suggestedQueue = await db.getSuggestedQueueByPrinterId(database, printerId!) || [];
+    } catch (e) {
+      console.error('Failed to get suggested queue:', e);
+    }
+  }
+
+  return { view, printers, spools, spoolPresets, printModules: filteredModules, activePrintJobs, selectedPrinter, selectedSpool, activeJob, suggestedQueue, printerId };
+}
+
 export const actions: Actions = {
+  navigate: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) {
+      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null };
+    }
+
+    const formData = await request.formData();
+    const view = (formData.get('view') as string) || 'printers';
+    const printerId = Number(formData.get('printerId')) || null;
+
+    return await loadFullData(database, view, printerId);
+  },
+
+  loadSpool: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) {
+      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null };
+    }
+
+    const formData = await request.formData();
+    const printerId = Number(formData.get('printerId'));
+
+    await db.loadSpool(database, {
+      printerId,
+      spoolData: {
+        preset_id: Number(formData.get('presetId')) || null,
+        brand: formData.get('brand') as string,
+        material: formData.get('material') as string,
+        color: (formData.get('color') as string) || null,
+        initial_weight: Number(formData.get('initialWeight')),
+        remaining_weight: Number(formData.get('remainingWeight')),
+        cost: Number(formData.get('cost')) || null,
+      },
+      forceUnload: true,
+    });
+
+    try {
+      await generateAndSaveSuggestedQueue(database, printerId);
+    } catch (e) {
+      console.error('Failed to generate queue:', e);
+    }
+
+    return await loadFullData(database, 'printers', null);
+  },
+
   startPrint: async ({ platform, request }) => {
     const database = platform?.env?.DB;
     if (!database) {
-      return { success: false, error: 'Database not available' };
+      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null };
     }
 
     const formData = await request.formData();
     const printerId = Number(formData.get('printerId'));
     const moduleId = Number(formData.get('moduleId'));
 
-    const result = await db.startPrintJob(database, {
+    await db.startPrintJob(database, {
       printerId,
       moduleId,
     });
 
-    return result;
+    return await loadFullData(database, 'printers', null);
   },
 
   completePrint: async ({ platform, request }) => {
     const database = platform?.env?.DB;
     if (!database) {
-      return { error: 'Database not available' };
+      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null };
     }
 
     const formData = await request.formData();
     const jobId = Number(formData.get('jobId'));
     const success = formData.get('success') === 'true';
     const actualWeight = Number(formData.get('actualWeight')) || 0;
-    const failureReason = formData.get('failureReason') as string | null;
+    const failureReason = (formData.get('failureReason') as string) || null;
 
     try {
       const job = await db.getPrintJobById(database, jobId);
       if (!job) {
-        return { error: 'Print job not found' };
+        return await loadFullData(database, 'printers', null);
       }
 
       const endTime = Date.now();
 
-      await db.completePrintJob(
-        database,
-        jobId,
-        endTime,
-        success,
-        actualWeight,
-        failureReason
-      );
+      await db.completePrintJob(database, jobId, endTime, success, actualWeight, failureReason);
 
       if (job.printer_id) {
         await db.updatePrinterStatus(database, job.printer_id, 'IDLE');
@@ -72,8 +153,7 @@ export const actions: Actions = {
       if (actualWeight > 0 && job.printer_loaded_spool_id) {
         const currentSpool = await db.getSpoolById(database, job.printer_loaded_spool_id);
         if (currentSpool) {
-          const newWeight = currentSpool.remaining_weight - actualWeight;
-          await db.updateSpoolWeight(database, job.printer_loaded_spool_id, newWeight);
+          await db.updateSpoolWeight(database, job.printer_loaded_spool_id, currentSpool.remaining_weight - actualWeight);
         }
       }
 
@@ -82,8 +162,7 @@ export const actions: Actions = {
         if (success) {
           hoursUsed = job.expected_time / 60;
         } else {
-          const elapsedMs = endTime - job.start_time;
-          hoursUsed = elapsedMs / (1000 * 60 * 60);
+          hoursUsed = (endTime - job.start_time) / (1000 * 60 * 60);
         }
         await db.updatePrinterHours(database, job.printer_id, hoursUsed);
       }
@@ -91,11 +170,10 @@ export const actions: Actions = {
       if (success && job.printer_id && job.module_id) {
         await markSuggestedQueueItemDone(database, job.printer_id, { module_id: job.module_id });
       }
-
-      return { success: true };
     } catch (error) {
       console.error('Error completing print job:', error);
-      return { error: 'Failed to complete print job' };
     }
+
+    return await loadFullData(database, 'printers', null);
   },
 };
