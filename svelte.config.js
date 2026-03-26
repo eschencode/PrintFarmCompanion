@@ -7,7 +7,15 @@ const config = {
 	// for more information about preprocessors
 	preprocess: vitePreprocess(),
 
-	kit: { adapter: adapter() }
+	kit: {
+		adapter: adapter(),
+		vite: {
+			server: {
+				host: '0.0.0.0',
+				port: 5173
+			}
+		}
+	}
 };
 
 export default config;
