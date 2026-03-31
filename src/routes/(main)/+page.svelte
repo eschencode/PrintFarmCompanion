@@ -11,6 +11,28 @@
   export let data: PageData;
 
   let selectedPrinter: any = null;
+
+  // Success animation
+  type Particle = { id: number; x: number; y: number; delay: number; drift: number; rotate: number; scale: number };
+  let successParticles: Particle[] = [];
+  let successImageSrc: string | null = null;
+  let particleCounter = 0;
+
+  function triggerSuccessAnimation(e: MouseEvent, count: number, imagePath: string | null) {
+    const btn = (e.currentTarget as HTMLElement).closest('button') as HTMLElement;
+    const rect = btn.getBoundingClientRect();
+    successImageSrc = imagePath;
+    successParticles = [{
+      id: particleCounter++,
+      x: rect.left + rect.width * 0.5,
+      y: rect.top + rect.height * 0.3,
+      delay: 0,
+      drift: (Math.random() - 0.5) * 20,
+      rotate: (Math.random() - 0.5) * 10,
+      scale: 1,
+    }];
+    setTimeout(() => { successParticles = []; successImageSrc = null; }, 2200);
+  }
   let showSpoolSelector: boolean = false;
   let showModuleSelector: boolean = false;
   let showFailureReasonModal: boolean = false;
@@ -277,6 +299,24 @@
   onMount(() => {
     window.addEventListener('keydown', handleKeydown);
     document.addEventListener('wheel', handleWheel, { passive: false });
+
+    // Play success animation if triggered before last reload
+    const pending = sessionStorage.getItem('printSuccessAnim');
+    if (pending) {
+      sessionStorage.removeItem('printSuccessAnim');
+      const { imagePath } = JSON.parse(pending);
+      successImageSrc = imagePath;
+      successParticles = [{
+        id: particleCounter++,
+        x: window.innerWidth * 0.5,
+        y: window.innerHeight * 0.6,
+        delay: 0,
+        drift: (Math.random() - 0.5) * 20,
+        rotate: (Math.random() - 0.5) * 10,
+        scale: 1,
+      }];
+      setTimeout(() => { successParticles = []; successImageSrc = null; }, 2200);
+    }
 
     return () => {
       window.removeEventListener('keydown', handleKeydown);
@@ -1010,6 +1050,9 @@
                         console.error('Failed to refresh suggested queue:', e);
                       }
 
+                      sessionStorage.setItem('printSuccessAnim', JSON.stringify({
+                        imagePath: activePrintJob?.module_image_path ?? null,
+                      }));
                       closePrinterModal();
                       window.location.reload();
                     }
@@ -1113,10 +1156,10 @@
           if (result.type === 'success') {
             // Optionally open file locally if path exists
 			console.log('matchingModule:', matchingModule);
-            if (matchingModule && matchingModule.path) {
-				 console.log('Opening file:', matchingModule.path);
+            if (matchingModule && matchingModule.local_file_handler_path) {
+				 console.log('Opening file:', matchingModule.local_file_handler_path);
               await openFileLocally(
-                matchingModule.path,
+                matchingModule.local_file_handler_path,
                 matchingModule.name,
                 selectedPrinter.id
               );
@@ -1738,9 +1781,9 @@
                   ];
                   const selectedModule = allModules.find(m => m.id === selectedModuleId);
 
-                  if (selectedModule && selectedModule.path) {
+                  if (selectedModule && selectedModule.local_file_handler_path) {
                     await openFileLocally(
-                      selectedModule.path,
+                      selectedModule.local_file_handler_path,
                       selectedModule.name,
                       selectedPrinter.id
                     );
@@ -2000,3 +2043,36 @@
     <span class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide">Not Configured</span>
   {/if}
 </div>
+
+<!-- Success animation overlay -->
+{#if successParticles.length > 0}
+  <div class="pointer-events-none fixed inset-0 z-9999" aria-hidden="true">
+    {#each successParticles as p (p.id)}
+      <span
+        class="absolute animate-float-up"
+        style="left:{p.x}px; top:{p.y}px; animation-delay:{p.delay}ms; --drift:{p.drift}px; --rotate:{p.rotate}deg; --scale:{p.scale};"
+      >
+        {#if successImageSrc}
+          <img
+            src={successImageSrc}
+            alt=""
+            class="w-24 h-24 object-contain drop-shadow-xl"
+          />
+        {:else}
+          <span class="text-3xl">📦</span>
+        {/if}
+      </span>
+    {/each}
+  </div>
+{/if}
+
+<style>
+  @keyframes float-up {
+    0%   { transform: translateY(0) translateX(0) rotate(0deg) scale(var(--scale)); opacity: 1; }
+    20%  { opacity: 1; }
+    100% { transform: translateY(-220px) translateX(var(--drift)) rotate(var(--rotate)) scale(calc(var(--scale) * 0.5)); opacity: 0; }
+  }
+  :global(.animate-float-up) {
+    animation: float-up 1.6s cubic-bezier(0.15, 0.8, 0.3, 1) forwards;
+  }
+</style>

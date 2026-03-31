@@ -91,11 +91,11 @@ export const actions: Actions = {
 
     const result = await db.createPrintModule(database, {
       name: formData.get('name') as string,
-      expectedWeight: Number(formData.get('expectedWeight')),
-      expectedTime: Number(formData.get('expectedTime')),
+      expectedWeight: Number(formData.get('expectedWeight')) || null,
+      expectedTime: Number(formData.get('expectedTime')) || null,
       objectsPerPrint: Number(formData.get('objectsPerPrint')) || 1,
       spoolPresetIds,
-      path: formData.get('path') as string,
+      localFileHandlerPath: (formData.get('localFileHandlerPath') as string) || null,
       imagePath: normalizedImagePath,
       printerModelId,
       inventorySlug
@@ -137,11 +137,11 @@ export const actions: Actions = {
 
     return db.updatePrintModule(database, moduleId, {
       name: form.get('name') as string,
-      expectedWeight: Number(form.get('expectedWeight')),
-      expectedTime: Number(form.get('expectedTime')),
+      expectedWeight: Number(form.get('expectedWeight')) || null,
+      expectedTime: Number(form.get('expectedTime')) || null,
       objectsPerPrint: Number(form.get('objectsPerPrint')) || 1,
       spoolPresetIds,
-      path: form.get('path') as string,
+      localFileHandlerPath: (form.get('localFileHandlerPath') as string) || null,
       imagePath: normalizedImagePath,
       printerModelId,
       inventorySlug
@@ -299,7 +299,10 @@ export const actions: Actions = {
 
     const result = await db.createPrinter(database, {
       name: formData.get('name') as string,
-      printerModelId: Number(formData.get('printerModelId')) || null
+      printerModelId: Number(formData.get('printerModelId')) || null,
+      printerIp: (formData.get('printerIp') as string) || null,
+      printerSerial: (formData.get('printerSerial') as string) || null,
+      printerAccessCode: (formData.get('printerAccessCode') as string) || null,
     });
 
     return result;
@@ -317,7 +320,10 @@ export const actions: Actions = {
 
     const result = await db.updatePrinter(database, printerId, {
       name: formData.get('name') as string,
-      printerModelId: Number(formData.get('printerModelId')) || null
+      printerModelId: Number(formData.get('printerModelId')) || null,
+      printerIp: (formData.get('printerIp') as string) || null,
+      printerSerial: (formData.get('printerSerial') as string) || null,
+      printerAccessCode: (formData.get('printerAccessCode') as string) || null,
     });
 
     return result;

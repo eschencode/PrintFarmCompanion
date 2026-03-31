@@ -129,6 +129,9 @@ export async function createPrinter(db: D1Database, printer: {
   name: string;
   model?: string | null;
   printerModelId?: number | null;
+  printerIp?: string | null;
+  printerSerial?: string | null;
+  printerAccessCode?: string | null;
 }): Promise<ServerResponse> {
   try {
     // If printerModelId is provided, also set the model text from the printer_models table
@@ -138,12 +141,15 @@ export async function createPrinter(db: D1Database, printer: {
       if (pm) modelName = pm.name;
     }
     const result = await db.prepare(`
-      INSERT INTO printers (name, model, printer_model_id, status, total_hours)
-      VALUES (?, ?, ?, 'IDLE', 0)
+      INSERT INTO printers (name, model, printer_model_id, status, total_hours, printer_ip, printer_serial, printer_access_code)
+      VALUES (?, ?, ?, 'IDLE', 0, ?, ?, ?)
     `).bind(
       printer.name,
       modelName,
-      printer.printerModelId ?? null
+      printer.printerModelId ?? null,
+      printer.printerIp ?? null,
+      printer.printerSerial ?? null,
+      printer.printerAccessCode ?? null,
     ).run();
     
     return { 
@@ -165,6 +171,9 @@ export async function updatePrinter(
     model?: string | null;
     printerModelId?: number | null;
     suggested_queue?: string | null;
+    printerIp?: string | null;
+    printerSerial?: string | null;
+    printerAccessCode?: string | null;
   }
 ): Promise<ServerResponse> {
   try {
@@ -196,6 +205,19 @@ export async function updatePrinter(
     if (printer.suggested_queue !== undefined) {
       updates.push('suggested_queue = ?');
       values.push(printer.suggested_queue);
+    }
+
+    if (printer.printerIp !== undefined) {
+      updates.push('printer_ip = ?');
+      values.push(printer.printerIp || null);
+    }
+    if (printer.printerSerial !== undefined) {
+      updates.push('printer_serial = ?');
+      values.push(printer.printerSerial || null);
+    }
+    if (printer.printerAccessCode !== undefined) {
+      updates.push('printer_access_code = ?');
+      values.push(printer.printerAccessCode || null);
     }
 
     if (updates.length === 0) {
@@ -509,7 +531,7 @@ export async function completePrintJob(
   
   let endTime: number;
   
-  if (job.status == 'failed' && job.expected_time > (job.start_time - actualEndTime)) {
+  if (job.status == 'failed' && (job.expected_time ?? 0) > (job.start_time - actualEndTime)) {
     endTime = actualEndTime;
   } else {
     const expectedDurationMs = (job.expected_time || 0) * 60 * 1000;
@@ -657,16 +679,23 @@ export async function deleteSpoolPreset(db: D1Database, id: number): Promise<Ser
 // Print Module Functions
 export async function createPrintModule(db: D1Database, module: {
   name: string;
-  expectedWeight: number;
-  expectedTime: number;
+  expectedWeight?: number | null;
+  expectedTime?: number | null;
   objectsPerPrint?: number;
   defaultSpoolPresetId?: number | null;
   spoolPresetIds?: number[];
-  path: string;
+  localFileHandlerPath?: string | null;
   imagePath?: string | null;
   printerModel?: string | null;
   printerModelId?: number | null;
   inventorySlug?: string | null;
+  fileName?: string | null;
+  thumbnail?: string | null;
+  filamentType?: string | null;
+  filamentColor?: string | null;
+  plateType?: string | null;
+  nozzleDiameter?: number | null;
+  piFilePath?: string | null;
 }) {
   // If printerModelId provided, sync printer_model text
   let printerModelText = module.printerModel ?? null;
@@ -677,19 +706,27 @@ export async function createPrintModule(db: D1Database, module: {
   const result = await db.prepare(`
     INSERT INTO print_modules (
       name, expected_weight, expected_time, objects_per_print,
-      default_spool_preset_id, path, image_path, printer_model, printer_model_id, inventory_slug
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      default_spool_preset_id, local_file_handler_path, image_path, printer_model, printer_model_id, inventory_slug,
+      file_name, thumbnail, filament_type, filament_color, plate_type, nozzle_diameter, pi_file_path
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     module.name,
-    module.expectedWeight,
-    module.expectedTime,
+    module.expectedWeight ?? null,
+    module.expectedTime ?? null,
     module.objectsPerPrint ?? 1,
     module.spoolPresetIds?.[0] ?? module.defaultSpoolPresetId ?? null,
-    module.path,
+    module.localFileHandlerPath ?? null,
     module.imagePath || null,
     printerModelText,
     module.printerModelId ?? null,
-    module.inventorySlug ?? null
+    module.inventorySlug ?? null,
+    module.fileName ?? null,
+    module.thumbnail ?? null,
+    module.filamentType ?? null,
+    module.filamentColor ?? null,
+    module.plateType ?? null,
+    module.nozzleDiameter ?? null,
+    module.piFilePath ?? null
   ).run();
 
   const moduleId = result.meta.last_row_id as number;
@@ -728,16 +765,24 @@ export async function updatePrintModule(
   id: number,
   module: {
     name?: string;
-    expectedWeight?: number;
-    expectedTime?: number;
+    expectedWeight?: number | null;
+    expectedTime?: number | null;
     objectsPerPrint?: number;
     defaultSpoolPresetId?: number | null;
     spoolPresetIds?: number[];
-    path?: string;
+    localFileHandlerPath?: string | null;
     imagePath?: string | null;
     printerModel?: string | null;
     printerModelId?: number | null;
     inventorySlug?: string | null;
+    fileName?: string | null;
+    thumbnail?: string | null;
+    filamentType?: string | null;
+    filamentColor?: string | null;
+    plateType?: string | null;
+    nozzleDiameter?: number | null;
+    piFilePath?: string | null;
+    fileStoredOnPi?: number;
   }
 ): Promise<ServerResponse> {
   const updates: string[] = [];
@@ -768,13 +813,45 @@ export async function updatePrintModule(
     updates.push('default_spool_preset_id = ?');
     values.push(module.defaultSpoolPresetId);
   }
-  if (module.path !== undefined) {
-    updates.push('path = ?');
-    values.push(module.path);
+  if (module.localFileHandlerPath !== undefined) {
+    updates.push('local_file_handler_path = ?');
+    values.push(module.localFileHandlerPath);
   }
   if (module.imagePath !== undefined) {
     updates.push('image_path = ?');
     values.push(module.imagePath);
+  }
+  if (module.fileName !== undefined) {
+    updates.push('file_name = ?');
+    values.push(module.fileName);
+  }
+  if (module.thumbnail !== undefined) {
+    updates.push('thumbnail = ?');
+    values.push(module.thumbnail);
+  }
+  if (module.filamentType !== undefined) {
+    updates.push('filament_type = ?');
+    values.push(module.filamentType);
+  }
+  if (module.filamentColor !== undefined) {
+    updates.push('filament_color = ?');
+    values.push(module.filamentColor);
+  }
+  if (module.plateType !== undefined) {
+    updates.push('plate_type = ?');
+    values.push(module.plateType);
+  }
+  if (module.nozzleDiameter !== undefined) {
+    updates.push('nozzle_diameter = ?');
+    values.push(module.nozzleDiameter);
+  }
+  if (module.piFilePath !== undefined) {
+    updates.push('pi_file_path = ?');
+    values.push(module.piFilePath);
+  }
+  if (module.fileStoredOnPi !== undefined) {
+    updates.push('file_stored_on_pi = ?');
+    values.push(module.fileStoredOnPi);
   }
   if (module.printerModelId !== undefined) {
     updates.push('printer_model_id = ?');
@@ -833,7 +910,9 @@ export async function getActivePrintJobs(db: D1Database) {
       p.name as printer_name,
       pm.name as module_name,
       pm.expected_weight,
-      pm.expected_time
+      pm.expected_time,
+      pm.objects_per_print,
+      pm.image_path as module_image_path
     FROM print_jobs pj
     JOIN printers p ON pj.printer_id = p.id
     JOIN print_modules pm ON pj.module_id = pm.id

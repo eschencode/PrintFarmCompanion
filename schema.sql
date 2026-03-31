@@ -55,6 +55,17 @@ CREATE INDEX IF NOT EXISTS idx_inventory_low_stock ON inventory(stock_count, min
 CREATE INDEX IF NOT EXISTS idx_inventory_log_inventory ON inventory_log(inventory_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_log_type ON inventory_log(change_type);
 
+-- Printer Models table (presets like P1S, H2S)
+CREATE TABLE IF NOT EXISTS printer_models (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  build_volume_x REAL,
+  build_volume_y REAL,
+  build_volume_z REAL,
+  created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
+);
+
 -- Spools table
 CREATE TABLE IF NOT EXISTS spools (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,31 +84,59 @@ CREATE TABLE IF NOT EXISTS printers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   model TEXT DEFAULT 'P1S',
+  printer_model_id INTEGER,
   status TEXT DEFAULT 'WAITING',
   loaded_spool_id INTEGER,
   total_hours REAL DEFAULT 0,
   suggested_queue TEXT,
-  FOREIGN KEY (loaded_spool_id) REFERENCES spools(id)
+  -- Bambu Lab LAN credentials (required for Pi bridge printing)
+  printer_ip TEXT,
+  printer_serial TEXT,
+  printer_access_code TEXT,
+  FOREIGN KEY (loaded_spool_id) REFERENCES spools(id),
+  FOREIGN KEY (printer_model_id) REFERENCES printer_models(id)
 );
 
--- Print Modules table
+-- Print Modules table (unified: supports both local file handler and Pi/autostart)
 CREATE TABLE IF NOT EXISTS print_modules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  expected_weight INTEGER NOT NULL,
+  -- Workflow fields (optional until configured)
+  expected_weight INTEGER,
   expected_time INTEGER,
   objects_per_print INTEGER DEFAULT 1,
   default_spool_preset_id INTEGER,
   inventory_slug TEXT,
-  model TEXT DEFAULT 'P1S',
-  path TEXT NOT NULL,
+  printer_model TEXT,
+  printer_model_id INTEGER,
+  -- Local file handler path (opens .3mf in Bambu Studio on local machine)
+  local_file_handler_path TEXT,
+  -- Legacy image path (for manually assigned images)
   image_path TEXT,
+  -- .3mf upload metadata (extracted client-side from Bambu Studio exports)
+  file_name TEXT,
+  thumbnail TEXT,
+  plate_type TEXT,
+  nozzle_diameter REAL,
+  -- Pi bridge path (set when .3mf has been pushed to the Raspberry Pi)
+  pi_file_path TEXT,
+  file_stored_on_pi INTEGER DEFAULT 0,
   FOREIGN KEY (default_spool_preset_id) REFERENCES spool_presets(id),
-  FOREIGN KEY (inventory_slug) REFERENCES inventory(slug)
+  FOREIGN KEY (inventory_slug) REFERENCES inventory(slug),
+  FOREIGN KEY (printer_model_id) REFERENCES printer_models(id)
 );
 
 -- Index for print_modules inventory link
 CREATE INDEX IF NOT EXISTS idx_print_modules_inventory_slug ON print_modules(inventory_slug);
+
+-- Junction table: one module can have multiple spool presets
+CREATE TABLE IF NOT EXISTS module_spool_presets (
+  module_id       INTEGER NOT NULL,
+  spool_preset_id INTEGER NOT NULL,
+  PRIMARY KEY (module_id, spool_preset_id),
+  FOREIGN KEY (module_id)       REFERENCES print_modules(id)  ON DELETE CASCADE,
+  FOREIGN KEY (spool_preset_id) REFERENCES spool_presets(id)  ON DELETE CASCADE
+);
 
 -- Print Jobs table
 CREATE TABLE IF NOT EXISTS print_jobs (
@@ -113,6 +152,7 @@ CREATE TABLE IF NOT EXISTS print_jobs (
   planned_weight INTEGER NOT NULL,
   actual_weight INTEGER,
   waste_weight INTEGER DEFAULT 0,
+  pi_task_id TEXT,
   FOREIGN KEY (module_id) REFERENCES print_modules(id),
   FOREIGN KEY (printer_id) REFERENCES printers(id),
   FOREIGN KEY (spool_id) REFERENCES spools(id)
@@ -150,6 +190,8 @@ CREATE TABLE IF NOT EXISTS shopify_sku_mapping (
   shopify_sku TEXT NOT NULL,
   inventory_slug TEXT NOT NULL,
   quantity INTEGER NOT NULL DEFAULT 1,
+  source_type TEXT NOT NULL DEFAULT 'inventory',
+  spool_preset_id INTEGER,
   FOREIGN KEY (inventory_slug) REFERENCES inventory(slug)
 );
 

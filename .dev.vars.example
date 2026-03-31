@@ -1,0 +1,5 @@
+# Local dev environment variables for Cloudflare Workers (wrangler dev)
+# Copy to .dev.vars (gitignored) and fill in values
+
+PI_TUNNEL_URL=https://pi.yourdomain.com
+PI_WEBHOOK_SECRET=change-me-to-a-random-string

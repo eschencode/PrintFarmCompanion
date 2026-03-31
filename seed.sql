@@ -1,5 +1,5 @@
 -- Sample Spool Presets
-INSERT INTO spool_presets (name, brand, material, color, default_weight, cost) VALUES
+INSERT OR IGNORE INTO spool_presets (name, brand, material, color, default_weight, cost) VALUES
   ('Bambu Blau', 'Bambu lap', 'PLA', 'Blau', 1000, 10.99),
   ('Blau Jake', '3dJake','PLA', 'Blau', 1000, 20),
   ('Pink', '3dJake','PLA', 'Pink', 1000, 20),
@@ -10,7 +10,7 @@ INSERT INTO spool_presets (name, brand, material, color, default_weight, cost) V
   ('Green', 'Bambu lap', 'PLA', 'Green', 1000, 10.99);
 
 -- Sample Printers
-INSERT INTO printers (name, model, status, loaded_spool_id, total_hours) VALUES
+INSERT OR IGNORE INTO printers (name, model, status, loaded_spool_id, total_hours) VALUES
   ('Mitarbeiter 01', 'P1S', 'IDLE', NULL, 145.5),
   ('Mitarbeiter 02', 'P1S', 'IDLE', NULL, 138.2),
   ('Mitarbeiter 03', 'P1S', 'IDLE', NULL, 152.7),
@@ -23,7 +23,7 @@ INSERT INTO printers (name, model, status, loaded_spool_id, total_hours) VALUES
 -- INVENTORY ITEMS (with slugs for easy reference)
 -- ============================================
 
-INSERT INTO inventory (name, slug, sku, description, stock_count, min_threshold) VALUES
+INSERT OR IGNORE INTO inventory (name, slug, sku, description, stock_count, min_threshold) VALUES
   -- ========== HAKEN KLEBEN ==========
   ('Haken Kleben Blau', 'haken-kleben-blau', 'HAK/K/BL', 'Wandhaken zum Kleben - Royal Blau', 0, 50),
   ('Haken Kleben Pink', 'haken-kleben-pink', 'HAK/K/PI', 'Wandhaken zum Kleben - Neon Pink', 0, 50),
@@ -80,7 +80,7 @@ INSERT INTO inventory (name, slug, sku, description, stock_count, min_threshold)
   ('Stöpsel Rosa', 'stoepsel-rosa', 'KLO/P/RO', 'Klopapierhalter Stöpsel - Rosa', 0, 40);
 
 -- Print Modules (with inventory_slug reference)
-INSERT INTO print_modules (name, expected_weight, expected_time, objects_per_print, default_spool_preset_id, inventory_slug, path, image_path) VALUES
+INSERT OR IGNORE INTO print_modules (name, expected_weight, expected_time, objects_per_print, default_spool_preset_id, inventory_slug, local_file_handler_path, image_path) VALUES
   -- Haken Kleben
   ('Kleben Haken Blau', 179, 256, 20, 2, 'haken-kleben-blau', '/Users/linus/Documents/3d-models/Haken/blau/Haken_blau_kleben.3mf', '/images/haken.JPG'),
   ('Kleben Haken Pink', 179, 256, 20, 3, 'haken-kleben-pink', '/Users/linus/Documents/3d-models/Haken/pink/P1S_Haken_pink_kleben.3mf', '/images/haken.JPG'),
@@ -129,7 +129,7 @@ INSERT INTO print_modules (name, expected_weight, expected_time, objects_per_pri
   ('stöpsel Blau', 308, 660, 62, 1, 'stoepsel-blau', '/Users/linus/Documents/3d-models/Klorolle/stöpsel.3mf', '/images/stöpsel.JPG');
 
 -- Sample Spools for test print jobs
-INSERT INTO spools (preset_id, brand, material, color, initial_weight, remaining_weight, cost) VALUES
+INSERT OR IGNORE INTO spools (preset_id, brand, material, color, initial_weight, remaining_weight, cost) VALUES
   (2, '3dJake', 'PLA', 'Blau', 1000, 250, 20.00),
   (3, '3dJake', 'PLA', 'Pink', 1000, 380, 20.00),
   (4, '3dJake', 'PLA', 'Orange', 5000, 3800, 20.00),
@@ -144,14 +144,14 @@ INSERT INTO spools (preset_id, brand, material, color, initial_weight, remaining
 -- ============================================
 
 -- Initialize sync state
-INSERT INTO shopify_sync (last_order_id, last_sync_at, orders_processed, items_deducted) 
+INSERT OR IGNORE INTO shopify_sync (last_order_id, last_sync_at, orders_processed, items_deducted) 
 VALUES (NULL, NULL, 0, 0);
 
 -- ========== WANDHAKEN EINZELN (K1/S1 - OLD SKU FORMAT) ==========
 -- These are single hooks from older orders
 -- WH/K1 = Kleben single, WH/S1 = Schrauben single
 
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   -- Kleben einzeln (old format)
   ('WH/K1/BL', 'haken-kleben-blau', 1),
   ('WH/K1/PI', 'haken-kleben-pink', 1),
@@ -173,7 +173,7 @@ INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
 -- WH/MXK = Mix Kleben, WH/MXS = Mix Schrauben
 -- NOTE: These are SINGLE hooks, no Hakenhalter included (halter only in 5-packs)
 
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   -- Kleben einzeln
   ('WH/MXK/BL', 'haken-kleben-blau', 1),
   ('WH/MXK/PI', 'haken-kleben-pink', 1),
@@ -194,7 +194,7 @@ INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
 -- WH/K5 = Kleben 5er pack
 -- Each includes: 5x hooks + 1x Hakenhalter Oben Kleben + 1x Hakenhalter Unten Kleben
 
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   -- Blau
   ('WH/K5/BL', 'haken-kleben-blau', 5),
   ('WH/K5/BL', 'hakenhalter-oben-kleben', 1),
@@ -229,7 +229,7 @@ INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
 -- WH/S5 = Schrauben 5er pack
 -- Each includes: 5x hooks + 1x Hakenhalter Oben Schrauben + 1x Hakenhalter Unten Schrauben
 
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   -- Blau
   ('WH/S5/BL', 'haken-schrauben-blau', 5),
   ('WH/S5/BL', 'hakenhalter-oben-schrauben', 1),
@@ -264,21 +264,21 @@ INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
 -- These bundles map to multiple hook colors + hakenhalter
 
 -- Blau (3) / Lila (2) - Kleben
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('WH/K5/BLLI', 'haken-kleben-blau', 3),
   ('WH/K5/BLLI', 'haken-kleben-lila', 2),
   ('WH/K5/BLLI', 'hakenhalter-oben-kleben', 1),
   ('WH/K5/BLLI', 'hakenhalter-unten-kleben', 1);
 
 -- Lila (3) / Rosa (2) - Kleben
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('WH/K5/LIRO', 'haken-kleben-lila', 3),
   ('WH/K5/LIRO', 'haken-kleben-rosa', 2),
   ('WH/K5/LIRO', 'hakenhalter-oben-kleben', 1),
   ('WH/K5/LIRO', 'hakenhalter-unten-kleben', 1);
 
 -- Pink (3) / Blau (2) - Kleben
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('WH/K5/PIBL', 'haken-kleben-pink', 3),
   ('WH/K5/PIBL', 'haken-kleben-blau', 2),
   ('WH/K5/PIBL', 'hakenhalter-oben-kleben', 1),
@@ -287,21 +287,21 @@ INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
 -- ========== WANDHAKEN 5ER PACK SCHRAUBEN (MIXED COLORS) ==========
 
 -- Blau (3) / Lila (2) - Schrauben
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('WH/S5/BLLI', 'haken-schrauben-blau', 3),
   ('WH/S5/BLLI', 'haken-schrauben-lila', 2),
   ('WH/S5/BLLI', 'hakenhalter-oben-schrauben', 1),
   ('WH/S5/BLLI', 'hakenhalter-unten-schrauben', 1);
 
 -- Lila (3) / Rosa (2) - Schrauben
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('WH/S5/LIRO', 'haken-schrauben-lila', 3),
   ('WH/S5/LIRO', 'haken-schrauben-rosa', 2),
   ('WH/S5/LIRO', 'hakenhalter-oben-schrauben', 1),
   ('WH/S5/LIRO', 'hakenhalter-unten-schrauben', 1);
 
 -- Pink (3) / Blau (2) - Schrauben
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('WH/S5/PIBL', 'haken-schrauben-pink', 3),
   ('WH/S5/PIBL', 'haken-schrauben-blau', 2),
   ('WH/S5/PIBL', 'hakenhalter-oben-schrauben', 1),
@@ -312,37 +312,37 @@ INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
 -- Each contains: 1x Klohalter, 1x Stab, 2x Stöpsel (Stöpsel color matches Stab)
 
 -- KLH/GRRO = Grün Halter, Rosa Stab/Stöpsel
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('KLH/GRRO', 'klohalter-gruen', 1),
   ('KLH/GRRO', 'stab-rosa', 1),
   ('KLH/GRRO', 'stoepsel-rosa', 2);
 
 -- KLH/LIRO = Lila Halter, Rosa Stab/Stöpsel
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('KLH/LIRO', 'klohalter-lila', 1),
   ('KLH/LIRO', 'stab-rosa', 1),
   ('KLH/LIRO', 'stoepsel-rosa', 2);
 
 -- KLH/PIBL = Pink Halter, Blau Stab/Stöpsel
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('KLH/PIBL', 'klohalter-pink', 1),
   ('KLH/PIBL', 'stab-blau', 1),
   ('KLH/PIBL', 'stoepsel-blau', 2);
 
 -- KLH/ROBL = Rosa Halter, Blau Stab/Stöpsel
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('KLH/ROBL', 'klohalter-rosa', 1),
   ('KLH/ROBL', 'stab-blau', 1),
   ('KLH/ROBL', 'stoepsel-blau', 2);
 
 -- KLH/BLOR = Blau Halter, Orange Stab/Stöpsel
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('KLH/BLOR', 'klohalter-blau', 1),
   ('KLH/BLOR', 'stab-orange', 1),
   ('KLH/BLOR', 'stoepsel-orange', 2);
 
 -- ========== VASEN FLUID (Simple 1:1) ==========
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('VAS/FL/BL', 'vase-fluid-blau', 1),
   ('VAS/FL/PI', 'vase-fluid-pink', 1),
   ('VAS/FL/OR', 'vase-fluid-orange', 1),
@@ -352,7 +352,7 @@ INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('VAS/FL/SW', 'vase-fluid-schwarz', 1);
 
 -- ========== VASEN SHRUNK (Simple 1:1) ==========
-INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
+INSERT OR IGNORE INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity) VALUES
   ('VAS/SH/BL', 'vase-shrunk-blau', 1),
   ('VAS/SH/PI', 'vase-shrunk-pink', 1),
   ('VAS/SH/OR', 'vase-shrunk-orange', 1),
