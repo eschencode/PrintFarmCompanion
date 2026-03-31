@@ -15,5 +15,5 @@
 	],
 	"ai": {
 		"binding": "AI"
-	},
-	// :)PI_TUNNEL_URL and PI_WEBHOOK_SECRET are set via the Cloudflare Pages dashboard
+	}
+}
