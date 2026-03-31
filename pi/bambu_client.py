@@ -36,6 +36,52 @@ class PrintStatus:
     raw: dict = field(default_factory=dict)
 
 
+class ImplicitFTP_TLS(ftplib.FTP_TLS):
+    """
+    FTP_TLS subclass that wraps the socket with TLS immediately on connect
+    (implicit TLS / port 990) rather than using AUTH TLS after connection.
+    Bambu Lab printers require implicit TLS.
+    """
+    def storbinary(self, cmd, fp, blocksize=8192, callback=None, rest=None):
+        """Override to ignore TLS close_notify timeout — Bambu servers don't send it."""
+        self.voidcmd('TYPE I')
+        with self.transfercmd(cmd, rest) as conn:
+            while True:
+                buf = fp.read(blocksize)
+                if not buf:
+                    break
+                conn.sendall(buf)
+                if callback:
+                    callback(buf)
+            try:
+                conn.unwrap()
+            except (TimeoutError, OSError):
+                pass  # Bambu doesn't send TLS close_notify — safe to ignore
+        return self.voidresp()
+
+    def connect(self, host='', port=0, timeout=-999, source_address=None):
+        # Call grandparent (FTP.connect) to set up the raw socket
+        if timeout != -999:
+            self.timeout = timeout
+        if host:
+            self.host = host
+        if port:
+            self.port = port
+
+        import socket as _socket
+        self.sock = _socket.create_connection(
+            (self.host, self.port),
+            self.timeout,
+            source_address,
+        )
+        self.af = self.sock.family
+        # Wrap immediately with TLS — no plain-text greeting
+        self.sock = self.context.wrap_socket(self.sock, server_hostname=self.host)
+        self.file = self.sock.makefile('r', encoding=self.encoding)
+        self.welcome = self.getresp()
+        return self.welcome
+
+
 def upload_file_ftps(credentials: PrinterCredentials, local_path: str, remote_filename: str) -> str:
     """
     Upload a .gcode.3mf file to the printer via FTPS (implicit TLS, port 990).
@@ -45,15 +91,16 @@ def upload_file_ftps(credentials: PrinterCredentials, local_path: str, remote_fi
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE  # Bambu uses self-signed cert
 
-    remote_path = f"/sdcard/Models/{remote_filename}"
+    # FTP root on Bambu printers IS /sdcard/ — upload to cache/ subfolder
+    remote_path = f"/cache/{remote_filename}"
 
-    with ftplib.FTP_TLS(context=context) as ftp:
+    with ImplicitFTP_TLS(context=context) as ftp:
         ftp.connect(host=credentials.ip, port=990, timeout=30)
         ftp.login(user="bblp", passwd=credentials.access_code)
         ftp.prot_p()  # switch to encrypted data channel
 
         with open(local_path, "rb") as f:
-            ftp.storbinary(f"STOR {remote_path}", f)
+            ftp.storbinary(f"STOR cache/{remote_filename}", f)
 
     return remote_path
 
@@ -76,16 +123,17 @@ def build_print_command(
             "command": "project_file",
             "param": "Metadata/plate_1.gcode",
             "url": f"ftp://{remote_path}",
-            "subtask_id": "1",
+            "subtask_id": "0",
             "profile_id": "0",
             "task_id": task_id,
             "project_id": "0",
             "bed_type": "auto",
             "bed_leveling": bed_leveling,
-            "flow_calibration": False,
-            "vibration_calibration": vibration_calibration,
+            "flow_cali": False,
+            "vibration_cali": vibration_calibration,
             "layer_inspect": False,
             "use_ams": use_ams,
+            "ams_mapping": [],
             "timelapse": timelapse,
         }
     }
@@ -175,6 +223,53 @@ class BambuMQTTClient:
             self.on_status(status)
 
 
+def send_print_command(
+    credentials: PrinterCredentials,
+    remote_path: str,
+    task_id: str,
+    options: dict = None,
+):
+    """
+    Send MQTT print command for an already-uploaded file.
+    Designed to be called in a background thread.
+    """
+    options = options or {}
+    cmd = build_print_command(
+        remote_path=remote_path,
+        task_id=task_id,
+        bed_leveling=options.get("bed_leveling", True),
+        vibration_calibration=options.get("vibration_calibration", True),
+        use_ams=options.get("use_ams", False),
+        timelapse=options.get("timelapse", False),
+    )
+
+    connected = threading.Event()
+    client = mqtt.Client()
+    client.username_pw_set("bblp", credentials.access_code)
+    client.tls_set(cert_reqs=ssl.CERT_NONE)
+    client.tls_insecure_set(True)
+
+    def on_connect(_c, _u, _f, rc):
+        print(f"[MQTT] on_connect rc={rc}")
+        if rc == 0:
+            connected.set()
+
+    client.on_connect = on_connect
+    client.connect(credentials.ip, port=8883, keepalive=10)
+    client.loop_start()
+
+    if not connected.wait(timeout=15):
+        client.loop_stop()
+        print("[MQTT] Connection timed out — print command not sent")
+        return
+
+    client.publish(f"device/{credentials.serial}/request", json.dumps(cmd), qos=1)
+    time.sleep(1)  # allow QoS 1 ack
+    client.loop_stop()
+    client.disconnect()
+    print(f"[Bambu] Print command sent. task_id={task_id}")
+
+
 def start_print(
     credentials: PrinterCredentials,
     local_path: str,
@@ -188,31 +283,8 @@ def start_print(
     options = options or {}
     task_id = str(uuid.uuid4())
 
-    # 1. Upload file to printer
     remote_path = upload_file_ftps(credentials, local_path, remote_filename)
     print(f"[Bambu] Uploaded to {remote_path}")
 
-    # 2. Send MQTT print command
-    cmd = build_print_command(
-        remote_path=remote_path,
-        task_id=task_id,
-        bed_leveling=options.get("bed_leveling", True),
-        vibration_calibration=options.get("vibration_calibration", True),
-        use_ams=options.get("use_ams", False),
-        timelapse=options.get("timelapse", False),
-    )
-
-    client = mqtt.Client()
-    client.username_pw_set("bblp", credentials.access_code)
-    client.tls_set(cert_reqs=ssl.CERT_NONE)
-    client.tls_insecure_set(True)
-    client.connect(credentials.ip, port=8883, keepalive=10)
-    client.loop_start()
-    time.sleep(1)  # wait for connection
-    client.publish(f"device/{credentials.serial}/request", json.dumps(cmd))
-    time.sleep(0.5)
-    client.loop_stop()
-    client.disconnect()
-
-    print(f"[Bambu] Print command sent. task_id={task_id}")
+    send_print_command(credentials, remote_path, task_id, options)
     return task_id

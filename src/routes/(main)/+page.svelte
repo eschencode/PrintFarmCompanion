@@ -57,6 +57,75 @@
     return await fileHandlerStore.openFile(filePath, moduleName, printerId);
   }
 
+  // ── Pi live status polling ────────────────────────────────────────────────
+  let piStatusByJobId: Record<number, { gcode_state: string; progress: number; label: string }> = {};
+  let piPollingIntervals: Record<number, ReturnType<typeof setInterval>> = {};
+
+  function startPiPolling(jobId: number, printerSerial: string) {
+    if (piPollingIntervals[jobId]) return; // already polling
+    piPollingIntervals[jobId] = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/pi/status?serial=${printerSerial}`);
+        if (!res.ok) return;
+        const data = await res.json() as { connected: boolean; status: { gcode_state: string; progress: number } | null };
+        if (!data.status) return;
+        const stateLabels: Record<string, string> = {
+          PREPARE: 'Preparing…',
+          RUNNING: `Printing ${data.status.progress}%`,
+          PAUSE: 'Paused',
+          FINISH: 'Done',
+          FAILED: 'Failed',
+        };
+        const label = stateLabels[data.status.gcode_state] ?? data.status.gcode_state;
+        piStatusByJobId = { ...piStatusByJobId, [jobId]: { gcode_state: data.status.gcode_state, progress: data.status.progress, label } };
+        if (data.status.gcode_state === 'FINISH' || data.status.gcode_state === 'FAILED') {
+          stopPiPolling(jobId);
+          setTimeout(() => window.location.reload(), 2000);
+        }
+      } catch { /* ignore */ }
+    }, 5000);
+  }
+
+  function stopPiPolling(jobId: number) {
+    clearInterval(piPollingIntervals[jobId]);
+    delete piPollingIntervals[jobId];
+  }
+
+  onDestroy(() => { Object.values(piPollingIntervals).forEach(clearInterval); });
+
+  // ── Priority print start ──────────────────────────────────────────────────
+  async function startPrintWithPriority(module: any, printer: any) {
+    const hasPi = module.file_stored_on_pi && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
+    const hasLocalHandler = module.local_file_handler_path && fileHandlerState.connected;
+
+    if (hasPi) {
+      // Pi path: call /api/pi/print directly (creates job record + triggers printer)
+      const res = await fetch('/api/pi/print', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ module_id: module.id, printer_id: printer.id }),
+      });
+      const result = await res.json() as { success: boolean; job_id?: number; task_id?: string; error?: string };
+      if (result.success && result.job_id) {
+        startPiPolling(result.job_id, printer.printer_serial);
+      }
+      closePrinterModal();
+      window.location.reload();
+      return;
+    }
+
+    // Local handler or fallback: POST to ?/startPrint to create job record
+    const formData = new FormData();
+    formData.append('printerId', String(printer.id));
+    formData.append('moduleId', String(module.id));
+    const res = await fetch('?/startPrint', { method: 'POST', body: formData });
+    if (res.ok && hasLocalHandler) {
+      await openFileLocally(module.local_file_handler_path, module.name, printer.id);
+    }
+    closePrinterModal();
+    window.location.reload();
+  }
+
   // Predefined failure reasons
   const failureReasons = [
     'Spaghetti / Layer Adhesion Failure',
@@ -716,7 +785,8 @@
               {#if printer.status === 'printing'}
                 {@const activePrint = getActivePrintJob(Number(printer.id))}
                 {#if activePrint}
-                  {@const progress = getProgress(Number(activePrint.start_time), Number(activePrint.expected_time))}
+                  {@const piStatus = piStatusByJobId[activePrint.id]}
+                  {@const progress = piStatus ? piStatus.progress : getProgress(Number(activePrint.start_time), Number(activePrint.expected_time))}
                   <div class="mt-2 px-1">
                     <div class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
                       <div
@@ -725,7 +795,7 @@
                       ></div>
                     </div>
                     <p class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-400 dark:text-zinc-500 mt-1 tabular-nums">
-                      {progress}%
+                      {#if piStatus}{piStatus.label}{:else}{progress}%{/if}
                     </p>
                   </div>
                 {/if}
@@ -1148,34 +1218,11 @@
   {#if nextPrint}
     {@const allModules = data.printModules}
     {@const matchingModule = allModules.find(m => m.id === nextPrint.module_id)}
-    <form
-      method="POST"
-      action="?/startPrint"
-      use:enhance={() => {
-        return async ({ result }) => {
-          if (result.type === 'success') {
-            // Optionally open file locally if path exists
-			console.log('matchingModule:', matchingModule);
-            if (matchingModule && matchingModule.local_file_handler_path) {
-				 console.log('Opening file:', matchingModule.local_file_handler_path);
-              await openFileLocally(
-                matchingModule.local_file_handler_path,
-                matchingModule.name,
-                selectedPrinter.id
-              );
-            }
-            closePrinterModal();
-            window.location.reload();
-          }
-        };
-      }}
+    <button
+      type="button"
+      onclick={() => matchingModule && startPrintWithPriority(matchingModule, selectedPrinter)}
+      class="w-full text-left bg-emerald-500/5 border border-emerald-500/15 rounded-xl p-5 mt-4 hover:bg-emerald-500/10 hover:border-emerald-500/25 transition-all duration-200"
     >
-      <input type="hidden" name="printerId" value={selectedPrinter.id} />
-      <input type="hidden" name="moduleId" value={nextPrint.module_id} />
-      <button
-        type="submit"
-        class="w-full text-left bg-emerald-500/5 border border-emerald-500/15 rounded-xl p-5 mt-4 hover:bg-emerald-500/10 hover:border-emerald-500/25 transition-all duration-200"
-      >
         <div class="flex items-center gap-4">
           <div class="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
             <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -1191,7 +1238,6 @@
           </div>
         </div>
       </button>
-    </form>
   {/if}
 {/if}
             <!-- Action Buttons -->
@@ -1767,61 +1813,37 @@
           >
             Cancel
           </button>
-          <form
-            method="POST"
-            action="?/startPrint"
-            class="flex-1"
-            use:enhance={() => {
-              return async ({ result }) => {
-                if (result.type === 'success') {
-                  const allModules = [
-                    ...categorizedModules.compatiblePrintable,
-                    ...categorizedModules.compatibleInsufficientMaterial,
-                    ...categorizedModules.anySpoolPrintable
-                  ];
-                  const selectedModule = allModules.find(m => m.id === selectedModuleId);
-
-                  if (selectedModule && selectedModule.local_file_handler_path) {
-                    await openFileLocally(
-                      selectedModule.local_file_handler_path,
-                      selectedModule.name,
-                      selectedPrinter.id
-                    );
-                  }
-
-                  closePrinterModal();
-                  window.location.reload();
-                }
-              };
-            }}
-          >
-            <input type="hidden" name="printerId" value={selectedPrinter.id} />
+          <div class="flex-1">
             {#if selectedModuleId}
-              <input type="hidden" name="moduleId" value={selectedModuleId} />
-            {/if}
-            <button
-              type="submit"
-              disabled={!selectedModuleId}
-              class="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium
-                     disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              {#if selectedModuleId}
-                {@const allModules = [
-                  ...categorizedModules.compatiblePrintable,
-                  ...categorizedModules.compatibleInsufficientMaterial,
-                  ...categorizedModules.anySpoolPrintable
-                ]}
-                {@const selectedModule = allModules.find(m => m.id === selectedModuleId)}
+              {@const allModules = [
+                ...categorizedModules.compatiblePrintable,
+                ...categorizedModules.compatibleInsufficientMaterial,
+                ...categorizedModules.anySpoolPrintable
+              ]}
+              {@const selectedModule = allModules.find(m => m.id === selectedModuleId)}
+              <button
+                type="button"
+                onclick={() => selectedModule && startPrintWithPriority(selectedModule, selectedPrinter)}
+                class="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium"
+              >
                 {#if selectedModule && loadedSpool && selectedModule.expected_weight > loadedSpool.remaining_weight}
                   Start Print (Low Material)
+                {:else if selectedModule?.file_stored_on_pi && selectedPrinter?.printer_ip}
+                  Start Print (Pi)
                 {:else}
                   Start Print Job
                 {/if}
-              {:else}
+              </button>
+            {:else}
+              <button
+                type="button"
+                disabled
+                class="w-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-4 py-3.5 rounded-xl font-medium opacity-30 cursor-not-allowed"
+              >
                 Start Print Job
-              {/if}
-            </button>
-          </form>
+              </button>
+            {/if}
+          </div>
         </div>
       </div>
     </div>
