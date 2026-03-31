@@ -41,21 +41,36 @@ export interface Printer {
 }
 
 /**
- * Print Module - Represents a reusable print configuration
+ * Print Module - Represents a reusable print configuration.
+ * Supports two print systems independently:
+ *   - Local file handler: uses local_file_handler_path to open .3mf in Bambu Studio locally
+ *   - Pi bridge: uses pi_file_path + file_stored_on_pi for automated printing via Raspberry Pi
  */
 export interface PrintModule {
   id: number;
   name: string;
-  expected_weight: number;
+  // Workflow fields (optional until configured)
+  expected_weight: number | null;
   expected_time: number | null;
   objects_per_print: number;
   default_spool_preset_id: number | null;
-  inventory_slug: string | null;  // Text reference to inventory item
-  path: string;
-  image_path: string | null;
-  printer_model?: string;
+  inventory_slug: string | null;
+  printer_model?: string | null;
   printer_model_id?: number | null;
   printer_model_name?: string | null;
+  // Local file handler system
+  local_file_handler_path: string | null;
+  image_path: string | null;
+  // .3mf upload metadata
+  file_name: string | null;
+  thumbnail: string | null;
+  filament_type: string | null;
+  filament_color: string | null;
+  plate_type: string | null;
+  nozzle_diameter: number | null;
+  // Pi bridge system
+  pi_file_path: string | null;
+  file_stored_on_pi: number; // 0 or 1
 }
 
 /**
@@ -211,12 +226,19 @@ export interface NewSpool {
 
 export interface NewPrintModule {
   name: string;
-  expected_weight: number;
-  expected_time: number;
+  expected_weight?: number | null;
+  expected_time?: number | null;
   objects_per_print?: number;
   default_spool_preset_id?: number | null;
-  path: string;
+  local_file_handler_path?: string | null;
   image_path?: string | null;
+  file_name?: string | null;
+  thumbnail?: string | null;
+  filament_type?: string | null;
+  filament_color?: string | null;
+  plate_type?: string | null;
+  nozzle_diameter?: number | null;
+  pi_file_path?: string | null;
 }
 
 export interface NewSpoolPreset {

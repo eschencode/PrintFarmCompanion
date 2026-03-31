@@ -27,6 +27,7 @@
 		"@tailwindcss/typography": "^0.5.19",
 		"@tailwindcss/vite": "^4.1.17",
 		"@tsconfig/svelte": "^5.0.6",
+		"@types/jszip": "^3.4.1",
 		"@types/node": "^22",
 		"eslint": "^9.39.1",
 		"eslint-plugin-svelte": "^3.13.1",
@@ -40,7 +41,8 @@
 		"wrangler": "^4.56.0"
 	},
 	"dependencies": {
-		"echarts": "^6.0.0"
+		"echarts": "^6.0.0",
+		"jszip": "^3.10.1"
 	},
 	"optionalDependencies": {
 		"@rollup/rollup-linux-x64-gnu": "^4.56.0",
