@@ -31,8 +31,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       INSERT INTO print_modules
         (name, file_name, thumbnail, filament_type, filament_color, expected_time, plate_type,
          nozzle_diameter, expected_weight, default_spool_preset_id, objects_per_print,
-         inventory_slug, printer_model, local_file_handler_path, pi_file_path, file_stored_on_pi)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         inventory_slug, printer_model, local_file_handler_path, pi_file_path, file_stored_on_pi,
+         path)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       name,
       file_name,
@@ -42,7 +43,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       estimated_time ?? null,
       plate_type ?? null,
       nozzle_diameter ?? null,
-      expected_weight ?? null,
+      expected_weight ?? 0,
       default_spool_preset_id ?? null,
       objects_per_print ?? 1,
       inventory_slug ?? null,
@@ -50,6 +51,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       local_file_handler_path ?? null,
       pi_file_path ?? null,
       file_stored_on_pi ?? 0,
+      local_file_handler_path ?? '',  // legacy NOT NULL column
     ).run();
 
     return json({ success: true, data: { id: result.meta.last_row_id, name } });
