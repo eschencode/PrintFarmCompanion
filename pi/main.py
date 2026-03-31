@@ -6,7 +6,9 @@ Receives .gcode.3mf files and print commands from Cloudflare Workers,
 then talks to Bambu Lab printers on the local network via FTPS + MQTT.
 """
 
+import ftplib
 import os
+import ssl
 import threading
 from pathlib import Path
 from typing import Optional
@@ -17,7 +19,15 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from .bambu_client import BambuMQTTClient, PrinterCredentials, PrintStatus, start_print
+import uuid
+
+from .bambu_client import (
+    BambuMQTTClient,
+    PrinterCredentials,
+    PrintStatus,
+    upload_file_ftps,
+    send_print_command,
+)
 
 load_dotenv()
 
@@ -39,6 +49,47 @@ _monitors_lock = threading.Lock()
 @app.get("/health")
 def health():
     return {"ok": True, "files_dir": str(FILES_DIR), "active_monitors": list(_monitors.keys())}
+
+
+@app.get("/ping-printer")
+def ping_printer(ip: str, access_code: str, serial: str):
+    """
+    Quick connectivity test — tries FTPS login and MQTT connect without printing.
+    Call: GET /ping-printer?ip=192.168.x.x&access_code=XXXX&serial=XXXX
+    """
+    import socket
+    result = {"ip": ip, "serial": serial, "ftps": False, "mqtt": False, "errors": []}
+
+    # Test FTPS port 990
+    try:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        with ftplib.FTP_TLS(context=context) as ftp:
+            ftp.connect(host=ip, port=990, timeout=5)
+            ftp.login(user="bblp", passwd=access_code)
+            result["ftps"] = True
+    except Exception as e:
+        result["errors"].append(f"FTPS: {e}")
+
+    # Test MQTT port 8883
+    try:
+        import paho.mqtt.client as mqtt
+        connected = threading.Event()
+        c = mqtt.Client()
+        c.username_pw_set("bblp", access_code)
+        c.tls_set(cert_reqs=ssl.CERT_NONE)
+        c.tls_insecure_set(True)
+        c.on_connect = lambda *_: connected.set()
+        c.connect(ip, port=8883, keepalive=5)
+        c.loop_start()
+        result["mqtt"] = connected.wait(timeout=5)
+        c.loop_stop()
+        c.disconnect()
+    except Exception as e:
+        result["errors"].append(f"MQTT: {e}")
+
+    return result
 
 
 # ── File upload ───────────────────────────────────────────────────────────────
@@ -81,24 +132,35 @@ def trigger_print(req: PrintRequest):
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {req.file_path}")
 
+    print(f"[Print] file={req.file_path} ip={req.printer_ip} serial={req.printer_serial} access_code={'*'*4+req.printer_access_code[-2:] if req.printer_access_code else 'MISSING'}")
+
     credentials = PrinterCredentials(
         ip=req.printer_ip,
         serial=req.printer_serial,
         access_code=req.printer_access_code,
     )
 
+    # 1. Upload file synchronously — must succeed before we return
     try:
-        task_id = start_print(
-            credentials=credentials,
-            local_path=str(path),
-            remote_filename=path.name,
-            options=req.options or {},
-        )
+        remote_path = upload_file_ftps(credentials, str(path), path.name)
+        print(f"[Bambu] Uploaded to {remote_path}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Print failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"FTPS upload failed: {e}")
 
-    # Start MQTT status monitor in background
-    _start_monitor(credentials, task_id)
+    task_id = str(uuid.uuid4())
+    options = req.options or {}
+
+    # 2. Send MQTT command + start monitor in background so HTTP response returns immediately
+    def _send_and_monitor():
+        try:
+            send_print_command(credentials, remote_path, task_id, options)
+        except Exception as e:
+            print(f"[Print] MQTT error: {e}")
+        _start_monitor(credentials, task_id)
+
+    threading.Thread(target=_send_and_monitor, daemon=True).start()
 
     return {"success": True, "task_id": task_id}
 
