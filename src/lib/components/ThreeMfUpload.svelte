@@ -7,9 +7,6 @@
   let isDragging = false;
   let fileInput: HTMLInputElement;
 
-  export let spoolPresets: Array<{ id: number; name: string; material: string; color?: string | null; brand?: string; default_weight?: number; storage_count?: number }> = [];
-  export let inventory: Array<{ slug: string; name: string }> = [];
-
   type PreviewData = {
     name: string;
     thumbnail: string | null;
@@ -18,12 +15,14 @@
     plateType: string | null;
     nozzleDiameter: number | null;
     expectedWeight: number | null;
+    objectsPerPrint: number;
     defaultSpoolPresetId: number | null;
     inventorySlug: string | null;
     printerModel: string | null;
     localFileHandlerPath: string | null;
   };
 
+  let spoolPresets: Array<{ id: number; name: string; material: string; color?: string | null; brand?: string; default_weight?: number; storage_count?: number }> = [];
   let spoolPresetsLoaded = false;
   let printerModels: Array<{ id: number; name: string; description?: string }> = [];
 
@@ -82,7 +81,19 @@
     try {
       const zip = await JSZip.loadAsync(f);
       const allFiles = Object.keys(zip.files);
-     
+      
+      console.log('📦 3mf Archive contents:', allFiles);
+      
+      // Try to get the file path from the File object
+      let suggestedLocalPath: string | null = null;
+      
+      if ('webkitRelativePath' in f && (f as any).webkitRelativePath) {
+        suggestedLocalPath = (f as any).webkitRelativePath.replace(/\/[^/]*$/, '');
+      }
+      
+      if (!suggestedLocalPath) {
+        suggestedLocalPath = `/Users/linus/Documents/3d-models/${f.name.replace(/\.3mf$/i, '')}/${f.name}`;
+      }
 
       // --- Thumbnail ---
       let thumbnail: string | null = null;
@@ -97,20 +108,17 @@
         if (entry) {
           const blob = await entry.async('blob');
           thumbnail = await blobToDataUrl(blob);
-          
           break;
         }
       }
 
-      let filamentType: string | null = null;
-      let filamentColor: string | null = null;
       let estimatedTime: number | null = null;
       let plateType: string | null = null;
       let nozzleDiameter: number | null = null;
       let expectedWeight: number | null = null;
+      let objectsPerPrint: number = 1;
       let defaultSpoolPresetId: number | null = null;
       let inventorySlug: string | null = null;
-      let localFileHandlerPath: string | null = null;
       let printerModel: string | null = null;
 
       // Metadata collection object for detailed logging
@@ -121,7 +129,7 @@
         extractedMetadata: {}
       };
 
-      // --- plate_1.json: print time in seconds (field: "prediction") ---
+      // --- plate_1.json: contains prediction (time), weight, nozzle, and object count ---
       const plateJsonPaths = [
         'Metadata/plate_1.json',
         ...allFiles.filter(n => /Metadata\/plate_\d+\.json/.test(n))
@@ -132,51 +140,70 @@
         try {
           const json = JSON.parse(await entry.async('text'));
           
+          console.log('📋 plate_1.json full content:', json);
           metadata.extractedMetadata['plateJson'] = json;
+          
           if (estimatedTime === null && json.prediction != null) {
             const parsed = typeof json.prediction === 'number' ? json.prediction : parseInt(json.prediction, 10);
             if (!isNaN(parsed)) estimatedTime = parsed;
           }
-          // Try to extract weight from plate_1.json
+          
           if (expectedWeight === null && json.weight != null) {
             const parsed = typeof json.weight === 'number' ? json.weight : parseFloat(json.weight);
             if (!isNaN(parsed)) expectedWeight = parsed;
           }
+          
           if (expectedWeight === null && json.filament_weight != null) {
             const parsed = typeof json.filament_weight === 'number' ? json.filament_weight : parseFloat(json.filament_weight);
             if (!isNaN(parsed)) expectedWeight = parsed;
           }
+          
           if (expectedWeight === null && json.material_weight != null) {
             const parsed = typeof json.material_weight === 'number' ? json.material_weight : parseFloat(json.material_weight);
             if (!isNaN(parsed)) expectedWeight = parsed;
           }
+
+          // Look for object count information
+          if (json.objects_per_print != null) {
+            const parsed = parseInt(json.objects_per_print, 10);
+            if (!isNaN(parsed) && parsed > 0) objectsPerPrint = parsed;
+            console.log('✅ Found objects_per_print:', objectsPerPrint);
+          }
+          
+          // Alternative field names for object count
+          if (objectsPerPrint === 1 && json.object_count != null) {
+            const parsed = parseInt(json.object_count, 10);
+            if (!isNaN(parsed) && parsed > 0) objectsPerPrint = parsed;
+            console.log('✅ Found object_count:', objectsPerPrint);
+          }
+          
+          if (objectsPerPrint === 1 && json.num_objects != null) {
+            const parsed = parseInt(json.num_objects, 10);
+            if (!isNaN(parsed) && parsed > 0) objectsPerPrint = parsed;
+            console.log('✅ Found num_objects:', objectsPerPrint);
+          }
+
+          // Check for objects array
+          if (objectsPerPrint === 1 && Array.isArray(json.objects)) {
+            objectsPerPrint = json.objects.length || 1;
+            console.log('✅ Found objects array with length:', objectsPerPrint);
+          }
+          
         } catch (e) {
           console.warn(`Could not parse ${path} as JSON:`, e);
         }
-        break; // use first plate only
+        break;
       }
 
-      // --- project_settings.config (JSON in Bambu Studio exports) ---
-      // We now rely on spool presets instead of extracting filament info
+      // --- project_settings.config ---
       const projectEntry = zip.file('Metadata/project_settings.config');
       if (projectEntry) {
         try {
           const json = JSON.parse(await projectEntry.async('text'));
-         
+          
+          console.log('📋 project_settings.config full content:', json);
           metadata.extractedMetadata['projectSettings'] = json;
-          //console.log('📋 project_settings.config keys:', Object.keys(json));
 
-          if (!filamentType && json.filament_type) {
-            const val = Array.isArray(json.filament_type) ? json.filament_type[0] : json.filament_type;
-            filamentType = String(val).replace(/;.*/, '').trim() || null;
-          }
-          if (!filamentColor) {
-            const raw = json.filament_colour ?? json.filament_color;
-            if (raw) {
-              const val = Array.isArray(raw) ? raw[0] : raw;
-              filamentColor = String(val).trim() || null;
-            }
-          }
           if (nozzleDiameter === null && json.nozzle_diameter) {
             const val = Array.isArray(json.nozzle_diameter) ? json.nozzle_diameter[0] : json.nozzle_diameter;
             const parsed = parseFloat(String(val));
@@ -191,42 +218,16 @@
         }
       }
 
-      // --- filament_settings_N.config (JSON) — material name fallback ---
-      const filamentConfigPaths = allFiles.filter(n => /Metadata\/filament_settings_\d+\.config/.test(n));
-      if (filamentConfigPaths.length > 0) {
-        metadata.extractedMetadata['filamentConfigs'] = {};
-      }
-      for (const path of filamentConfigPaths) {
-        const entry = zip.file(path);
-        if (!entry) continue;
-        try {
-          const json = JSON.parse(await entry.async('text'));
-          //console.log(`📄 ${path}:`, json);
-          metadata.extractedMetadata['filamentConfigs'][path] = json;
-          if (!filamentType) {
-            const settingsId = Array.isArray(json.filament_settings_id)
-              ? json.filament_settings_id[0]
-              : (json.filament_settings_id || json.name || '');
-            const match = String(settingsId).match(/\b(PLA\+?|PETG|ABS|ASA|TPU|PA|PC|PVA|HIPS)\b/i);
-            if (match) filamentType = match[1].toUpperCase();
-          }
-        } catch (e) {
-          console.warn(`Could not parse ${path}:`, e);
-        }
-        if (filamentType) break;
-      }
-
-      // --- slice_info.config (XML, older Bambu Studio versions) — fallback ---
+      // --- slice_info.config (XML) ---
       const sliceEntry = zip.file('Metadata/slice_info.config');
       if (sliceEntry) {
         try {
           const text = await sliceEntry.async('text');
-          //console.log('📄 slice_info.config full content:');
-          //console.log(text);
+          console.log('📄 slice_info.config full content:');
+          console.log(text);
           
           const doc = new DOMParser().parseFromString(text, 'text/xml');
           
-          // Parse all metadata key-value pairs
           const metadataElements: Record<string, any> = {};
           doc.querySelectorAll('metadata').forEach(el => {
             const key = el.getAttribute('key');
@@ -236,40 +237,52 @@
             }
           });
           
-         //Tehere is all the relavant data  console.log('📋 slice_info.config parsed metadata:', metadataElements);
+          console.log('📋 slice_info.config parsed metadata:', metadataElements);
           metadata.extractedMetadata['sliceInfoMetadata'] = metadataElements;
           
-          // Extract prediction (time in seconds)
           if (metadataElements['prediction'] && estimatedTime === null) {
             const parsed = parseInt(metadataElements['prediction'], 10);
-            if (!isNaN(parsed)) {
-              estimatedTime = parsed;
-              //console.log('✅ Found prediction time:', parsed, 'seconds');
-            }
+            if (!isNaN(parsed)) estimatedTime = parsed;
           }
           
-          // Extract weight
           if (metadataElements['weight'] && expectedWeight === null) {
             const parsed = parseFloat(metadataElements['weight']);
-            if (!isNaN(parsed)) {
-              expectedWeight = parsed;
-              //console.log('✅ Found weight:', parsed, 'grams');
-            }
+            if (!isNaN(parsed)) expectedWeight = parsed;
           }
           
-          // Extract nozzle diameter
           if (metadataElements['nozzle_diameter'] && nozzleDiameter === null) {
             const parsed = parseFloat(metadataElements['nozzle_diameter']);
-            if (!isNaN(parsed)) {
-              nozzleDiameter = parsed;
-              //console.log('✅ Found nozzle diameter:', parsed, 'mm');
-            }
+            if (!isNaN(parsed)) nozzleDiameter = parsed;
+          }
+
+          // Try nozzle_diameters as alternative (from slice_info)
+          if (metadataElements['nozzle_diameters'] && nozzleDiameter === null) {
+            const parsed = parseFloat(metadataElements['nozzle_diameters']);
+            if (!isNaN(parsed)) nozzleDiameter = parsed;
           }
           
-          // Extract plate type
           if (metadataElements['plate_type'] && !plateType) {
             plateType = metadataElements['plate_type'];
-            //console.log('✅ Found plate type:', plateType);
+          }
+
+          // Try bed_type as alternative (from slice_info)
+          if (metadataElements['bed_type'] && !plateType) {
+            plateType = metadataElements['bed_type'];
+          }
+
+          // Count object elements in slice_info.config XML
+          if (objectsPerPrint === 1) {
+            const objectElements = doc.querySelectorAll('plate > object');
+            if (objectElements.length > 0) {
+              objectsPerPrint = objectElements.length;
+              console.log('✅ Found objects in slice_info.config XML:', objectsPerPrint);
+              
+              // Log object names for reference
+              const objectNames = Array.from(objectElements)
+                .map(el => el.getAttribute('name'))
+                .filter((name, idx, arr) => arr.indexOf(name) === idx); // unique names
+              console.log('📦 Object names:', objectNames);
+            }
           }
           
         } catch (e) {
@@ -277,7 +290,13 @@
         }
       }
 
-     
+      console.log('📊 FINAL EXTRACTED DATA:', {
+        estimatedTime,
+        expectedWeight,
+        nozzleDiameter,
+        plateType,
+        objectsPerPrint
+      });
 
       previewData = {
         name: f.name.replace(/\.3mf$/i, ''),
@@ -287,10 +306,11 @@
         plateType: plateType ?? null,
         nozzleDiameter: nozzleDiameter ?? null,
         expectedWeight: expectedWeight ?? null,
+        objectsPerPrint: objectsPerPrint || 1,
         defaultSpoolPresetId,
         inventorySlug,
         printerModel: printerModel ?? null,
-        localFileHandlerPath,
+        localFileHandlerPath: suggestedLocalPath,
       };
     } catch (e) {
       error = `Failed to read .3mf: ${e instanceof Error ? e.message : e}`;
@@ -317,6 +337,7 @@
           plate_type: previewData.plateType || null,
           nozzle_diameter: previewData.nozzleDiameter,
           expected_weight: previewData.expectedWeight,
+          objects_per_print: previewData.objectsPerPrint,
           default_spool_preset_id: previewData.defaultSpoolPresetId,
           inventory_slug: previewData.inventorySlug,
           printer_model: previewData.printerModel,
@@ -360,12 +381,6 @@
       reader.readAsDataURL(blob);
     });
   }
-
-  // For time conversion: prediction is in seconds
-  function getFormattedTime(): string {
-    if (!previewData?.estimatedTime) return '';
-    return formatTime(previewData.estimatedTime);
-  }
 </script>
 
 {#if previewData}
@@ -399,6 +414,18 @@
             class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
           />
           <p class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-0.5">{previewData.fileName}</p>
+        </div>
+
+        <!-- Local File Handler Path -->
+        <div>
+          <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Local File Handler Path</label>
+          <input
+            type="text"
+            bind:value={previewData.localFileHandlerPath}
+            placeholder="/path/to/file.3mf"
+            class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors text-xs"
+          />
+          <p class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-0.5">Path to open .3mf in Bambu Studio on your local machine</p>
         </div>
 
         <div class="grid grid-cols-2 gap-x-3 gap-y-3">
@@ -440,6 +467,21 @@
                 class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
               />
               <span class="text-xs text-zinc-400 shrink-0">min</span>
+            </div>
+          </div>
+
+          <!-- Objects per Print -->
+          <div>
+            <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Objects per Print</label>
+            <div class="flex items-center gap-1.5">
+              <input
+                type="number"
+                min="1"
+                bind:value={previewData.objectsPerPrint}
+                placeholder="1"
+                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+              />
+              <span class="text-xs text-zinc-400 shrink-0">pcs</span>
             </div>
           </div>
 
