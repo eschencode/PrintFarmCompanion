@@ -89,6 +89,10 @@ CREATE TABLE IF NOT EXISTS printers (
   loaded_spool_id INTEGER,
   total_hours REAL DEFAULT 0,
   suggested_queue TEXT,
+  -- Bambu Lab LAN credentials (required for Pi bridge printing)
+  printer_ip TEXT,
+  printer_serial TEXT,
+  printer_access_code TEXT,
   FOREIGN KEY (loaded_spool_id) REFERENCES spools(id),
   FOREIGN KEY (printer_model_id) REFERENCES printer_models(id)
 );
@@ -148,6 +152,7 @@ CREATE TABLE IF NOT EXISTS print_jobs (
   planned_weight INTEGER NOT NULL,
   actual_weight INTEGER,
   waste_weight INTEGER DEFAULT 0,
+  pi_task_id TEXT,
   FOREIGN KEY (module_id) REFERENCES print_modules(id),
   FOREIGN KEY (printer_id) REFERENCES printers(id),
   FOREIGN KEY (spool_id) REFERENCES spools(id)

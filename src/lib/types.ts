@@ -38,6 +38,10 @@ export interface Printer {
   loaded_spool_id: number | null;
   suggested_queue?: SuggestedPrintQueueItem[];
   total_hours: number;
+  // Bambu Lab LAN credentials — required for Pi bridge printing
+  printer_ip: string | null;
+  printer_serial: string | null;
+  printer_access_code: string | null;
 }
 
 /**

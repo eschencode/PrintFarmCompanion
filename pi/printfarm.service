@@ -1,0 +1,17 @@
+[Unit]
+Description=PrintFarm Pi Bridge
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/printfarm
+EnvironmentFile=/home/pi/printfarm/.env
+ExecStart=/home/pi/printfarm/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

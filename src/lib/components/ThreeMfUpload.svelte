@@ -27,8 +27,10 @@
   };
 
   let previewData: PreviewData | null = null;
+  let currentFile: File | null = null;  // original File kept for Pi upload
   let extracting = false;
   let saving = false;
+  let savingStep = '';  // 'pi' | 'db' | ''
   let error: string | null = null;
 
   async function handleDrop(e: DragEvent) {
@@ -52,6 +54,7 @@
     extracting = true;
     error = null;
     previewData = null;
+    currentFile = f;
 
     try {
       const zip = await JSZip.loadAsync(f);
@@ -296,11 +299,40 @@
   }
 
   async function confirmUpload() {
-    if (!previewData) return;
+    if (!previewData || !currentFile) return;
     saving = true;
     error = null;
 
+    let piFilePath: string | null = null;
+    let fileStoredOnPi = 0;
+
     try {
+      // ── Step 1: Try to upload file to Pi (graceful degradation if not configured) ──
+      savingStep = 'pi';
+      try {
+        const formData = new FormData();
+        formData.append('file', currentFile, currentFile.name);
+
+        const piRes = await fetch('/api/pi/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        const piResult = await piRes.json() as { success: boolean; pi_available: boolean; path?: string; error?: string };
+
+        if (piResult.pi_available && piResult.success && piResult.path) {
+          piFilePath = piResult.path;
+          fileStoredOnPi = 1;
+        } else if (piResult.pi_available && !piResult.success) {
+          console.warn('[Pi] File upload failed:', piResult.error);
+        }
+        // If pi_available === false, Pi is simply not configured — silent fallback
+      } catch (piErr) {
+        // Pi endpoint unreachable or returned non-JSON — continue without Pi
+        console.warn('[Pi] Upload skipped:', piErr);
+      }
+
+      // ── Step 2: Save metadata to D1 ──────────────────────────────────────────────
+      savingStep = 'db';
       const res = await fetch('/api/print-modules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -317,13 +349,16 @@
           inventory_slug: previewData.inventorySlug,
           printer_model: previewData.printerModel,
           local_file_handler_path: previewData.localFileHandlerPath,
+          pi_file_path: piFilePath,
+          file_stored_on_pi: fileStoredOnPi,
         }),
       });
 
-      const result = await res.json() as any;
+      const result = await res.json() as { success: boolean; data?: { id: number; name: string }; error?: string };
       if (result.success) {
-        dispatch('uploaded', result.data);
+        dispatch('uploaded', result.data!);
         previewData = null;
+        currentFile = null;
         if (fileInput) fileInput.value = '';
       } else {
         error = result.error ?? 'Upload failed';
@@ -332,11 +367,13 @@
       error = `Upload failed: ${e instanceof Error ? e.message : e}`;
     } finally {
       saving = false;
+      savingStep = '';
     }
   }
 
   function reset() {
     previewData = null;
+    currentFile = null;
     error = null;
     if (fileInput) fileInput.value = '';
   }
@@ -569,7 +606,7 @@
         disabled={saving || !previewData.name.trim()}
         class="px-4 py-2 text-xs font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {saving ? 'Saving…' : 'Confirm Upload'}
+        {savingStep === 'pi' ? 'Sending to Pi…' : savingStep === 'db' ? 'Saving…' : 'Confirm Upload'}
       </button>
     </div>
   </div>

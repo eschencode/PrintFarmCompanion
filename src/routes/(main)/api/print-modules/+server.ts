@@ -17,6 +17,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     filament_type, filament_color,
     estimated_time, plate_type, nozzle_diameter,
     expected_weight, default_spool_preset_id,
+    objects_per_print, inventory_slug, printer_model,
+    local_file_handler_path,
+    pi_file_path, file_stored_on_pi,
   } = body;
 
   if (!name || !file_name) {
@@ -26,8 +29,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   try {
     const result = await db.prepare(`
       INSERT INTO print_modules
-        (name, file_name, thumbnail, filament_type, filament_color, expected_time, plate_type, nozzle_diameter, expected_weight, default_spool_preset_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (name, file_name, thumbnail, filament_type, filament_color, expected_time, plate_type,
+         nozzle_diameter, expected_weight, default_spool_preset_id, objects_per_print,
+         inventory_slug, printer_model, local_file_handler_path, pi_file_path, file_stored_on_pi)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       name,
       file_name,
@@ -39,6 +44,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       nozzle_diameter ?? null,
       expected_weight ?? null,
       default_spool_preset_id ?? null,
+      objects_per_print ?? 1,
+      inventory_slug ?? null,
+      printer_model ?? null,
+      local_file_handler_path ?? null,
+      pi_file_path ?? null,
+      file_stored_on_pi ?? 0,
     ).run();
 
     return json({ success: true, data: { id: result.meta.last_row_id, name } });

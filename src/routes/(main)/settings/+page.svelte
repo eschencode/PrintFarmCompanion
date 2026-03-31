@@ -278,11 +278,17 @@ function populateFields() {
   let editingPrinter: any = null;
   let printerName = '';
   let printerModelId: number | string = '';
+  let printerIp = '';
+  let printerSerial = '';
+  let printerAccessCode = '';
 
   function openEditPrinter(printer: any) {
     editingPrinter = printer;
     printerName = printer.name;
     printerModelId = printer.printer_model_id || '';
+    printerIp = printer.printer_ip || '';
+    printerSerial = printer.printer_serial || '';
+    printerAccessCode = printer.printer_access_code || '';
     showPrinterEditor = true;
   }
 
@@ -291,6 +297,9 @@ function populateFields() {
     editingPrinter = null;
     printerName = '';
     printerModelId = '';
+    printerIp = '';
+    printerSerial = '';
+    printerAccessCode = '';
   }
 
   // Printer Model editor
@@ -527,7 +536,12 @@ function populateFields() {
                 </svg>
               </div>
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{printer.name}</p>
+                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                  {printer.name}
+                  {#if printer.printer_ip && printer.printer_serial && printer.printer_access_code}
+                    <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">Pi</span>
+                  {/if}
+                </p>
                 <p class="text-xs text-zinc-400">{printer.printer_model_name || printer.model || 'No model'} · {printer.total_hours?.toFixed(1) || 0}h total</p>
               </div>
               <span class="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md {
@@ -1411,6 +1425,51 @@ function populateFields() {
               {/each}
             </select>
             <p class="text-xs text-zinc-500 mt-1">Assign a printer model preset. Manage models in the section above.</p>
+          </div>
+
+          <!-- Pi Bridge credentials -->
+          <div class="border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden">
+            <div class="px-3 py-2 bg-zinc-50 dark:bg-[#1a1a1a] border-b border-zinc-200 dark:border-[#262626]">
+              <p class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Pi Bridge — Bambu Lab LAN credentials</p>
+              <p class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-0.5">Required for Pi-initiated prints. Found on the printer touchscreen under Settings → Network.</p>
+            </div>
+            <div class="p-3 space-y-3">
+              <div>
+                <label class="block text-xs text-zinc-500 mb-1">Printer IP</label>
+                <input
+                  type="text"
+                  name="printerIp"
+                  bind:value={printerIp}
+                  placeholder="192.168.1.50"
+                  class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-zinc-500 mb-1">Serial Number</label>
+                <input
+                  type="text"
+                  name="printerSerial"
+                  bind:value={printerSerial}
+                  placeholder="01P00A..."
+                  class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-zinc-500 mb-1">Access Code</label>
+                <input
+                  type="password"
+                  name="printerAccessCode"
+                  bind:value={printerAccessCode}
+                  placeholder="8-digit code"
+                  class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
+                />
+              </div>
+              {#if printerIp && printerSerial && printerAccessCode}
+                <p class="text-[10px] text-emerald-600 dark:text-emerald-400">Pi-capable — Start Print will be enabled for this printer</p>
+              {:else}
+                <p class="text-[10px] text-zinc-400">Leave blank to use local file handler only</p>
+              {/if}
+            </div>
           </div>
 
           {#if editingPrinter}

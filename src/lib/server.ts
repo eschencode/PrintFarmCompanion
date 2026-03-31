@@ -129,6 +129,9 @@ export async function createPrinter(db: D1Database, printer: {
   name: string;
   model?: string | null;
   printerModelId?: number | null;
+  printerIp?: string | null;
+  printerSerial?: string | null;
+  printerAccessCode?: string | null;
 }): Promise<ServerResponse> {
   try {
     // If printerModelId is provided, also set the model text from the printer_models table
@@ -138,12 +141,15 @@ export async function createPrinter(db: D1Database, printer: {
       if (pm) modelName = pm.name;
     }
     const result = await db.prepare(`
-      INSERT INTO printers (name, model, printer_model_id, status, total_hours)
-      VALUES (?, ?, ?, 'IDLE', 0)
+      INSERT INTO printers (name, model, printer_model_id, status, total_hours, printer_ip, printer_serial, printer_access_code)
+      VALUES (?, ?, ?, 'IDLE', 0, ?, ?, ?)
     `).bind(
       printer.name,
       modelName,
-      printer.printerModelId ?? null
+      printer.printerModelId ?? null,
+      printer.printerIp ?? null,
+      printer.printerSerial ?? null,
+      printer.printerAccessCode ?? null,
     ).run();
     
     return { 
@@ -165,6 +171,9 @@ export async function updatePrinter(
     model?: string | null;
     printerModelId?: number | null;
     suggested_queue?: string | null;
+    printerIp?: string | null;
+    printerSerial?: string | null;
+    printerAccessCode?: string | null;
   }
 ): Promise<ServerResponse> {
   try {
@@ -196,6 +205,19 @@ export async function updatePrinter(
     if (printer.suggested_queue !== undefined) {
       updates.push('suggested_queue = ?');
       values.push(printer.suggested_queue);
+    }
+
+    if (printer.printerIp !== undefined) {
+      updates.push('printer_ip = ?');
+      values.push(printer.printerIp || null);
+    }
+    if (printer.printerSerial !== undefined) {
+      updates.push('printer_serial = ?');
+      values.push(printer.printerSerial || null);
+    }
+    if (printer.printerAccessCode !== undefined) {
+      updates.push('printer_access_code = ?');
+      values.push(printer.printerAccessCode || null);
     }
 
     if (updates.length === 0) {
