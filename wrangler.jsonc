@@ -16,9 +16,6 @@
 	"ai": {
 		"binding": "AI"
 	},
-	"vars": {
-		// Set these in the Cloudflare dashboard (or .dev.vars for local dev) — do NOT commit real values
-		"PI_TUNNEL_URL": "",         // e.g. "https://pi.yourdomain.com"
-		"PI_WEBHOOK_SECRET": ""      // shared secret between Pi .env and CF Workers
-	}
+	// PI_TUNNEL_URL and PI_WEBHOOK_SECRET are set via the Cloudflare Pages dashboard
+	// (or .dev.vars for local dev) — not committed here to avoid binding conflicts
 }
