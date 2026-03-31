@@ -1,35 +1,17 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
 
   export let module: any;
   export let isOpen = false;
+  export let spoolPresets: any[] = [];
+  export let printerModels: any[] = [];
+  export let inventoryItems: any[] = [];
 
   const dispatch = createEventDispatcher();
 
   let formData: any = { ...module };
   let isSaving = false;
   let saveMessage = '';
-  let spoolPresets: any[] = [];
-  let loadingPresets = false;
-
-  onMount(async () => {
-    await loadSpoolPresets();
-  });
-
-  async function loadSpoolPresets() {
-    loadingPresets = true;
-    try {
-      const response = await fetch('/api/print-modules?presets=true');
-      const result = await response.json() as any;
-      if (result.success) {
-        spoolPresets = result.data;
-      }
-    } catch (error) {
-      console.error('Failed to load spool presets:', error);
-    } finally {
-      loadingPresets = false;
-    }
-  }
 
   $: if (isOpen) {
     formData = { ...module };
@@ -146,23 +128,17 @@
           <div class="space-y-4">
             <div>
               <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Default Spool Preset</label>
-              {#if loadingPresets}
-                <div class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-zinc-50 dark:bg-[#1a1a1a] text-zinc-600 dark:text-zinc-400">
-                  Loading presets...
-                </div>
-              {:else}
-                <select
-                  bind:value={formData.default_spool_preset_id}
-                  class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600"
-                >
-                  <option value="">None</option>
-                  {#each spoolPresets as preset (preset.id)}
-                    <option value={preset.id}>
-                      {preset.name} ({preset.material}{preset.color ? ` - ${preset.color}` : ''})
-                    </option>
-                  {/each}
-                </select>
-              {/if}
+              <select
+                bind:value={formData.default_spool_preset_id}
+                class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600"
+              >
+                <option value="">None</option>
+                {#each spoolPresets as preset (preset.id)}
+                  <option value={preset.id}>
+                    {preset.name} ({preset.material}{preset.color ? ` - ${preset.color}` : ''})
+                  </option>
+                {/each}
+              </select>
             </div>
 
             {#if formData.default_spool_preset_id && getSpoolPresetInfo(formData.default_spool_preset_id)}
@@ -251,14 +227,38 @@
             {#if module.inventory_slug !== undefined}
               <div>
                 <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Inventory Slug</label>
-                <input type="text" bind:value={formData.inventory_slug} class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
+                {#if inventoryItems.length > 0}
+                  <select
+                    bind:value={formData.inventory_slug}
+                    class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600"
+                  >
+                    <option value="">None</option>
+                    {#each inventoryItems as item (item.slug)}
+                      <option value={item.slug}>{item.name}</option>
+                    {/each}
+                  </select>
+                {:else}
+                  <input type="text" bind:value={formData.inventory_slug} class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
+                {/if}
               </div>
             {/if}
 
             {#if module.printer_model !== undefined}
               <div>
                 <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Printer Model</label>
-                <input type="text" bind:value={formData.printer_model} class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
+                {#if printerModels.length > 0}
+                  <select
+                    bind:value={formData.printer_model}
+                    class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600"
+                  >
+                    <option value="">None</option>
+                    {#each printerModels as model (model.id)}
+                      <option value={model.name}>{model.name}</option>
+                    {/each}
+                  </select>
+                {:else}
+                  <input type="text" bind:value={formData.printer_model} class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
+                {/if}
               </div>
             {/if}
           </div>
@@ -311,7 +311,6 @@
 {/if}
 
 <style>
-  /* Smooth scrolling for modal */
   :global(body) {
     overflow: auto;
   }

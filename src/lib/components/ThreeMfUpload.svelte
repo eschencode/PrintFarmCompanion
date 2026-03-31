@@ -1,8 +1,12 @@
 <script lang="ts">
   import JSZip from 'jszip';
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher<{ uploaded: { id: number; name: string } }>();
+
+  export let spoolPresets: any[] = [];
+  export let printerModels: any[] = [];
+  export let inventoryItems: any[] = [];
 
   let isDragging = false;
   let fileInput: HTMLInputElement;
@@ -22,39 +26,10 @@
     localFileHandlerPath: string | null;
   };
 
-  let spoolPresets: Array<{ id: number; name: string; material: string; color?: string | null; brand?: string; default_weight?: number; storage_count?: number }> = [];
-  let spoolPresetsLoaded = false;
-  let printerModels: Array<{ id: number; name: string; description?: string }> = [];
-
   let previewData: PreviewData | null = null;
   let extracting = false;
   let saving = false;
   let error: string | null = null;
-
-  // Load spool presets and printer models on mount
-  onMount(async () => {
-    try {
-      const response = await fetch('/api/print-modules?presets=true');
-      const result = await response.json() as any;
-      if (result.success) {
-        spoolPresets = result.data;
-      }
-    } catch (e) {
-      console.warn('Failed to load spool presets:', e);
-    }
-    
-    try {
-      const response = await fetch('/api/printer-models');
-      const result = await response.json() as any;
-      if (result.success) {
-        printerModels = result.data;
-      }
-    } catch (e) {
-      console.warn('Failed to load printer models:', e);
-    }
-    
-    spoolPresetsLoaded = true;
-  });
 
   async function handleDrop(e: DragEvent) {
     e.preventDefault();
@@ -432,21 +407,17 @@
           <!-- Spool Preset -->
           <div class="col-span-2">
             <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Spool Preset</label>
-            {#if spoolPresetsLoaded}
-              <select
-                bind:value={previewData.defaultSpoolPresetId}
-                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-              >
-                <option value="">None</option>
-                {#each spoolPresets as preset (preset.id)}
-                  <option value={preset.id}>
-                    {preset.name} ({preset.material})
-                  </option>
-                {/each}
-              </select>
-            {:else}
-              <div class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-500">Loading presets...</div>
-            {/if}
+            <select
+              bind:value={previewData.defaultSpoolPresetId}
+              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+            >
+              <option value="">None</option>
+              {#each spoolPresets as preset (preset.id)}
+                <option value={preset.id}>
+                  {preset.name} ({preset.material})
+                </option>
+              {/each}
+            </select>
           </div>
 
           <!-- Est. Time (minutes) -->
@@ -557,12 +528,24 @@
           <!-- Inventory Slug -->
           <div>
             <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Inventory</label>
-            <input
-              type="text"
-              bind:value={previewData.inventorySlug}
-              placeholder="slug"
-              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-            />
+            {#if inventoryItems.length > 0}
+              <select
+                bind:value={previewData.inventorySlug}
+                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+              >
+                <option value="">None</option>
+                {#each inventoryItems as item (item.slug)}
+                  <option value={item.slug}>{item.name}</option>
+                {/each}
+              </select>
+            {:else}
+              <input
+                type="text"
+                bind:value={previewData.inventorySlug}
+                placeholder="slug"
+                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+              />
+            {/if}
           </div>
         </div>
       </div>

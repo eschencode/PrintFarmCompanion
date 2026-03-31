@@ -9,6 +9,53 @@
   let showUpload = false;
   let editingModule: any = null;
   let showEditModal = false;
+  
+  // Load data once at page level
+  let spoolPresets: any[] = [];
+  let printerModels: any[] = [];
+  let inventoryItems: any[] = [];
+  let dataLoaded = false;
+
+  // Load all data once when page mounts
+  async function loadData() {
+    try {
+      const [presetsRes, modelsRes, inventoryRes] = await Promise.all([
+        fetch('/api/print-modules?presets=true'),
+        fetch('/api/printer-models'),
+        fetch('/api/inventory')
+      ]);
+
+      if (presetsRes.ok) {
+        const result = await presetsRes.json() as any;
+        if (result.success) spoolPresets = result.data;
+      }
+
+      if (modelsRes.ok) {
+        const result = await modelsRes.json() as any;
+        if (result.success) printerModels = result.data;
+      }
+
+      if (inventoryRes.ok) {
+        const result = await inventoryRes.json() as any;
+        if (result.success) {
+          inventoryItems = result.data.map((item: any) => ({
+            slug: item.slug,
+            name: item.name
+          }));
+        }
+      }
+
+      dataLoaded = true;
+    } catch (e) {
+      console.warn('Failed to load data:', e);
+      dataLoaded = true;
+    }
+  }
+
+  // Load data on component mount
+  $: if (typeof window !== 'undefined' && !dataLoaded) {
+    loadData();
+  }
 
   function formatTime(seconds: number | null): string {
     if (!seconds) return '—';
@@ -79,7 +126,12 @@
     <!-- Upload panel -->
     {#if showUpload}
       <div class="mb-6">
-        <ThreeMfUpload on:uploaded={handleUploaded} />
+        <ThreeMfUpload 
+          {spoolPresets}
+          {printerModels}
+          {inventoryItems}
+          on:uploaded={handleUploaded} 
+        />
       </div>
     {/if}
 
@@ -126,11 +178,11 @@
                     {module.spool_preset_name}
                   </span>
                 {/if}
-				
+                
                   <span class="text-xs text-zinc-400 dark:text-zinc-500">{(module.expected_weight)}g</span>
                 
                 {#if module.expected_time}
-                  <span class="text-xs text-zinc-400 dark:text-zinc-500">{formatTime(module.expected_time)} hours</span>
+                  <span class="text-xs text-zinc-400 dark:text-zinc-500">{formatTime(module.expected_time)}</span>
                 {/if}
                 {#if module.plate_type}
                   <span class="text-xs text-zinc-400 dark:text-zinc-500">{module.plate_type}</span>
@@ -183,5 +235,12 @@
 </div>
 
 {#if editingModule}
-  <EditModuleModal module={editingModule} isOpen={showEditModal} on:close={closeEditModal} />
+  <EditModuleModal 
+    module={editingModule} 
+    isOpen={showEditModal} 
+    {spoolPresets}
+    {printerModels}
+    {inventoryItems}
+    on:close={closeEditModal} 
+  />
 {/if}
