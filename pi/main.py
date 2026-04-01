@@ -27,6 +27,8 @@ from .bambu_client import (
     PrintStatus,
     upload_file_ftps,
     send_print_command,
+    _find_gcode_param,
+    _read_filament_info,
 )
 
 load_dotenv()
@@ -149,13 +151,18 @@ def trigger_print(req: PrintRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"FTPS upload failed: {e}")
 
+    # Inspect the local .3mf to find the correct internal gcode path and filament info
+    gcode_param = _find_gcode_param(str(path))
+    filament_info = _read_filament_info(str(path))
+    print(f"[Print] Using gcode param: {gcode_param}, filament slots: {len(filament_info)}")
+
     task_id = str(uuid.uuid4())
     options = req.options or {}
 
     # 2. Send MQTT command + start monitor in background so HTTP response returns immediately
     def _send_and_monitor():
         try:
-            send_print_command(credentials, remote_path, task_id, options)
+            send_print_command(credentials, remote_path, task_id, options, param=gcode_param, filament_info=filament_info)
         except Exception as e:
             print(f"[Print] MQTT error: {e}")
         _start_monitor(credentials, task_id)
