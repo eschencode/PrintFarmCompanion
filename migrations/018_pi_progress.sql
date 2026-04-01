@@ -1,0 +1,3 @@
+ALTER TABLE print_jobs ADD COLUMN progress INTEGER DEFAULT 0;
+ALTER TABLE print_jobs ADD COLUMN layer_num INTEGER DEFAULT 0;
+ALTER TABLE print_jobs ADD COLUMN total_layer_num INTEGER DEFAULT 0;
