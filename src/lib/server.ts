@@ -905,9 +905,10 @@ export async function getPrintModuleById(db: D1Database, id: number) {
 
 export async function getActivePrintJobs(db: D1Database) {
   const result = await db.prepare(`
-    SELECT 
+    SELECT
       pj.*,
       p.name as printer_name,
+      p.printer_serial,
       pm.name as module_name,
       pm.expected_weight,
       pm.expected_time,
@@ -916,7 +917,7 @@ export async function getActivePrintJobs(db: D1Database) {
     FROM print_jobs pj
     JOIN printers p ON pj.printer_id = p.id
     JOIN print_modules pm ON pj.module_id = pm.id
-    WHERE pj.status = 'printing'  
+    WHERE pj.status = 'printing'
     ORDER BY pj.start_time DESC
   `).all();
   

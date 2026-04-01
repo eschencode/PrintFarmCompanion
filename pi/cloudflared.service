@@ -1,0 +1,15 @@
+[Unit]
+Description=Cloudflare Tunnel (PrintFarm)
+After=network.target
+
+[Service]
+Type=simple
+User=linus
+ExecStart=/usr/bin/cloudflared tunnel --url http://localhost:8000 run pi-farm
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

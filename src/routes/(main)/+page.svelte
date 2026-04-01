@@ -50,6 +50,12 @@
   let tickerInterval: ReturnType<typeof setInterval>;
   onMount(() => {
     tickerInterval = setInterval(() => { nowStore.set(Date.now()); }, 5000);
+    // Auto-resume polling for any Pi print jobs that were active before page load
+    for (const job of data.activePrintJobs as any[]) {
+      if (job.pi_task_id && job.printer_serial) {
+        startPiPolling(job.id, job.printer_serial);
+      }
+    }
     return () => clearInterval(tickerInterval);
   });
 
@@ -58,7 +64,7 @@
   }
 
   // ── Pi live status polling ────────────────────────────────────────────────
-  let piStatusByJobId: Record<number, { gcode_state: string; progress: number; label: string }> = {};
+  let piStatusByJobId: Record<number, { gcode_state: string; progress: number; layer_num: number; total_layer_num: number; label: string }> = {};
   let piPollingIntervals: Record<number, ReturnType<typeof setInterval>> = {};
 
   function startPiPolling(jobId: number, printerSerial: string) {
@@ -67,7 +73,7 @@
       try {
         const res = await fetch(`/api/pi/status?serial=${printerSerial}`);
         if (!res.ok) return;
-        const data = await res.json() as { connected: boolean; status: { gcode_state: string; progress: number } | null };
+        const data = await res.json() as { connected: boolean; status: { gcode_state: string; progress: number; layer_num: number; total_layer_num: number } | null };
         if (!data.status) return;
         const stateLabels: Record<string, string> = {
           PREPARE: 'Preparing…',
@@ -77,7 +83,13 @@
           FAILED: 'Failed',
         };
         const label = stateLabels[data.status.gcode_state] ?? data.status.gcode_state;
-        piStatusByJobId = { ...piStatusByJobId, [jobId]: { gcode_state: data.status.gcode_state, progress: data.status.progress, label } };
+        piStatusByJobId = { ...piStatusByJobId, [jobId]: {
+          gcode_state: data.status.gcode_state,
+          progress: data.status.progress,
+          layer_num: data.status.layer_num ?? 0,
+          total_layer_num: data.status.total_layer_num ?? 0,
+          label,
+        }};
         if (data.status.gcode_state === 'FINISH' || data.status.gcode_state === 'FAILED') {
           stopPiPolling(jobId);
           setTimeout(() => window.location.reload(), 2000);
@@ -1019,28 +1031,37 @@
         <!-- Conditional Content Based on Status -->
         {#if selectedPrinter.status === 'printing' && activePrintJob}
           <!-- PRINTING STATUS MENU -->
+          {@const piLive = piStatusByJobId[activePrintJob.id]}
+          {@const displayProgress = piLive?.progress ?? activePrintJob.progress ?? getProgress(activePrintJob.start_time, activePrintJob.expected_time)}
           <div class="space-y-5">
             <!-- Module Name -->
             <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
               <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1.5 tracking-wide uppercase">Print Module</p>
               <p class="text-xl text-zinc-900 dark:text-zinc-50 font-light tracking-tight">{activePrintJob.module_name}</p>
+              {#if piLive}
+                <p class="text-xs text-blue-500 mt-1">{piLive.label}</p>
+              {/if}
             </div>
 
             <!-- Print Progress -->
             <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
               <div class="flex justify-between text-sm mb-3">
                 <span class="text-zinc-400 dark:text-zinc-600 tracking-wide">Progress</span>
-                <span class="text-zinc-900 dark:text-zinc-50 font-medium tabular-nums">{getProgress(activePrintJob.start_time, activePrintJob.expected_time)}%</span>
+                <span class="text-zinc-900 dark:text-zinc-50 font-medium tabular-nums">{displayProgress}%</span>
               </div>
               <div class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-2 overflow-hidden">
                 <div
                   class="bg-blue-500 h-full rounded-full transition-all duration-500 progress-shimmer"
-                  style="width: {getProgress(activePrintJob.start_time, activePrintJob.expected_time)}%"
+                  style="width: {displayProgress}%"
                 ></div>
               </div>
               <div class="flex justify-between text-xs text-zinc-400 dark:text-zinc-600 mt-3 tabular-nums">
                 <span>{getElapsedTime(activePrintJob.start_time)} elapsed</span>
-                <span>{getRemainingTime(activePrintJob.start_time, activePrintJob.expected_time)} remaining</span>
+                {#if piLive?.total_layer_num > 0}
+                  <span>Layer {piLive.layer_num} / {piLive.total_layer_num}</span>
+                {:else}
+                  <span>{getRemainingTime(activePrintJob.start_time, activePrintJob.expected_time)} remaining</span>
+                {/if}
               </div>
             </div>
 

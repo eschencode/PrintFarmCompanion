@@ -72,7 +72,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     return json({ success: false, error: piResult.error ?? 'Pi print failed' }, { status: 502 });
   }
 
-  // Create print_jobs record
+  // Create print_jobs record and set printer status to printing
   const now = Math.floor(Date.now() / 1000);
   const jobName = `${module.name} — ${printer.name}`;
   const result = await db
@@ -81,6 +81,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
        VALUES (?, ?, ?, ?, 'printing', ?, ?)`
     )
     .bind(jobName, module_id, printer_id, now, module.expected_weight ?? 0, piResult.task_id ?? null)
+    .run();
+
+  await db.prepare('UPDATE printers SET status = ? WHERE id = ?')
+    .bind('printing', printer_id)
     .run();
 
   return json({
