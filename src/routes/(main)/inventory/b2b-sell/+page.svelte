@@ -81,7 +81,7 @@
   <!-- Page header -->
   <div class="border-b border-zinc-200 dark:border-[#262626] px-6 py-4">
     <div class="max-w-3xl mx-auto flex items-center gap-4">
-      <a href="/inventory" class="text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
+      <a href="/inventory" aria-label="Go back" class="text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7" />
         </svg>

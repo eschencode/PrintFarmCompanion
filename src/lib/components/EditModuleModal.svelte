@@ -69,7 +69,7 @@
 
 {#if isOpen}
   <!-- Backdrop -->
-  <div class="fixed inset-0 z-40 bg-black/50" onclick={handleClose}></div>
+  <div role="presentation" class="fixed inset-0 z-40 bg-black/50" onclick={handleClose} onkeydown={(e) => { if (e.key === 'Escape') handleClose(); }}></div>
 
   <!-- Modal -->
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -77,7 +77,7 @@
       <!-- Header -->
       <div class="sticky top-0 bg-white dark:bg-[#111] border-b border-zinc-100 dark:border-[#1e1e1e] p-6 flex items-center justify-between">
         <h2 class="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Edit Module: {module.name}</h2>
-        <button onclick={handleClose} class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+        <button aria-label="Close" onclick={handleClose} class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
           </svg>
@@ -91,8 +91,9 @@
           <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-4">Basic Information</h3>
           <div class="space-y-4">
             <div>
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Module Name</label>
+              <label for="edit-name" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Module Name</label>
               <input
+                id="edit-name"
                 type="text"
                 bind:value={formData.name}
                 class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600"
@@ -101,22 +102,22 @@
 
             {#if module.file_name}
               <div>
-                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">File Name</label>
-                <input type="text" value={module.file_name} disabled class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-zinc-50 dark:bg-[#0a0a0a] text-zinc-600 dark:text-zinc-400 cursor-not-allowed" />
+                <label for="edit-file-name" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">File Name</label>
+                <input id="edit-file-name" type="text" value={module.file_name} disabled class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-zinc-50 dark:bg-[#0a0a0a] text-zinc-600 dark:text-zinc-400 cursor-not-allowed" />
               </div>
             {/if}
 
             {#if module.local_file_handler_path}
               <div>
-                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Local File Handler Path</label>
-                <input type="text" bind:value={formData.local_file_handler_path} class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
+                <label for="edit-lfh-path" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Local File Handler Path</label>
+                <input id="edit-lfh-path" type="text" bind:value={formData.local_file_handler_path} class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
               </div>
             {/if}
 
             {#if module.pi_file_path}
               <div>
-                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Pi File Path</label>
-                <input type="text" value={module.pi_file_path} disabled class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-zinc-50 dark:bg-[#0a0a0a] text-zinc-600 dark:text-zinc-400 cursor-not-allowed" />
+                <label for="edit-pi-path" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Pi File Path</label>
+                <input id="edit-pi-path" type="text" value={module.pi_file_path} disabled class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-zinc-50 dark:bg-[#0a0a0a] text-zinc-600 dark:text-zinc-400 cursor-not-allowed" />
               </div>
             {/if}
           </div>
@@ -127,8 +128,9 @@
           <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-4">Spool Preset</h3>
           <div class="space-y-4">
             <div>
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Default Spool Preset</label>
+              <label for="edit-spool" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Default Spool Preset</label>
               <select
+                id="edit-spool"
                 bind:value={formData.default_spool_preset_id}
                 class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600"
               >
@@ -193,29 +195,29 @@
           <div class="space-y-4">
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Expected Weight (g)</label>
-                <input type="number" bind:value={formData.expected_weight} placeholder="0" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
+                <label for="edit-weight" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Expected Weight (g)</label>
+                <input id="edit-weight" type="number" bind:value={formData.expected_weight} placeholder="0" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
               </div>
               <div>
-                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Expected Time (seconds)</label>
-                <input type="number" bind:value={formData.expected_time} placeholder="0" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
+                <label for="edit-time" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Expected Time (seconds)</label>
+                <input id="edit-time" type="number" bind:value={formData.expected_time} placeholder="0" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
               </div>
             </div>
 
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Objects per Print</label>
-                <input type="number" bind:value={formData.objects_per_print} placeholder="1" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
+                <label for="edit-obj-count" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Objects per Print</label>
+                <input id="edit-obj-count" type="number" bind:value={formData.objects_per_print} placeholder="1" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
               </div>
               <div>
-                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Nozzle Diameter (mm)</label>
-                <input type="number" step="0.1" bind:value={formData.nozzle_diameter} placeholder="0.4" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
+                <label for="edit-nozzle" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Nozzle Diameter (mm)</label>
+                <input id="edit-nozzle" type="number" step="0.1" bind:value={formData.nozzle_diameter} placeholder="0.4" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
               </div>
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Plate Type</label>
-              <input type="text" bind:value={formData.plate_type} placeholder="e.g., Textured, Smooth" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
+              <label for="edit-plate-type" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Plate Type</label>
+              <input id="edit-plate-type" type="text" bind:value={formData.plate_type} placeholder="e.g., Textured, Smooth" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
             </div>
           </div>
         </div>
@@ -226,6 +228,7 @@
           <div class="space-y-4">
             {#if module.inventory_slug !== undefined}
               <div>
+                <!-- svelte-ignore a11y_label_has_associated_control -->
                 <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Inventory Slug</label>
                 {#if inventoryItems.length > 0}
                   <select
@@ -245,6 +248,7 @@
 
             {#if module.printer_model !== undefined}
               <div>
+                <!-- svelte-ignore a11y_label_has_associated_control -->
                 <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Printer Model</label>
                 {#if printerModels.length > 0}
                   <select

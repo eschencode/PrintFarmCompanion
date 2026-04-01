@@ -954,8 +954,9 @@ function populateFields() {
             <div class="mb-5 p-4 rounded-xl bg-zinc-50 dark:bg-[#161616] border border-zinc-100 dark:border-[#1e1e1e] space-y-4">
               <!-- SKU input -->
               <div>
-                <label class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500 block mb-1.5">Shopify SKU</label>
+                <label for="set-sku" class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500 block mb-1.5">Shopify SKU</label>
                 <input
+                  id="set-sku"
                   type="text"
                   name="shopifySku"
                   bind:value={editingSetSkuInput}
@@ -1015,7 +1016,7 @@ function populateFields() {
                       />
 
                       <!-- Remove item -->
-                      <button type="button" onclick={() => removeSetItem(i)}
+                      <button type="button" aria-label="Remove item" onclick={() => removeSetItem(i)}
                         class="h-9 flex items-center justify-center rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
                         disabled={editingSetItems.length <= 1}
                       >
@@ -1435,8 +1436,9 @@ function populateFields() {
             </div>
             <div class="p-3 space-y-3">
               <div>
-                <label class="block text-xs text-zinc-500 mb-1">Printer IP</label>
+                <label for="printer-ip" class="block text-xs text-zinc-500 mb-1">Printer IP</label>
                 <input
+                  id="printer-ip"
                   type="text"
                   name="printerIp"
                   bind:value={printerIp}
@@ -1445,8 +1447,9 @@ function populateFields() {
                 />
               </div>
               <div>
-                <label class="block text-xs text-zinc-500 mb-1">Serial Number</label>
+                <label for="printer-serial" class="block text-xs text-zinc-500 mb-1">Serial Number</label>
                 <input
+                  id="printer-serial"
                   type="text"
                   name="printerSerial"
                   bind:value={printerSerial}
@@ -1455,8 +1458,9 @@ function populateFields() {
                 />
               </div>
               <div>
-                <label class="block text-xs text-zinc-500 mb-1">Access Code</label>
+                <label for="printer-access-code" class="block text-xs text-zinc-500 mb-1">Access Code</label>
                 <input
+                  id="printer-access-code"
                   type="password"
                   name="printerAccessCode"
                   bind:value={printerAccessCode}
@@ -1521,7 +1525,8 @@ function populateFields() {
     <div
       class="bg-white dark:bg-[#111] border border-zinc-100 dark:border-[#1e1e1e] rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl"
       onclick={(e) => e.stopPropagation()}
-      role="dialog" aria-modal="true"
+      onkeydown={(e) => e.stopPropagation()}
+      role="dialog" aria-modal="true" tabindex="-1"
     >
       <div class="px-6 py-4 border-b border-zinc-50 dark:border-[#1a1a1a] flex justify-between items-center sticky top-0 bg-white dark:bg-[#111] z-10">
         <div>
@@ -1766,7 +1771,8 @@ function populateFields() {
     <div
       class="bg-white dark:bg-[#111] border border-zinc-100 dark:border-[#1e1e1e] rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl"
       onclick={(e) => e.stopPropagation()}
-      role="dialog" aria-modal="true"
+      onkeydown={(e) => e.stopPropagation()}
+      role="dialog" aria-modal="true" tabindex="-1"
     >
       <div class="px-6 py-4 border-b border-zinc-50 dark:border-[#1a1a1a] flex justify-between items-center">
         <div>
@@ -1816,6 +1822,7 @@ function populateFields() {
         </div>
 
         <div>
+          <!-- svelte-ignore a11y_label_has_associated_control -->
           <label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Build Volume (mm)</label>
           <div class="grid grid-cols-3 gap-3">
             <div>
@@ -1885,72 +1892,4 @@ function populateFields() {
     transition: background 0.2s;
   }
 
-  .btn-primary {
-    background: #2196F3;
-    color: white;
-    width: 100%;
-  }
-
-  .btn-primary:hover {
-    background: #1976D2;
-  }
-
-  .btn-danger {
-    background: #f44336;
-    color: white;
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-  }
-
-  .btn-danger:hover {
-    background: #d32f2f;
-  }
-
-  ul {
-    list-style: none;
-    padding: 0;
-  }
-
-  li {
-    padding: 1rem;
-    margin: 0.5rem 0;
-    background: #f5f5f5;
-    border-radius: 4px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .module-list li {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .module-info {
-    margin-bottom: 1rem;
-  }
-
-  .module-details {
-    display: flex;
-    gap: 1rem;
-    margin-top: 0.5rem;
-    font-size: 0.9rem;
-    color: #666;
-  }
-
-  .success {
-    background: #d4edda;
-    border: 2px solid #28a745;
-    padding: 1rem;
-    border-radius: 8px;
-    margin: 1rem 0;
-  }
-
-  .error {
-    background: #f8d7da;
-    border: 2px solid #dc3545;
-    padding: 1rem;
-    border-radius: 8px;
-    margin: 1rem 0;
-  }
 </style>

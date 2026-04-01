@@ -1979,6 +1979,7 @@
             <label for="customReason" class="block text-sm text-zinc-400 dark:text-zinc-600 mb-2">
               Enter custom failure reason:
             </label>
+            <!-- svelte-ignore a11y_autofocus -->
             <input
               id="customReason"
               type="text"
