@@ -102,7 +102,7 @@
   <div class="max-w-5xl mx-auto">
     <div class="flex items-center justify-between mb-6">
       <div class="flex items-center gap-3">
-        <a href="/" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
+        <a href="/" aria-label="Go back" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
           </svg>

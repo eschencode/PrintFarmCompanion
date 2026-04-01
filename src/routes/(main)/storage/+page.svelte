@@ -132,8 +132,9 @@
         class="flex flex-wrap items-end gap-3"
       >
         <div class="flex-1 min-w-[200px]">
-          <label class="block text-xs text-zinc-500 mb-1">Preset</label>
+          <label for="storage-preset-id" class="block text-xs text-zinc-500 mb-1">Preset</label>
           <select
+            id="storage-preset-id"
             name="presetId"
             bind:value={quickAddPresetId}
             class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
@@ -147,8 +148,9 @@
           </select>
         </div>
         <div class="w-24">
-          <label class="block text-xs text-zinc-500 mb-1">Quantity</label>
+          <label for="storage-qty" class="block text-xs text-zinc-500 mb-1">Quantity</label>
           <input
+            id="storage-qty"
             type="number"
             name="quantity"
             bind:value={quickAddQuantity}
@@ -219,12 +221,12 @@
                     min="0"
                     class="w-16 bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-sm px-2 py-1 text-center text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
                   />
-                  <button type="submit" class="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300">
+                  <button type="submit" aria-label="Save" class="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                     </svg>
                   </button>
-                  <button type="button" onclick={cancelEdit} class="p-1 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300">
+                  <button type="button" aria-label="Cancel" onclick={cancelEdit} class="p-1 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
@@ -286,6 +288,7 @@
       <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-[#262626]">
         <h2 class="text-base font-medium text-zinc-900 dark:text-zinc-50">New Filament Preset</h2>
         <button
+          aria-label="Close"
           onclick={() => { showAddPresetModal = false; resetNewPreset(); }}
           class="p-1 text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 transition-colors"
         >
@@ -310,8 +313,9 @@
         class="p-5 space-y-4"
       >
         <div>
-          <label class="block text-sm text-zinc-500 mb-1">Preset Name *</label>
+          <label for="new-preset-name" class="block text-sm text-zinc-500 mb-1">Preset Name *</label>
           <input
+            id="new-preset-name"
             type="text"
             name="name"
             bind:value={newPreset.name}
@@ -323,8 +327,9 @@
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm text-zinc-500 mb-1">Brand *</label>
+            <label for="new-preset-brand" class="block text-sm text-zinc-500 mb-1">Brand *</label>
             <input
+              id="new-preset-brand"
               type="text"
               name="brand"
               bind:value={newPreset.brand}
@@ -334,8 +339,9 @@
             />
           </div>
           <div>
-            <label class="block text-sm text-zinc-500 mb-1">Material *</label>
+            <label for="new-preset-material" class="block text-sm text-zinc-500 mb-1">Material *</label>
             <select
+              id="new-preset-material"
               name="material"
               bind:value={newPreset.material}
               class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
@@ -356,8 +362,9 @@
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm text-zinc-500 mb-1">Color</label>
+            <label for="new-preset-color" class="block text-sm text-zinc-500 mb-1">Color</label>
             <input
+              id="new-preset-color"
               type="text"
               name="color"
               bind:value={newPreset.color}
@@ -366,8 +373,9 @@
             />
           </div>
           <div>
-            <label class="block text-sm text-zinc-500 mb-1">Weight (g)</label>
+            <label for="new-preset-weight" class="block text-sm text-zinc-500 mb-1">Weight (g)</label>
             <input
+              id="new-preset-weight"
               type="number"
               name="defaultWeight"
               bind:value={newPreset.defaultWeight}
@@ -379,8 +387,9 @@
 
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm text-zinc-500 mb-1">Cost ($)</label>
+            <label for="new-preset-cost" class="block text-sm text-zinc-500 mb-1">Cost ($)</label>
             <input
+              id="new-preset-cost"
               type="number"
               name="cost"
               bind:value={newPreset.cost}
@@ -391,8 +400,9 @@
             />
           </div>
           <div>
-            <label class="block text-sm text-zinc-500 mb-1">Initial Stock</label>
+            <label for="new-preset-stock" class="block text-sm text-zinc-500 mb-1">Initial Stock</label>
             <input
+              id="new-preset-stock"
               type="number"
               name="initialStock"
               bind:value={newPreset.initialStock}

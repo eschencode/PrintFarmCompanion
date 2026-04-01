@@ -37,13 +37,6 @@
     color: #111;
   }
 
-  h2 {
-    font-size: 14px;
-    color: #666;
-    margin: 0 0 20px 0;
-    font-weight: normal;
-  }
-
   /* --- Printer Card --- */
   .card {
     border: 1px solid #ddd;
@@ -229,16 +222,6 @@
     background: #2d9249;
   }
 
-  button.red {
-    border-color: #ea4335;
-    color: #fff;
-    background: #ea4335;
-  }
-
-  button.red:active {
-    background: #d33426;
-  }
-
   button.primary {
     background: #111;
     color: #fff;
@@ -378,27 +361,6 @@
 
   .current-spool strong {
     color: #111;
-  }
-
-  /* --- Select --- */
-  select {
-    width: 100%;
-    padding: 14px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    background: #fff;
-    color: #333;
-    font-size: 15px;
-    margin-bottom: 10px;
-    -webkit-appearance: none;
-    appearance: none;
-    font-family: Arial, sans-serif;
-  }
-
-  hr {
-    border: none;
-    border-top: 1px solid #ddd;
-    margin: 24px 0;
   }
 
   .empty {

@@ -419,8 +419,9 @@
       <div class="flex-1 min-w-0 space-y-3">
         <!-- Name -->
         <div>
-          <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Module Name</label>
+          <label for="upload-name" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Module Name</label>
           <input
+            id="upload-name"
             type="text"
             bind:value={previewData.name}
             class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
@@ -430,8 +431,9 @@
 
         <!-- Local File Handler Path -->
         <div>
-          <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Local File Handler Path</label>
+          <label for="upload-lfh-path" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Local File Handler Path</label>
           <input
+            id="upload-lfh-path"
             type="text"
             bind:value={previewData.localFileHandlerPath}
             placeholder="/path/to/file.3mf"
@@ -443,8 +445,9 @@
         <div class="grid grid-cols-2 gap-x-3 gap-y-3">
           <!-- Spool Preset -->
           <div class="col-span-2">
-            <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Spool Preset</label>
+            <label for="upload-spool" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Spool Preset</label>
             <select
+              id="upload-spool"
               bind:value={previewData.defaultSpoolPresetId}
               class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
             >
@@ -459,11 +462,12 @@
 
           <!-- Est. Time (minutes) -->
           <div>
-            <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">
+            <label for="upload-time" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">
               Est. Time{previewData.estimatedTime ? ` — ${formatTime(previewData.estimatedTime)}` : ''}
             </label>
             <div class="flex items-center gap-1.5">
               <input
+                id="upload-time"
                 type="number"
                 value={previewData.estimatedTime !== null ? Math.round(previewData.estimatedTime / 60) : ''}
                 oninput={(e) => {
@@ -480,9 +484,10 @@
 
           <!-- Objects per Print -->
           <div>
-            <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Objects per Print</label>
+            <label for="upload-obj-count" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Objects per Print</label>
             <div class="flex items-center gap-1.5">
               <input
+                id="upload-obj-count"
                 type="number"
                 min="1"
                 bind:value={previewData.objectsPerPrint}
@@ -495,8 +500,9 @@
 
           <!-- Plate type -->
           <div>
-            <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Plate Type</label>
+            <label for="upload-plate-type" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Plate Type</label>
             <input
+              id="upload-plate-type"
               type="text"
               bind:value={previewData.plateType}
               placeholder="e.g. textured_plate"
@@ -506,9 +512,10 @@
 
           <!-- Nozzle diameter -->
           <div>
-            <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Nozzle</label>
+            <label for="upload-nozzle" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Nozzle</label>
             <div class="flex items-center gap-1.5">
               <input
+                id="upload-nozzle"
                 type="number"
                 step="0.1"
                 value={previewData.nozzleDiameter ?? ''}
@@ -526,9 +533,10 @@
 
           <!-- Expected weight -->
           <div>
-            <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Weight</label>
+            <label for="upload-weight" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Weight</label>
             <div class="flex items-center gap-1.5">
               <input
+                id="upload-weight"
                 type="number"
                 step="0.1"
                 bind:value={previewData.expectedWeight}
@@ -541,6 +549,7 @@
 
           <!-- Printer Model -->
           <div>
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Printer Model</label>
             {#if printerModels.length > 0}
               <select
@@ -564,6 +573,7 @@
 
           <!-- Inventory Slug -->
           <div>
+            <!-- svelte-ignore a11y_label_has_associated_control -->
             <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Inventory</label>
             {#if inventoryItems.length > 0}
               <select
