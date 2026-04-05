@@ -1,0 +1,8 @@
+name = "print-farm-companion"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = ".svelte-kit/cloudflare"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "3dtracker-db_new"
+database_id = "67e78701-39fb-4473-a264-1fcf1b6e9a52"

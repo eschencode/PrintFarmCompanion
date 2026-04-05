@@ -287,16 +287,47 @@ class BambuMQTTClient:
         if not print_data:
             return
 
-        task_id = str(print_data.get("task_id", ""))
+        # Merge with last known status — Bambu sends incremental MQTT updates
+        # that only contain changed fields, so we must preserve previous values.
+        with self._lock:
+            last = self.last_status
+
+        merged_raw = dict(last.raw) if last else {}
+        merged_raw.update(print_data)
+
+        def _int(val, fallback: int) -> int:
+            try:
+                return int(val)
+            except (TypeError, ValueError):
+                return fallback
+
+        # Detect new print: task_id changed → reset progress/layers to 0
+        # (don't inherit 100% from the finished previous job)
+        incoming_task = str(print_data.get("task_id", ""))
+        task_changed = bool(incoming_task and last and incoming_task != last.task_id)
+        if task_changed:
+            print(f"[MQTT] {self.credentials.serial}: new task_id {last.task_id!r} → {incoming_task!r}, resetting progress/layers")
+
         status = PrintStatus(
-            task_id=task_id,
-            stage=print_data.get("mc_print_stage", ""),
-            progress=int(print_data.get("mc_percent", 0)),
-            layer_num=int(print_data.get("layer_num", 0)),
-            total_layer_num=int(print_data.get("total_layer_num", 0)),
-            gcode_state=print_data.get("gcode_state", ""),
-            error_code=int(print_data.get("print_error", 0)),
-            raw=print_data,
+            task_id=incoming_task or (last.task_id if last else ""),
+            stage=print_data.get("mc_print_stage", last.stage if last else ""),
+            progress=_int(print_data.get("mc_percent"), 0 if task_changed else (last.progress if last else 0)),
+            layer_num=_int(print_data.get("layer_num"), 0 if task_changed else (last.layer_num if last else 0)),
+            total_layer_num=_int(print_data.get("total_layer_num"), 0 if task_changed else (last.total_layer_num if last else 0)),
+            gcode_state=print_data.get("gcode_state", last.gcode_state if last else ""),
+            error_code=_int(print_data.get("print_error"), last.error_code if last else 0),
+            raw=merged_raw,
+        )
+
+        # Debug: log all MQTT fields so we can verify field names and available data
+        print(
+            f"[MQTT] {self.credentials.serial}: state={status.gcode_state} "
+            f"progress={status.progress}% layer={status.layer_num}/{status.total_layer_num} "
+            f"remaining={print_data.get('mc_remaining_time')}min "
+            f"nozzle={print_data.get('nozzle_temper')}°C "
+            f"bed={print_data.get('bed_temper')}°C "
+            f"chamber={print_data.get('chamber_temper')}°C | "
+            f"keys={list(print_data.keys())}"
         )
 
         with self._lock:

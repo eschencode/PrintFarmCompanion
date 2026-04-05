@@ -72,6 +72,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const job = await db
       .prepare(
         `SELECT pj.id, pj.printer_id, pj.module_id, pj.planned_weight, pj.start_time,
+                pj.failure_reason,
                 pm.expected_time,
                 p.loaded_spool_id as printer_loaded_spool_id
          FROM print_jobs pj
@@ -86,6 +87,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         module_id: number;
         planned_weight: number;
         start_time: number;
+        failure_reason: string | null;
         expected_time: number | null;
         printer_loaded_spool_id: number | null;
       } | null;
@@ -93,7 +95,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     if (job) {
       const now = Date.now();
       const isSuccess = safeStatus === 'success';
-      const failureReason = isSuccess ? null : `Pi reported: ${gcode_state ?? 'FAILED'} (error ${error_code ?? 'unknown'})`;
+      // Preserve a reason already set (e.g. 'Cancelled by user') — don't overwrite with generic MQTT message
+      const failureReason = isSuccess
+        ? null
+        : (job.failure_reason ?? `Pi reported: ${gcode_state ?? 'FAILED'} (error ${error_code ?? 'unknown'})`);
       const actualWeight = isSuccess ? (job.planned_weight ?? 0) : 0;
 
       // Complete the print job record (handles inventory auto-add on success)

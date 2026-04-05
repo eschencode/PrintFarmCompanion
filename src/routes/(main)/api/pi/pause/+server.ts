@@ -2,9 +2,9 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 /**
- * POST /api/pi/cancel
+ * POST /api/pi/pause
  * Body: { printer_id: number }
- * Fetches printer credentials from D1 and tells Pi to send MQTT stop command.
+ * Fetches printer credentials from D1 and tells Pi to send MQTT pause command.
  */
 export const POST: RequestHandler = async ({ request, platform }) => {
   const db = platform?.env?.DB;
@@ -32,7 +32,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   }
 
   try {
-    const piResp = await fetch(`${piUrl}/cancel`, {
+    const piResp = await fetch(`${piUrl}/pause`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-pi-secret': piSecret },
       body: JSON.stringify({
@@ -42,15 +42,6 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       }),
     });
     const result = await piResp.json() as { success: boolean; error?: string };
-
-    // Stamp the active job so the incoming webhook doesn't overwrite with a generic MQTT error
-    if (result.success) {
-      await db
-        .prepare(`UPDATE print_jobs SET failure_reason = 'Cancelled by user' WHERE printer_id = ? AND status = 'printing'`)
-        .bind(body.printer_id)
-        .run();
-    }
-
     return json(result);
   } catch (e) {
     return json({ success: false, error: `Pi unreachable: ${e}` }, { status: 502 });

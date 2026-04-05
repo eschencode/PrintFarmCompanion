@@ -50,10 +50,10 @@
   let tickerInterval: ReturnType<typeof setInterval>;
   onMount(() => {
     tickerInterval = setInterval(() => { nowStore.set(Date.now()); }, 5000);
-    // Auto-resume polling for any Pi print jobs that were active before page load
+    // Auto-resume polling for any active print jobs on Pi-configured printers
     for (const job of data.activePrintJobs as any[]) {
-      if (job.pi_task_id && job.printer_serial) {
-        startPiPolling(job.id, job.printer_serial);
+      if (job.printer_serial) {
+        startPiPolling(job.id, job.printer_serial, job.start_time);
       }
     }
     return () => clearInterval(tickerInterval);
@@ -64,52 +64,109 @@
   }
 
   // ── Pi live status polling ────────────────────────────────────────────────
-  let piStatusByJobId: Record<number, { gcode_state: string; progress: number; layer_num: number; total_layer_num: number; label: string }> = {};
-  let piPollingIntervals: Record<number, ReturnType<typeof setInterval>> = {};
+  type PiStatus = {
+    gcode_state: string; progress: number; layer_num: number; total_layer_num: number; label: string;
+    remaining_time?: number | null; nozzle_temp?: number | null; bed_temp?: number | null; chamber_temp?: number | null;
+  };
+  let piStatusByJobId: Record<number, PiStatus> = {};
+  let piPollingIntervals: Record<number, ReturnType<typeof setTimeout>> = {};
 
-  function startPiPolling(jobId: number, printerSerial: string) {
-    if (piPollingIntervals[jobId]) return; // already polling
-    piPollingIntervals[jobId] = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/pi/status?serial=${printerSerial}`);
-        if (!res.ok) return;
-        const data = await res.json() as { connected: boolean; status: { gcode_state: string; progress: number; layer_num: number; total_layer_num: number } | null };
-        if (!data.status) return;
-        const stateLabels: Record<string, string> = {
-          PREPARE: 'Preparing…',
-          RUNNING: `Printing ${data.status.progress}%`,
-          PAUSE: 'Paused',
-          FINISH: 'Done',
-          FAILED: 'Failed',
-        };
-        const label = stateLabels[data.status.gcode_state] ?? data.status.gcode_state;
-        piStatusByJobId = { ...piStatusByJobId, [jobId]: {
-          gcode_state: data.status.gcode_state,
-          progress: data.status.progress,
-          layer_num: data.status.layer_num ?? 0,
-          total_layer_num: data.status.total_layer_num ?? 0,
-          label,
-        }};
-        if (data.status.gcode_state === 'FINISH' || data.status.gcode_state === 'FAILED') {
-          stopPiPolling(jobId);
-          setTimeout(() => window.location.reload(), 2000);
-        }
-      } catch { /* ignore */ }
-    }, 5000);
+  async function fetchPiStatus(jobId: number, printerSerial: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/pi/status?serial=${printerSerial}`);
+      if (!res.ok) return false;
+      const d = await res.json() as {
+        connected: boolean;
+        status: {
+          gcode_state: string; progress: number; layer_num: number; total_layer_num: number;
+          remaining_time?: number | null; nozzle_temp?: number | null; bed_temp?: number | null; chamber_temp?: number | null;
+        } | null;
+      };
+      if (!d.status) return false;
+      const stateLabels: Record<string, string> = {
+        PREPARE: 'Preparing…',
+        RUNNING: `Printing ${d.status.progress}%`,
+        PAUSE: 'Paused',
+        FINISH: 'Done',
+        FAILED: 'Failed',
+      };
+      const label = stateLabels[d.status.gcode_state] ?? d.status.gcode_state;
+      piStatusByJobId = { ...piStatusByJobId, [jobId]: {
+        gcode_state: d.status.gcode_state,
+        progress: d.status.progress,
+        layer_num: d.status.layer_num ?? 0,
+        total_layer_num: d.status.total_layer_num ?? 0,
+        label,
+        remaining_time: d.status.remaining_time,
+        nozzle_temp: d.status.nozzle_temp,
+        bed_temp: d.status.bed_temp,
+        chamber_temp: d.status.chamber_temp,
+      }};
+      if (d.status.gcode_state === 'FINISH' || d.status.gcode_state === 'FAILED') {
+        stopPiPolling(jobId);
+        setTimeout(() => window.location.reload(), 2000);
+        return true;
+      }
+      return false;
+    } catch { return false; }
+  }
+
+  function startPiPolling(jobId: number, printerSerial: string, startTime?: number) {
+    if (piPollingIntervals[jobId]) return;
+    // Normalise start_time — old DB records stored seconds, new ones store ms
+    const startMs = startTime && startTime < 10_000_000_000 ? startTime * 1000 : (startTime ?? Date.now());
+
+    // Fetch immediately so the modal shows real data before the first scheduled poll
+    fetchPiStatus(jobId, printerSerial);
+
+    function scheduleNext() {
+      const elapsedSeconds = (Date.now() - startMs) / 1000;
+      const delay = elapsedSeconds < 600 ? 5000 : 60000; // fast first 10 min, then 1/min
+      piPollingIntervals[jobId] = setTimeout(async () => {
+        const done = await fetchPiStatus(jobId, printerSerial);
+        if (!done) scheduleNext();
+      }, delay);
+    }
+    scheduleNext();
   }
 
   function stopPiPolling(jobId: number) {
-    clearInterval(piPollingIntervals[jobId]);
+    clearTimeout(piPollingIntervals[jobId]);
     delete piPollingIntervals[jobId];
   }
 
-  onDestroy(() => { Object.values(piPollingIntervals).forEach(clearInterval); });
+  onDestroy(() => { Object.values(piPollingIntervals).forEach(clearTimeout); });
+
+  let controlLoading: string | null = null;
+  let printStarting = false;
+
+  async function sendPrinterControl(endpoint: string, printerId: number) {
+    controlLoading = endpoint;
+    try {
+      await fetch(`/api/pi/${endpoint}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ printer_id: printerId }),
+      });
+    } finally {
+      // Cancel keeps loading until the page reloads via webhook; Pause/Resume reset immediately
+      if (endpoint !== 'cancel') controlLoading = null;
+    }
+  }
+
+  function formatRemainingTime(mins: number | null | undefined): string {
+    if (mins == null || mins <= 0) return '';
+    if (mins >= 60) return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+    return `${mins}m`;
+  }
 
   // ── Priority print start ──────────────────────────────────────────────────
   async function startPrintWithPriority(module: any, printer: any) {
+    printStarting = true;
     const hasPi = module.file_stored_on_pi && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
     const hasLocalHandler = module.local_file_handler_path && fileHandlerState.connected;
 
+    try {
     if (hasPi) {
       // Pi path: call /api/pi/print directly (creates job record + triggers printer)
       const res = await fetch('/api/pi/print', {
@@ -136,6 +193,10 @@
     }
     closePrinterModal();
     window.location.reload();
+    } catch (e) {
+      printStarting = false;
+      throw e;
+    }
   }
 
   // Predefined failure reasons
@@ -152,6 +213,11 @@
 
   function selectPrinter(printer: any) {
     selectedPrinter = printer;
+    // Fetch fresh status immediately when modal opens so user sees live data right away
+    const activeJob = (data.activePrintJobs as any[]).find((j: any) => j.printer_id === printer.id);
+    if (activeJob?.printer_serial) {
+      fetchPiStatus(activeJob.id, activeJob.printer_serial);
+    }
   }
 
   function closePrinterModal() {
@@ -623,9 +689,10 @@
     return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
   }
 
-  // ✅ FIXED: Use milliseconds consistently
+  // Auto-detect seconds vs ms — old DB records stored Unix seconds, new ones store ms
   function getElapsedTimeMinutes(startTime: number): number {
-    return Math.floor((now - startTime) / 1000 / 60);
+    const ms = startTime < 10_000_000_000 ? startTime * 1000 : startTime;
+    return Math.floor((now - ms) / 1000 / 60);
   }
 
   function getElapsedTime(startTime: number): string {
@@ -1032,7 +1099,7 @@
         {#if selectedPrinter.status === 'printing' && activePrintJob}
           <!-- PRINTING STATUS MENU -->
           {@const piLive = piStatusByJobId[activePrintJob.id]}
-          {@const displayProgress = piLive?.progress ?? activePrintJob.progress ?? getProgress(activePrintJob.start_time, activePrintJob.expected_time)}
+          {@const displayProgress = piLive?.progress ?? (activePrintJob.progress > 0 ? activePrintJob.progress : getProgress(activePrintJob.start_time, activePrintJob.expected_time))}
           <div class="space-y-5">
             <!-- Module Name -->
             <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
@@ -1065,6 +1132,38 @@
               </div>
             </div>
 
+            <!-- Live Temps + Remaining Time (from Pi) -->
+            {#if piLive && (piLive.remaining_time != null || piLive.nozzle_temp != null)}
+              <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22]">
+                <div class="flex flex-wrap gap-5">
+                  {#if piLive.remaining_time != null && piLive.remaining_time > 0}
+                    <div>
+                      <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">Remaining</p>
+                      <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{formatRemainingTime(piLive.remaining_time)}</p>
+                    </div>
+                  {/if}
+                  {#if piLive.nozzle_temp != null}
+                    <div>
+                      <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">Nozzle</p>
+                      <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{Math.round(piLive.nozzle_temp)}°C</p>
+                    </div>
+                  {/if}
+                  {#if piLive.bed_temp != null}
+                    <div>
+                      <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">Bed</p>
+                      <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{Math.round(piLive.bed_temp)}°C</p>
+                    </div>
+                  {/if}
+                  {#if piLive.chamber_temp != null}
+                    <div>
+                      <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">Chamber</p>
+                      <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{Math.round(piLive.chamber_temp)}°C</p>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+
             <!-- Time Info -->
             <div class="grid grid-cols-2 gap-4">
               <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22]">
@@ -1088,7 +1187,7 @@
                   </div>
                   <div>
                     <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">Expected After</p>
-                    <p class="text-xl text-blue-500 dark:text-blue-400 font-light tabular-nums">{Math.max(0, loadedSpool.remaining_weight - activePrintJob.expected_weight)}g</p>
+                    <p class="text-xl text-blue-500 dark:text-blue-400 font-light tabular-nums">{Math.max(0, loadedSpool.remaining_weight - activePrintJob.expected_weight).toFixed(1)}g</p>
                   </div>
                 </div>
                 <div class="mt-4 pt-4 border-t border-zinc-200/60 dark:border-[#1a1a22]">
@@ -1104,7 +1203,37 @@
               </div>
             {/if}
 
-            <!-- Action Buttons -->
+            <!-- Pi Controls (Cancel / Pause / Resume) — only if printer has Pi credentials -->
+            {#if selectedPrinter?.printer_ip && selectedPrinter?.printer_serial && selectedPrinter?.printer_access_code}
+              <div class="grid grid-cols-2 gap-3 pt-1">
+                <button
+                  disabled={!!controlLoading}
+                  onclick={async () => { await sendPrinterControl('cancel', selectedPrinter.id); }}
+                  class="bg-red-500/8 hover:bg-red-500/15 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl transition-all duration-200 font-medium border border-red-500/10 hover:border-red-500/20 text-sm disabled:opacity-50"
+                >
+                  {controlLoading === 'cancel' ? 'Cancelling…' : 'Cancel Print'}
+                </button>
+                {#if piLive?.gcode_state === 'PAUSE'}
+                  <button
+                    disabled={!!controlLoading}
+                    onclick={async () => { await sendPrinterControl('resume', selectedPrinter.id); }}
+                    class="bg-blue-500/8 hover:bg-blue-500/15 text-blue-600 dark:text-blue-400 px-4 py-3 rounded-xl transition-all duration-200 font-medium border border-blue-500/10 hover:border-blue-500/20 text-sm disabled:opacity-50"
+                  >
+                    {controlLoading === 'resume' ? 'Resuming…' : 'Resume'}
+                  </button>
+                {:else}
+                  <button
+                    disabled={!!controlLoading}
+                    onclick={async () => { await sendPrinterControl('pause', selectedPrinter.id); }}
+                    class="bg-amber-500/8 hover:bg-amber-500/15 text-amber-600 dark:text-amber-400 px-4 py-3 rounded-xl transition-all duration-200 font-medium border border-amber-500/10 hover:border-amber-500/20 text-sm disabled:opacity-50"
+                  >
+                    {controlLoading === 'pause' ? 'Pausing…' : 'Pause'}
+                  </button>
+                {/if}
+              </div>
+            {/if}
+
+            <!-- Manual Override Buttons -->
             <div class="grid grid-cols-2 gap-4 pt-3">
                <button
                 onclick={handlePrintFailed}
@@ -1217,6 +1346,11 @@
                     </span>
                   {/if}
                 </div>
+                {#if lastPrintJob.status !== 'success' && lastPrintJob.failure_reason}
+                  <p class="text-xs text-red-500/70 dark:text-red-400/60 mt-3 pt-3 border-t border-zinc-200/60 dark:border-[#1a1a22]">
+                    {lastPrintJob.failure_reason}
+                  </p>
+                {/if}
               </div>
             {:else}
               <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
@@ -1241,8 +1375,9 @@
     {@const matchingModule = allModules.find(m => m.id === nextPrint.module_id)}
     <button
       type="button"
+      disabled={printStarting}
       onclick={() => matchingModule && startPrintWithPriority(matchingModule, selectedPrinter)}
-      class="w-full text-left bg-emerald-500/5 border border-emerald-500/15 rounded-xl p-5 mt-4 hover:bg-emerald-500/10 hover:border-emerald-500/25 transition-all duration-200"
+      class="w-full text-left bg-emerald-500/5 border border-emerald-500/15 rounded-xl p-5 mt-4 hover:bg-emerald-500/10 hover:border-emerald-500/25 transition-all duration-200 disabled:opacity-50"
     >
         <div class="flex items-center gap-4">
           <div class="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
@@ -1270,10 +1405,11 @@
                 Load Spool
               </button>
               <button
+                disabled={printStarting}
                 onclick={handleStartPrint}
-                class="bg-emerald-500/8 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium border border-emerald-500/10 hover:border-emerald-500/20"
+                class="bg-emerald-500/8 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium border border-emerald-500/10 hover:border-emerald-500/20 disabled:opacity-50"
               >
-                Start Print
+                {printStarting ? 'Starting…' : 'Start Print'}
               </button>
             </div>
           </div>
@@ -1844,10 +1980,13 @@
               {@const selectedModule = allModules.find(m => m.id === selectedModuleId)}
               <button
                 type="button"
+                disabled={printStarting}
                 onclick={() => selectedModule && startPrintWithPriority(selectedModule, selectedPrinter)}
-                class="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium"
+                class="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium disabled:opacity-50"
               >
-                {#if selectedModule && loadedSpool && selectedModule.expected_weight > loadedSpool.remaining_weight}
+                {#if printStarting}
+                  Starting…
+                {:else if selectedModule && loadedSpool && selectedModule.expected_weight > loadedSpool.remaining_weight}
                   Start Print (Low Material)
                 {:else if selectedModule?.file_stored_on_pi && selectedPrinter?.printer_ip}
                   Start Print (Pi)

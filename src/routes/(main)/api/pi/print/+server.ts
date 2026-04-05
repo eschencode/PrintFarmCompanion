@@ -74,7 +74,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   }
 
   // Create print_jobs record and set printer status to printing
-  const now = Math.floor(Date.now() / 1000);
+  const now = Date.now();
   const jobName = `${module.name} — ${printer.name}`;
   const result = await db
     .prepare(
