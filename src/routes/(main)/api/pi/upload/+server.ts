@@ -8,6 +8,7 @@ import type { RequestHandler } from './$types';
  */
 export const POST: RequestHandler = async ({ request, platform }) => {
   const piUrl = platform?.env?.PI_TUNNEL_URL;
+  const piSecret = platform?.env?.PI_SECRET ?? '';
 
   if (!piUrl) {
     return json({ success: false, pi_available: false, error: 'Pi not configured' }, { status: 200 });
@@ -22,7 +23,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   try {
     const piResponse = await fetch(`${piUrl}/upload`, {
       method: 'POST',
-      headers: { 'content-type': contentType },
+      headers: { 'content-type': contentType, 'x-pi-secret': piSecret },
       body: request.body,
       // @ts-expect-error - Cloudflare Workers supports duplex streaming
       duplex: 'half',
@@ -33,7 +34,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       return json({ success: false, error: `Pi error: ${text}` }, { status: 502 });
     }
 
-    const result = await piResponse.json() as { success: boolean; path: string; filename: string; size: number };
+    const result = await piResponse.json() as { path: string; filename: string; size: number };
     return json({ success: true, pi_available: true, ...result });
   } catch (e) {
     console.error('[pi/upload] Failed to reach Pi:', e);
