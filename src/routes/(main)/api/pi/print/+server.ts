@@ -13,6 +13,7 @@ import type { RequestHandler } from './$types';
 export const POST: RequestHandler = async ({ request, platform }) => {
   const db = platform?.env?.DB;
   const piUrl = platform?.env?.PI_TUNNEL_URL;
+  const piSecret = platform?.env?.PI_SECRET ?? '';
 
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
   if (!piUrl) return json({ success: false, error: 'Pi not configured (PI_TUNNEL_URL missing)' }, { status: 503 });
@@ -54,7 +55,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   try {
     const piResp = await fetch(`${piUrl}/print`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-pi-secret': piSecret },
       body: JSON.stringify({
         file_path: module.pi_file_path,
         printer_ip: printer.printer_ip,

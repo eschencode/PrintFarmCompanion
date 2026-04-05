@@ -15,6 +15,9 @@ declare global {
                 SHOPIFY_STORE_DOMAIN?: string;
                 SHOPIFY_ACCESS_TOKEN?: string;
                 AI?: Ai;
+                PI_TUNNEL_URL?: string;
+                PI_SECRET?: string;
+                PI_WEBHOOK_SECRET?: string;
             };
         }
     }

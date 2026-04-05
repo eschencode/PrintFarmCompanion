@@ -6,17 +6,18 @@ Receives .gcode.3mf files and print commands from Cloudflare Workers,
 then talks to Bambu Lab printers on the local network via FTPS + MQTT.
 """
 
-import ftplib
+import json
 import os
 import ssl
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
+import paho.mqtt.client as mqtt
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 
 import uuid
@@ -36,67 +37,47 @@ load_dotenv()
 FILES_DIR = Path(os.getenv("FILES_DIR", "/home/pi/printfarm/files"))
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+PI_SECRET = os.getenv("PI_SECRET", "")
+
+MAX_UPLOAD_SIZE = 500 * 1024 * 1024  # 500 MB
 
 FILES_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="PrintFarm Pi Bridge")
 
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+def verify_secret(x_pi_secret: str = Header(default="")):
+    if PI_SECRET and x_pi_secret != PI_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+# ── State ─────────────────────────────────────────────────────────────────────
+
 # Active MQTT monitors keyed by printer serial
 _monitors: dict[str, BambuMQTTClient] = {}
 _monitors_lock = threading.Lock()
 
+# Persistent status cache — survives monitor teardown, updated by monitors + idle poller
+_status_cache: dict[str, dict] = {}
+_status_cache_lock = threading.Lock()
+
+# Printer registry — stores credentials for idle polling (populated on /print)
+_printer_registry: dict[str, PrinterCredentials] = {}
+_registry_lock = threading.Lock()
+
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-@app.get("/health")
+@app.get("/health", dependencies=[Depends(verify_secret)])
 def health():
     return {"ok": True, "files_dir": str(FILES_DIR), "active_monitors": list(_monitors.keys())}
 
 
-@app.get("/ping-printer")
-def ping_printer(ip: str, access_code: str, serial: str):
-    """
-    Quick connectivity test — tries FTPS login and MQTT connect without printing.
-    Call: GET /ping-printer?ip=192.168.x.x&access_code=XXXX&serial=XXXX
-    """
-    import socket
-    result = {"ip": ip, "serial": serial, "ftps": False, "mqtt": False, "errors": []}
-
-    # Test FTPS port 990
-    try:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-        with ftplib.FTP_TLS(context=context) as ftp:
-            ftp.connect(host=ip, port=990, timeout=5)
-            ftp.login(user="bblp", passwd=access_code)
-            result["ftps"] = True
-    except Exception as e:
-        result["errors"].append(f"FTPS: {e}")
-
-    # Test MQTT port 8883
-    try:
-        import paho.mqtt.client as mqtt
-        connected = threading.Event()
-        c = mqtt.Client()
-        c.username_pw_set("bblp", access_code)
-        c.tls_set(cert_reqs=ssl.CERT_NONE)
-        c.tls_insecure_set(True)
-        c.on_connect = lambda *_: connected.set()
-        c.connect(ip, port=8883, keepalive=5)
-        c.loop_start()
-        result["mqtt"] = connected.wait(timeout=5)
-        c.loop_stop()
-        c.disconnect()
-    except Exception as e:
-        result["errors"].append(f"MQTT: {e}")
-
-    return result
-
-
 # ── File upload ───────────────────────────────────────────────────────────────
 
-@app.post("/upload")
+@app.post("/upload", dependencies=[Depends(verify_secret)])
 async def upload_file(file: UploadFile = File(...)):
     """
     Receive a .gcode.3mf file from CF Workers and save it to disk.
@@ -105,10 +86,12 @@ async def upload_file(file: UploadFile = File(...)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="filename required")
 
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (max 500MB)")
+
     safe_name = Path(file.filename).name  # strip any path components
     dest = FILES_DIR / safe_name
-
-    contents = await file.read()
     dest.write_bytes(contents)
 
     return {"success": True, "path": str(dest), "filename": safe_name, "size": len(contents)}
@@ -124,7 +107,7 @@ class PrintRequest(BaseModel):
     options: Optional[dict] = None
 
 
-@app.post("/print")
+@app.post("/print", dependencies=[Depends(verify_secret)])
 def trigger_print(req: PrintRequest):
     """
     Upload file to printer via FTPS and send MQTT print command.
@@ -141,6 +124,10 @@ def trigger_print(req: PrintRequest):
         serial=req.printer_serial,
         access_code=req.printer_access_code,
     )
+
+    # Register printer for idle polling
+    with _registry_lock:
+        _printer_registry[req.printer_serial] = credentials
 
     # 1. Upload file synchronously — must succeed before we return
     try:
@@ -174,28 +161,36 @@ def trigger_print(req: PrintRequest):
 
 # ── Status ────────────────────────────────────────────────────────────────────
 
-@app.get("/status/{serial}")
+@app.get("/status/{serial}", dependencies=[Depends(verify_secret)])
 def get_status(serial: str):
     """Return the last known status snapshot for a printer by serial number."""
     with _monitors_lock:
         monitor = _monitors.get(serial)
 
-    if not monitor:
-        return {"serial": serial, "connected": False, "status": None}
+    # Active monitor — use live data
+    if monitor and monitor.last_status:
+        status = monitor.last_status
+        return {
+            "serial": serial,
+            "connected": monitor._connected,
+            "status": {
+                "task_id": status.task_id,
+                "gcode_state": status.gcode_state,
+                "progress": status.progress,
+                "layer_num": status.layer_num,
+                "total_layer_num": status.total_layer_num,
+                "error_code": status.error_code,
+            },
+        }
 
-    status = monitor.last_status
-    return {
-        "serial": serial,
-        "connected": monitor._connected,
-        "status": {
-            "task_id": status.task_id,
-            "gcode_state": status.gcode_state,
-            "progress": status.progress,
-            "layer_num": status.layer_num,
-            "total_layer_num": status.total_layer_num,
-            "error_code": status.error_code,
-        } if status else None,
-    }
+    # No active monitor — return cached status (from last print or idle poll)
+    with _status_cache_lock:
+        cached = _status_cache.get(serial)
+
+    if cached:
+        return {"serial": serial, "connected": False, "status": cached}
+
+    return {"serial": serial, "connected": False, "status": None}
 
 
 # ── Cancel ────────────────────────────────────────────────────────────────────
@@ -206,11 +201,9 @@ class CancelRequest(BaseModel):
     printer_access_code: str
 
 
-@app.post("/cancel")
+@app.post("/cancel", dependencies=[Depends(verify_secret)])
 def cancel_print(req: CancelRequest):
     """Send MQTT stop command to the printer."""
-    import json, paho.mqtt.client as mqtt, ssl, time
-
     cmd = {"print": {"sequence_id": "0", "command": "stop", "param": ""}}
     client = mqtt.Client()
     client.username_pw_set("bblp", req.printer_access_code)
@@ -232,23 +225,40 @@ def cancel_print(req: CancelRequest):
 
 # ── Internal: MQTT monitor ────────────────────────────────────────────────────
 
+# Only these states trigger webhooks — IDLE/empty are ignored
+_ACTIVE_STATES = {"FINISH", "FAILED", "RUNNING", "PREPARE", "PAUSE"}
+_STATE_MAP = {
+    "FINISH": "success",
+    "FAILED": "failed",
+    "RUNNING": "printing",
+    "PREPARE": "printing",
+    "PAUSE": "paused",
+}
+
+
 def _start_monitor(credentials: PrinterCredentials, task_id: str):
     """Start a background MQTT monitor for a printer. Sends webhooks to CF Workers."""
 
     def on_status(status: PrintStatus):
+        # Skip IDLE and unknown states — avoids spurious "printing 100%" webhooks
+        if status.gcode_state not in _ACTIVE_STATES:
+            return
+
+        # Always keep status cache up to date
+        with _status_cache_lock:
+            _status_cache[credentials.serial] = {
+                "task_id": status.task_id,
+                "gcode_state": status.gcode_state,
+                "progress": status.progress,
+                "layer_num": status.layer_num,
+                "total_layer_num": status.total_layer_num,
+                "error_code": status.error_code,
+            }
+
         if not WEBHOOK_URL:
             return
 
-        # Map Bambu gcode_state to our status values
-        state_map = {
-            "FINISH": "success",
-            "FAILED": "failed",
-            "RUNNING": "printing",
-            "PREPARE": "printing",
-            "PAUSE": "paused",
-        }
-        mapped = state_map.get(status.gcode_state, "printing")
-
+        mapped = _STATE_MAP[status.gcode_state]
         payload = {
             "task_id": task_id,
             "printer_serial": credentials.serial,
@@ -295,6 +305,75 @@ def _stop_monitor(serial: str):
         monitor = _monitors.pop(serial, None)
     if monitor:
         monitor.disconnect()
+
+
+# ── Idle status poller ────────────────────────────────────────────────────────
+
+def _poll_idle_printer(credentials: PrinterCredentials):
+    """One-shot MQTT pushall to refresh status cache for an idle printer."""
+    print(f"[Idle] Polling {credentials.serial} ...")
+    got_response = threading.Event()
+
+    client = mqtt.Client()
+    client.username_pw_set("bblp", credentials.access_code)
+    client.tls_set(cert_reqs=ssl.CERT_NONE)
+    client.tls_insecure_set(True)
+
+    def on_connect(c, _u, _f, rc):
+        if rc == 0:
+            c.subscribe(f"device/{credentials.serial}/report")
+            pushall = {"pushing": {"sequence_id": str(int(time.time())), "command": "pushall"}}
+            c.publish(f"device/{credentials.serial}/request", json.dumps(pushall))
+
+    def on_message(_c, _u, msg):
+        try:
+            data = json.loads(msg.payload.decode())
+            print_data = data.get("print", {})
+            if not print_data:
+                return
+            with _status_cache_lock:
+                _status_cache[credentials.serial] = {
+                    "task_id": str(print_data.get("task_id", "")),
+                    "gcode_state": print_data.get("gcode_state", "IDLE"),
+                    "progress": int(print_data.get("mc_percent", 0)),
+                    "layer_num": int(print_data.get("layer_num", 0)),
+                    "total_layer_num": int(print_data.get("total_layer_num", 0)),
+                    "error_code": int(print_data.get("print_error", 0)),
+                }
+            print(f"[Idle] {credentials.serial}: gcode_state={print_data.get('gcode_state')} progress={print_data.get('mc_percent')}%")
+            got_response.set()
+        except Exception:
+            pass
+
+    client.on_connect = on_connect
+    client.on_message = on_message
+
+    try:
+        client.connect(credentials.ip, port=8883, keepalive=10)
+        client.loop_start()
+        got_response.wait(timeout=8)
+        client.loop_stop()
+        client.disconnect()
+    except Exception as e:
+        print(f"[Idle] Poll failed for {credentials.serial}: {e}")
+
+
+def _idle_watchdog():
+    """Background thread — polls idle registered printers every 60s."""
+    while True:
+        time.sleep(60)
+        with _registry_lock:
+            registered = dict(_printer_registry)
+        with _monitors_lock:
+            active_serials = set(_monitors.keys())
+
+        for serial, credentials in registered.items():
+            if serial not in active_serials:
+                threading.Thread(target=_poll_idle_printer, args=(credentials,), daemon=True).start()
+
+
+# Start idle watchdog on server startup
+threading.Thread(target=_idle_watchdog, daemon=True).start()
 
 
 if __name__ == "__main__":

@@ -23,12 +23,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
 
-  // Validate shared secret
-  if (secret) {
-    const incoming = request.headers.get('x-webhook-secret');
-    if (incoming !== secret) {
-      return json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    }
+  // Validate shared secret — must be configured
+  if (!secret) return json({ success: false, error: 'Webhook secret not configured' }, { status: 500 });
+  const incoming = request.headers.get('x-webhook-secret');
+  if (incoming !== secret) {
+    return json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
   let body: {
