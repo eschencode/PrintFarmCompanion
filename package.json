@@ -15,7 +15,8 @@
 		"db:reset": "rm -rf .wrangler/state/v3/d1 && npx wrangler d1 execute DB --local --file=schema.sql && npx wrangler d1 execute DB --local --file=seed.sql && echo '✅ Database reset complete!'",
 		"db:delete": "rm -rf .wrangler/state/v3/d1",
 		"db:schema": "npx wrangler d1 execute DB --local --file=schema.sql",
-		"db:seed": "npx wrangler d1 execute DB --local --file=seed.sql"
+		"db:seed": "npx wrangler d1 execute DB --local --file=seed.sql",
+		"db:pull": "npx wrangler d1 export DB --remote --output=./remote-backup.sql && python3 -c \"import re,sys; c=open('remote-backup.sql').read(); pm=re.search(r'(CREATE TABLE printer_models[^;]+;(?:\\nINSERT INTO \\\"printer_models\\\"[^;]+;)*)',c,re.DOTALL).group(0); c=c.replace(pm,'',1).replace('CREATE TABLE printers',pm+'\\nCREATE TABLE printers',1); open('/tmp/import_fixed.sql','w').write('PRAGMA foreign_keys=OFF;\\n'+c)\" && rm -rf .wrangler/state/v3/d1 && npx wrangler d1 execute DB --local --file=/tmp/import_fixed.sql && echo '✅ Local DB synced from remote!'"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.4.0",

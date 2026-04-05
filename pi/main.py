@@ -17,7 +17,7 @@ from typing import Optional
 import paho.mqtt.client as mqtt
 import requests
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 import uuid
@@ -162,8 +162,22 @@ def trigger_print(req: PrintRequest):
 # ── Status ────────────────────────────────────────────────────────────────────
 
 @app.get("/status/{serial}", dependencies=[Depends(verify_secret)])
-def get_status(serial: str):
+def get_status(serial: str, request: Request):
     """Return the last known status snapshot for a printer by serial number."""
+    # Auto-register printer if credentials are provided and it's not in registry.
+    # This lets the Pi self-heal after a restart — the CF Worker passes credentials
+    # on every poll, so the first request after restart triggers a pushall immediately.
+    printer_ip = request.headers.get("x-printer-ip", "")
+    printer_code = request.headers.get("x-printer-code", "")
+    with _registry_lock:
+        already_registered = serial in _printer_registry
+    if printer_ip and printer_code and not already_registered:
+        creds = PrinterCredentials(ip=printer_ip, serial=serial, access_code=printer_code)
+        with _registry_lock:
+            _printer_registry[serial] = creds
+        print(f"[Status] Auto-registered {serial} — triggering background poll")
+        threading.Thread(target=_poll_idle_printer, args=(creds,), daemon=True).start()
+
     with _monitors_lock:
         monitor = _monitors.get(serial)
 
@@ -180,6 +194,10 @@ def get_status(serial: str):
                 "layer_num": status.layer_num,
                 "total_layer_num": status.total_layer_num,
                 "error_code": status.error_code,
+                "remaining_time": status.raw.get("mc_remaining_time"),
+                "nozzle_temp": status.raw.get("nozzle_temper"),
+                "bed_temp": status.raw.get("bed_temper"),
+                "chamber_temp": status.raw.get("chamber_temper"),
             },
         }
 
@@ -193,18 +211,16 @@ def get_status(serial: str):
     return {"serial": serial, "connected": False, "status": None}
 
 
-# ── Cancel ────────────────────────────────────────────────────────────────────
+# ── Printer controls (cancel / pause / resume) ────────────────────────────────
 
-class CancelRequest(BaseModel):
+class PrinterRequest(BaseModel):
     printer_ip: str
     printer_serial: str
     printer_access_code: str
 
 
-@app.post("/cancel", dependencies=[Depends(verify_secret)])
-def cancel_print(req: CancelRequest):
-    """Send MQTT stop command to the printer."""
-    cmd = {"print": {"sequence_id": "0", "command": "stop", "param": ""}}
+def _send_mqtt_command(req: PrinterRequest, cmd: dict, action: str):
+    """Connect, publish a single MQTT command, then disconnect."""
     client = mqtt.Client()
     client.username_pw_set("bblp", req.printer_access_code)
     client.tls_set(cert_reqs=ssl.CERT_NONE)
@@ -218,8 +234,27 @@ def cancel_print(req: CancelRequest):
         client.loop_stop()
         client.disconnect()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Cancel failed: {e}")
+        raise HTTPException(status_code=500, detail=f"{action} failed: {e}")
 
+
+@app.post("/cancel", dependencies=[Depends(verify_secret)])
+def cancel_print(req: PrinterRequest):
+    """Send MQTT stop command to the printer."""
+    _send_mqtt_command(req, {"print": {"sequence_id": "0", "command": "stop", "param": ""}}, "Cancel")
+    return {"success": True}
+
+
+@app.post("/pause", dependencies=[Depends(verify_secret)])
+def pause_print(req: PrinterRequest):
+    """Send MQTT pause command to the printer."""
+    _send_mqtt_command(req, {"print": {"sequence_id": "0", "command": "pause", "param": ""}}, "Pause")
+    return {"success": True}
+
+
+@app.post("/resume", dependencies=[Depends(verify_secret)])
+def resume_print(req: PrinterRequest):
+    """Send MQTT resume command to the printer."""
+    _send_mqtt_command(req, {"print": {"sequence_id": "0", "command": "resume", "param": ""}}, "Resume")
     return {"success": True}
 
 
@@ -253,6 +288,10 @@ def _start_monitor(credentials: PrinterCredentials, task_id: str):
                 "layer_num": status.layer_num,
                 "total_layer_num": status.total_layer_num,
                 "error_code": status.error_code,
+                "remaining_time": status.raw.get("mc_remaining_time"),
+                "nozzle_temp": status.raw.get("nozzle_temper"),
+                "bed_temp": status.raw.get("bed_temper"),
+                "chamber_temp": status.raw.get("chamber_temper"),
             }
 
         if not WEBHOOK_URL:
@@ -339,6 +378,10 @@ def _poll_idle_printer(credentials: PrinterCredentials):
                     "layer_num": int(print_data.get("layer_num", 0)),
                     "total_layer_num": int(print_data.get("total_layer_num", 0)),
                     "error_code": int(print_data.get("print_error", 0)),
+                    "remaining_time": print_data.get("mc_remaining_time"),
+                    "nozzle_temp": print_data.get("nozzle_temper"),
+                    "bed_temp": print_data.get("bed_temper"),
+                    "chamber_temp": print_data.get("chamber_temper"),
                 }
             print(f"[Idle] {credentials.serial}: gcode_state={print_data.get('gcode_state')} progress={print_data.get('mc_percent')}%")
             got_response.set()
