@@ -44,15 +44,11 @@ export const load: PageServerLoad = async ({ platform }) => {
     }
   }
   
-  // ✅ List of available images in static/images/
-  const availableImages = [
-    'haken.JPG',
-    'hakenhalter.JPG',
-    'klohalter.JPG',
-    'stab.JPG',
-    'stöpsel.JPG',
-    'vase.JPG'
-  ];
+  // Derive available images from what modules already reference (no hard-coded list)
+  const usedImagesRaw = await database.prepare(
+    'SELECT DISTINCT image_path FROM print_modules WHERE image_path IS NOT NULL AND image_path != \'\' ORDER BY image_path ASC'
+  ).all();
+  const availableImages = (usedImagesRaw.results || []).map((r: any) => r.image_path as string);
 
   return {
     printModules,

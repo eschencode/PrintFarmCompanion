@@ -7,6 +7,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { writable } from 'svelte/store';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
+  import { quickStartMode, autoStartMode } from '$lib/stores/autoQueueStore';
 
   export let data: PageData;
 
@@ -42,6 +43,12 @@
   let customFailureReason: string = ''; // ✅ This stores the actual failure reason text
   let showCustomInput: boolean = false; // ✅ NEW: Track if "Custom" was selected
 
+  // Auto Queue state
+  let showQuickStart = false;
+  let quickStartLoading = false;
+  type AutoQueueCountdown = { seconds: number; moduleName: string; module: any; printer: any; timer: ReturnType<typeof setInterval> };
+  let autoQueueCountdown: AutoQueueCountdown | null = null;
+
   $: fileHandlerState = $fileHandlerStore;
 
   // Reactive clock for live progress updates
@@ -50,10 +57,10 @@
   let tickerInterval: ReturnType<typeof setInterval>;
   onMount(() => {
     tickerInterval = setInterval(() => { nowStore.set(Date.now()); }, 5000);
-    // Auto-resume polling for any active print jobs on Pi-configured printers
-    for (const job of data.activePrintJobs as any[]) {
-      if (job.printer_serial) {
-        startPiPolling(job.id, job.printer_serial, job.start_time);
+    // Poll all Pi-configured printers — regardless of print state
+    for (const printer of data.printers as any[]) {
+      if (printer.printer_serial) {
+        startPiPolling(printer.printer_serial);
       }
     }
     return () => clearInterval(tickerInterval);
@@ -68,13 +75,16 @@
     gcode_state: string; progress: number; layer_num: number; total_layer_num: number; label: string;
     remaining_time?: number | null; nozzle_temp?: number | null; bed_temp?: number | null; chamber_temp?: number | null;
   };
-  let piStatusByJobId: Record<number, PiStatus> = {};
-  let piPollingIntervals: Record<number, ReturnType<typeof setTimeout>> = {};
+  // Keyed by printer_serial — works for all printers regardless of print state
+  let piStatusBySerial: Record<string, PiStatus> = {};
+  let piPollingIntervals: Record<string, ReturnType<typeof setTimeout>> = {};
+  // Guard: only trigger reload/auto-start once per serial per page load
+  const reloadTriggered = new Set<string>();
 
-  async function fetchPiStatus(jobId: number, printerSerial: string): Promise<boolean> {
+  async function fetchPiStatus(serial: string): Promise<void> {
     try {
-      const res = await fetch(`/api/pi/status?serial=${printerSerial}`);
-      if (!res.ok) return false;
+      const res = await fetch(`/api/pi/status?serial=${serial}`);
+      if (!res.ok) return;
       const d = await res.json() as {
         connected: boolean;
         status: {
@@ -82,17 +92,21 @@
           remaining_time?: number | null; nozzle_temp?: number | null; bed_temp?: number | null; chamber_temp?: number | null;
         } | null;
       };
-      if (!d.status) return false;
+      if (!d.status) return;
       const stateLabels: Record<string, string> = {
+        IDLE:    'Idle',
         PREPARE: 'Preparing…',
         RUNNING: `Printing ${d.status.progress}%`,
-        PAUSE: 'Paused',
-        FINISH: 'Done',
-        FAILED: 'Failed',
+        PAUSE:   'Paused',
+        FINISH:  'Done',
+        FAILED:  'Failed',
       };
       const label = stateLabels[d.status.gcode_state] ?? d.status.gcode_state;
-      piStatusByJobId = { ...piStatusByJobId, [jobId]: {
-        gcode_state: d.status.gcode_state,
+      // Capture previous observed state before overwriting — used for transition detection
+      const prevState = piStatusBySerial[serial]?.gcode_state;
+      const newState = d.status.gcode_state;
+      piStatusBySerial = { ...piStatusBySerial, [serial]: {
+        gcode_state: newState,
         progress: d.status.progress,
         layer_num: d.status.layer_num ?? 0,
         total_layer_num: d.status.total_layer_num ?? 0,
@@ -102,37 +116,41 @@
         bed_temp: d.status.bed_temp,
         chamber_temp: d.status.chamber_temp,
       }};
-      if (d.status.gcode_state === 'FINISH' || d.status.gcode_state === 'FAILED') {
-        stopPiPolling(jobId);
-        setTimeout(() => window.location.reload(), 2000);
-        return true;
+      // Only trigger reload when we observe the TRANSITION into FINISH/FAILED.
+      // Requires prevState to be defined (we've seen at least one non-terminal poll)
+      // AND prevState was not already a terminal state.
+      // This prevents the reload loop caused by reloading while the printer is still
+      // in FINISH state — every fresh page load would otherwise immediately reload again.
+      const wasTrackedPrinting = (data.activePrintJobs as any[]).some((j: any) => j.printer_serial === serial);
+      const isTerminal = newState === 'FINISH' || newState === 'FAILED';
+      const prevWasTerminal = prevState === 'FINISH' || prevState === 'FAILED';
+      const justFinished = isTerminal && prevState !== undefined && !prevWasTerminal;
+      if (wasTrackedPrinting && justFinished && !reloadTriggered.has(serial)) {
+        reloadTriggered.add(serial);
+        if ($autoStartMode && newState === 'FINISH') {
+          startAutoQueueNext(serial);
+        } else {
+          setTimeout(() => window.location.reload(), 2000);
+        }
       }
-      return false;
-    } catch { return false; }
+    } catch { /* network error — will retry on next poll */ }
   }
 
-  function startPiPolling(jobId: number, printerSerial: string, startTime?: number) {
-    if (piPollingIntervals[jobId]) return;
-    // Normalise start_time — old DB records stored seconds, new ones store ms
-    const startMs = startTime && startTime < 10_000_000_000 ? startTime * 1000 : (startTime ?? Date.now());
-
-    // Fetch immediately so the modal shows real data before the first scheduled poll
-    fetchPiStatus(jobId, printerSerial);
-
+  function startPiPolling(serial: string) {
+    if (piPollingIntervals[serial]) return;
+    fetchPiStatus(serial); // immediate fetch
     function scheduleNext() {
-      const elapsedSeconds = (Date.now() - startMs) / 1000;
-      const delay = elapsedSeconds < 600 ? 5000 : 60000; // fast first 10 min, then 1/min
-      piPollingIntervals[jobId] = setTimeout(async () => {
-        const done = await fetchPiStatus(jobId, printerSerial);
-        if (!done) scheduleNext();
-      }, delay);
+      piPollingIntervals[serial] = setTimeout(async () => {
+        await fetchPiStatus(serial);
+        scheduleNext();
+      }, 10_000); // poll every 10s for all printers
     }
     scheduleNext();
   }
 
-  function stopPiPolling(jobId: number) {
-    clearTimeout(piPollingIntervals[jobId]);
-    delete piPollingIntervals[jobId];
+  function stopPiPolling(serial: string) {
+    clearTimeout(piPollingIntervals[serial]);
+    delete piPollingIntervals[serial];
   }
 
   onDestroy(() => { Object.values(piPollingIntervals).forEach(clearTimeout); });
@@ -175,8 +193,8 @@
         body: JSON.stringify({ module_id: module.id, printer_id: printer.id }),
       });
       const result = await res.json() as { success: boolean; job_id?: number; task_id?: string; error?: string };
-      if (result.success && result.job_id) {
-        startPiPolling(result.job_id, printer.printer_serial);
+      if (result.success) {
+        startPiPolling(printer.printer_serial);
       }
       closePrinterModal();
       window.location.reload();
@@ -211,12 +229,64 @@
     'Custom' // This will show the custom input field
   ];
 
-  function selectPrinter(printer: any) {
+  // ── Auto Queue ────────────────────────────────────────────────────────────
+  function startAutoQueueNext(serial: string) {
+    const printer = (data.printers as any[]).find((p: any) => p.printer_serial === serial);
+    if (!printer) { setTimeout(() => window.location.reload(), 2000); return; }
+
+    const queue: any[] = printer.suggested_queue ?? [];
+    const nextItem = queue.find((i: any) => i.status !== 'DONE');
+    if (!nextItem) { setTimeout(() => window.location.reload(), 2000); return; }
+
+    const nextModule = (data.printModules as any[]).find((m: any) => m.id === nextItem.module_id);
+    if (!nextModule?.file_stored_on_pi || !printer.printer_ip) {
+      setTimeout(() => window.location.reload(), 2000);
+      return;
+    }
+
+    let secsLeft = 5;
+    const timer = setInterval(() => {
+      secsLeft--;
+      if (autoQueueCountdown) autoQueueCountdown = { ...autoQueueCountdown, seconds: secsLeft };
+      if (secsLeft <= 0) {
+        clearInterval(timer);
+        autoQueueCountdown = null;
+        startPrintWithPriority(nextModule, printer);
+      }
+    }, 1000);
+    autoQueueCountdown = { seconds: secsLeft, moduleName: nextItem.module_name, module: nextModule, printer, timer };
+  }
+
+  function cancelAutoQueue() {
+    if (autoQueueCountdown) {
+      clearInterval(autoQueueCountdown.timer);
+      autoQueueCountdown = null;
+    }
+    setTimeout(() => window.location.reload(), 300);
+  }
+
+  async function selectPrinter(printer: any) {
     selectedPrinter = printer;
-    // Fetch fresh status immediately when modal opens so user sees live data right away
-    const activeJob = (data.activePrintJobs as any[]).find((j: any) => j.printer_id === printer.id);
-    if (activeJob?.printer_serial) {
-      fetchPiStatus(activeJob.id, activeJob.printer_serial);
+    showQuickStart = false;
+    if (printer.printer_serial) fetchPiStatus(printer.printer_serial);
+
+    // Quick Start mode: only for Pi-connected printers
+    if ($quickStartMode && printer.printer_serial && printer.printer_ip) {
+      showQuickStart = true;
+      const queue: any[] = printer.suggested_queue ?? [];
+      const hasPending = queue.some((i: any) => i.status !== 'DONE');
+      if (!hasPending) {
+        quickStartLoading = true;
+        try {
+          const resp = await fetch(`/api/ai-recommendations?type=queue&printerId=${printer.id}`);
+          const result = await resp.json();
+          if (result && Array.isArray(result)) {
+            selectedPrinter = { ...selectedPrinter, suggested_queue: result };
+          }
+        } catch { /* ignore — will show empty state */ } finally {
+          quickStartLoading = false;
+        }
+      }
     }
   }
 
@@ -225,6 +295,7 @@
     showSpoolSelector = false;
     showModuleSelector = false;
     showFailureReasonModal = false;
+    showQuickStart = false;
     selectedPresetId = null;
     selectedModuleId = null;
     selectedFailureReason = '';
@@ -864,7 +935,7 @@
               {#if printer.status === 'printing'}
                 {@const activePrint = getActivePrintJob(Number(printer.id))}
                 {#if activePrint}
-                  {@const piStatus = piStatusByJobId[activePrint.id]}
+                  {@const piStatus = piStatusBySerial[printer.printer_serial]}
                   {@const progress = piStatus ? piStatus.progress : getProgress(Number(activePrint.start_time), Number(activePrint.expected_time))}
                   <div class="mt-2 px-1">
                     <div class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
@@ -984,7 +1055,25 @@
             </svg>
           </div>
           <h3 class="text-[clamp(0.5rem,2vw,0.8rem)] font-medium text-zinc-900 dark:text-zinc-200 mt-2 tracking-tight">Inventory</h3>
-          <p class="text-[clamp(0.4rem,1.3vw,0.65rem)] text-zinc-400 dark:text-zinc-600 font-light tracking-wide">Products</p>
+          <p class="text-[clamp(0.4rem,1.3vw,0.65rem)] text-zinc-400 dark:text-zinc-600 font-light tracking-wide">Stock</p>
+        </a>
+
+      {:else if cell.type === 'products'}
+        <!-- Products Card -->
+        <a
+          use:shine
+          href="/products"
+          class="group bg-zinc-50 dark:bg-[#0c0c0f] border border-zinc-200/80 dark:border-[#1a1a22]
+                 rounded-xl p-2 card-lift card-shine
+                 flex flex-col items-center justify-center overflow-hidden"
+        >
+          <div class="group-hover:scale-110 transition-transform duration-500 ease-out">
+            <svg class="w-[clamp(1.5rem,4vw,2.5rem)] h-[clamp(1.5rem,4vw,2.5rem)] text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 0 0 3.75-.615A2.993 2.993 0 0 0 9.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 0 0 2.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 0 0 3.75.614m-16.5 0a3.004 3.004 0 0 1-.621-4.72l1.189-1.19A1.5 1.5 0 0 1 5.378 3h13.243a1.5 1.5 0 0 1 1.06.44l1.19 1.189a3 3 0 0 1-.621 4.72M6.75 18h3.75a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.75c0 .414.336.75.75.75Z" />
+            </svg>
+          </div>
+          <h3 class="text-[clamp(0.5rem,2vw,0.8rem)] font-medium text-zinc-900 dark:text-zinc-200 mt-2 tracking-tight">Products</h3>
+          <p class="text-[clamp(0.4rem,1.3vw,0.65rem)] text-zinc-400 dark:text-zinc-600 font-light tracking-wide">Catalog</p>
         </a>
 
       {:else}
@@ -1042,7 +1131,128 @@
 </div>
 
 <!-- Printer Detail Modal -->
-{#if selectedPrinter && !showSpoolSelector && !showModuleSelector}
+<!-- ── Quick Start Modal ─────────────────────────────────────────────────── -->
+{#if selectedPrinter && showQuickStart && !showSpoolSelector && !showModuleSelector}
+  {@const loadedSpool = getLoadedSpool(selectedPrinter.loaded_spool_id)}
+  {@const nextPrint = !quickStartLoading && selectedPrinter.suggested_queue ? (selectedPrinter.suggested_queue as any[]).find((i: any) => i.status !== 'DONE') : null}
+  {@const nextModule = nextPrint ? (data.printModules as any[]).find((m: any) => m.id === nextPrint.module_id) : null}
+
+  <div
+    class="fixed inset-0 bg-black/50 modal-backdrop z-50 flex items-center justify-center p-6 cursor-default"
+    onclick={closePrinterModal}
+    onkeydown={(e) => e.key === 'Escape' && closePrinterModal()}
+    role="button" tabindex="0" aria-label="Close modal (press Escape)"
+  >
+    <!-- svelte-ignore a11y_interactive_supports_focus -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div
+      class="modal-panel bg-white dark:bg-[#0c0c0f] border border-zinc-200/80 dark:border-[#1a1a22] rounded-2xl max-w-md w-full shadow-2xl shadow-black/20"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog" aria-modal="true"
+    >
+      <div class="p-8">
+        <!-- Header -->
+        <div class="flex justify-between items-start mb-6">
+          <div>
+            <h2 class="text-2xl font-light text-zinc-900 dark:text-zinc-50 tracking-tight">{selectedPrinter.name}</h2>
+            <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-1 uppercase tracking-widest">Quick Start</p>
+          </div>
+          <button
+            onclick={closePrinterModal}
+            class="p-2 -m-2 text-zinc-400 hover:text-zinc-900 dark:text-zinc-600 dark:hover:text-zinc-50 transition-colors rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/50"
+            aria-label="Close modal"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {#if quickStartLoading}
+          <!-- Loading spinner -->
+          <div class="flex flex-col items-center justify-center py-12 gap-4">
+            <svg class="w-8 h-8 text-zinc-400 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <p class="text-sm text-zinc-400">Finding recommended print…</p>
+          </div>
+
+        {:else if !loadedSpool}
+          <!-- No spool loaded -->
+          <div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-5 mb-6">
+            <p class="text-sm font-medium text-amber-600 dark:text-amber-400">No spool loaded</p>
+            <p class="text-xs text-zinc-400 mt-1">Load a spool before starting a print.</p>
+          </div>
+          <button
+            onclick={() => { showQuickStart = false; handleLoadSpool(); }}
+            class="w-full py-3.5 rounded-xl bg-blue-500/8 hover:bg-blue-500/15 text-blue-600 dark:text-blue-400 font-medium border border-blue-500/10 hover:border-blue-500/20 transition-all"
+          >
+            Load Spool
+          </button>
+
+        {:else if nextPrint && nextModule}
+          <!-- Spool info -->
+          <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22] mb-4">
+            <p class="text-[10px] uppercase tracking-widest text-zinc-400 mb-2">Loaded Spool</p>
+            <div class="flex items-center gap-3">
+              <div class="w-3 h-3 rounded-full shrink-0" style="background-color: {loadedSpool.color ?? '#888'}"></div>
+              <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{loadedSpool.brand} {loadedSpool.material}</span>
+              <span class="ml-auto text-xs text-zinc-400 tabular-nums">{loadedSpool.remaining_weight}g left</span>
+            </div>
+          </div>
+
+          <!-- Next print card (big start button) -->
+          <button
+            type="button"
+            disabled={printStarting}
+            onclick={() => startPrintWithPriority(nextModule, selectedPrinter)}
+            class="w-full text-left bg-emerald-500/5 border-2 border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/40 rounded-2xl p-6 mb-4 transition-all duration-200 disabled:opacity-50 group"
+          >
+            <div class="flex items-center gap-4">
+              <div class="w-12 h-12 rounded-xl bg-emerald-500/10 group-hover:bg-emerald-500/20 flex items-center justify-center shrink-0 transition-colors">
+                <svg class="w-6 h-6 text-emerald-500" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5.14v14l11-7-11-7z" />
+                </svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-[10px] uppercase tracking-widest text-zinc-400 mb-1">
+                  {printStarting ? 'Starting…' : 'Start Next Print'}
+                </p>
+                <p class="text-lg font-medium text-zinc-900 dark:text-zinc-50 leading-snug truncate">{nextPrint.module_name}</p>
+                <div class="flex items-center gap-2 mt-1.5">
+                  <span class="text-xs text-zinc-400 tabular-nums">{nextPrint.weight_of_print}g</span>
+                  {#if nextPrint.priority}
+                    <span class="text-xs px-1.5 py-0.5 rounded-full {nextPrint.priority === 'CRITICAL' ? 'bg-red-500/10 text-red-500' : nextPrint.priority === 'HIGH' ? 'bg-orange-500/10 text-orange-500' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}">{nextPrint.priority}</span>
+                  {/if}
+                </div>
+              </div>
+            </div>
+          </button>
+
+        {:else}
+          <!-- No recommended print available -->
+          <div class="text-center py-10">
+            <p class="text-sm text-zinc-400">No recommended prints available.</p>
+            <p class="text-xs text-zinc-500 mt-1">Add inventory items and spool presets to get recommendations.</p>
+          </div>
+        {/if}
+
+        <!-- Manual mode link -->
+        <button
+          type="button"
+          onclick={() => { showQuickStart = false; }}
+          class="w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors py-1 mt-1"
+        >
+          Manual mode →
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- ── Printer Modal ──────────────────────────────────────────────────────── -->
+{#if selectedPrinter && !showSpoolSelector && !showModuleSelector && !showQuickStart}
   {@const activePrintJob = getActivePrintJob(selectedPrinter.id)}
   {@const loadedSpool = getLoadedSpool(selectedPrinter.loaded_spool_id)}
 
@@ -1098,7 +1308,7 @@
         <!-- Conditional Content Based on Status -->
         {#if selectedPrinter.status === 'printing' && activePrintJob}
           <!-- PRINTING STATUS MENU -->
-          {@const piLive = piStatusByJobId[activePrintJob.id]}
+          {@const piLive = piStatusBySerial[selectedPrinter.printer_serial]}
           {@const displayProgress = piLive?.progress ?? (activePrintJob.progress > 0 ? activePrintJob.progress : getProgress(activePrintJob.start_time, activePrintJob.expected_time))}
           <div class="space-y-5">
             <!-- Module Name -->
@@ -2246,6 +2456,36 @@
         {/if}
       </span>
     {/each}
+  </div>
+{/if}
+
+<!-- ── Auto Queue Countdown Toast ───────────────────────────────────────── -->
+{#if autoQueueCountdown}
+  <div class="fixed bottom-6 right-6 z-[60] bg-zinc-900 dark:bg-[#111] border border-zinc-700 dark:border-[#2a2a2a] rounded-2xl shadow-2xl p-5 flex items-center gap-5 max-w-sm w-full">
+    <!-- Countdown ring -->
+    <div class="relative w-12 h-12 shrink-0 flex items-center justify-center">
+      <svg class="w-12 h-12 -rotate-90" viewBox="0 0 48 48">
+        <circle cx="24" cy="24" r="20" fill="none" stroke="#27272a" stroke-width="3" />
+        <circle cx="24" cy="24" r="20" fill="none" stroke="#10b981" stroke-width="3"
+          stroke-dasharray="{2 * Math.PI * 20}"
+          stroke-dashoffset="{2 * Math.PI * 20 * (1 - autoQueueCountdown.seconds / 5)}"
+          stroke-linecap="round"
+          style="transition: stroke-dashoffset 0.9s linear"
+        />
+      </svg>
+      <span class="absolute text-base font-semibold text-emerald-400 tabular-nums">{autoQueueCountdown.seconds}</span>
+    </div>
+    <div class="flex-1 min-w-0">
+      <p class="text-xs text-zinc-400 uppercase tracking-widest mb-0.5">Auto Start</p>
+      <p class="text-sm font-medium text-zinc-100 truncate">{autoQueueCountdown.moduleName}</p>
+      <p class="text-xs text-zinc-500 mt-0.5">{autoQueueCountdown.printer.name}</p>
+    </div>
+    <button
+      onclick={cancelAutoQueue}
+      class="text-xs text-zinc-400 hover:text-zinc-100 transition-colors px-3 py-2 rounded-lg hover:bg-zinc-800 shrink-0"
+    >
+      Cancel
+    </button>
   </div>
 {/if}
 

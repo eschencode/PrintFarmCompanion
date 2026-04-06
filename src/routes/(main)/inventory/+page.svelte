@@ -88,12 +88,6 @@
   // Filtered items for direct add tab
   const filteredDirectItems = $derived(() => {
     let items = data.items || [];
-    // Exclude Vase Shrunk
-    items = items.filter(item => {
-      const name = item.name.toLowerCase();
-      const slug = item.slug?.toLowerCase() || '';
-      return !(name.includes('vase shrunk') || slug.includes('vase-shrunk'));
-    });
     if (!directSearchQuery) return items;
     const q = directSearchQuery.toLowerCase();
     return items.filter(i =>
@@ -196,48 +190,12 @@
     editCount = 0;
   }
 
-  // Parse item name to get category structure
+  // Use category field from DB — set it on /products to categorize items
   function getItemCategory(item: InventoryItem): { category: string; subcategory: string | null; color: string } {
-    const name = item.name.toLowerCase();
-    const slug = item.slug?.toLowerCase() || '';
-
-    // Extract color (last word in name usually)
     const nameParts = item.name.split(' ');
     const color = nameParts[nameParts.length - 1];
-
-    // Haken products
-    if (name.includes('haken kleben') || slug.includes('haken-kleben')) {
-      return { category: 'Haken', subcategory: 'Kleben', color };
-    }
-    if (name.includes('haken schrauben') || slug.includes('haken-schrauben')) {
-      return { category: 'Haken', subcategory: 'Schrauben', color };
-    }
-    if (name.includes('hakenhalter') || slug.includes('hakenhalter')) {
-      return { category: 'Haken', subcategory: 'Halter', color };
-    }
-
-    // Vase products
-    if (name.includes('vase fluid') || slug.includes('vase-fluid')) {
-      return { category: 'Vase', subcategory: 'Fluid', color };
-    }
-    // Commented out - not needed yet
-    // if (name.includes('vase shrunk') || slug.includes('vase-shrunk')) {
-    //   return { category: 'Vase', subcategory: 'Shrunk', color };
-    // }
-
-    // Klorolle products
-    if (name.includes('klohalter') || slug.includes('klohalter')) {
-      return { category: 'Klorolle', subcategory: 'Klohalter', color };
-    }
-    if (name.includes('stab') || slug.includes('stab')) {
-      return { category: 'Klorolle', subcategory: 'Stab', color };
-    }
-    if (name.includes('stöpsel') || slug.includes('stoepsel')) {
-      return { category: 'Klorolle', subcategory: 'Stöpsel', color };
-    }
-
-    // Fallback
-    return { category: 'Other', subcategory: null, color };
+    const category = item.category || 'Uncategorized';
+    return { category, subcategory: null, color };
   }
 
   // Build grouped structure
@@ -263,13 +221,6 @@
 
   const groupedInventory = $derived(() => {
     let items = data.items || [];
-
-    // Filter out Vase Shrunk items for now
-    items = items.filter(item => {
-      const name = item.name.toLowerCase();
-      const slug = item.slug?.toLowerCase() || '';
-      return !(name.includes('vase shrunk') || slug.includes('vase-shrunk'));
-    });
 
     // Apply filters
     if (searchQuery) {
@@ -331,14 +282,7 @@
     return groups;
   });
 
-  // Summary stats - also exclude Vase Shrunk and fix low stock logic
-  const filteredItems = $derived(() => {
-    return (data.items || []).filter(item => {
-      const name = item.name.toLowerCase();
-      const slug = item.slug?.toLowerCase() || '';
-      return !(name.includes('vase shrunk') || slug.includes('vase-shrunk'));
-    });
-  });
+  const filteredItems = $derived(() => data.items || []);
 
   const totalItems = $derived(filteredItems().length);
   const totalStock = $derived(filteredItems().reduce((sum, i) => sum + i.stock_count, 0));

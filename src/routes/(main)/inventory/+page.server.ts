@@ -71,27 +71,7 @@ async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
 }
 
 function buildSetLabel(sku: string, components: { inventory_slug: string; quantity: number; item_name: string }[]): string {
-  // Klopapierhalter bundles
-  if (sku.startsWith('KLH/')) {
-    const halter = components.find(c => c.inventory_slug.startsWith('klohalter-'));
-    const stab = components.find(c => c.inventory_slug.startsWith('stab-'));
-    if (halter && stab) {
-      const halterColor = halter.item_name.split(' ').pop();
-      const stabColor = stab.item_name.split(' ').pop();
-      return `Klohalter Set: ${halterColor} / ${stabColor}`;
-    }
-  }
-  
-  // Haken 5er packs
-  if (sku.startsWith('WH/K5/') || sku.startsWith('WH/S5/')) {
-    const type = sku.startsWith('WH/K5/') ? 'Kleben' : 'Schrauben';
-    const hooks = components.filter(c => c.inventory_slug.includes('haken-'));
-    const colors = hooks.map(c => `${c.quantity}x ${c.item_name.split(' ').pop()}`).join(', ');
-    return `5er Pack ${type}: ${colors}`;
-  }
-  
-  // Fallback
-  const parts = components.map(c => `${c.quantity}x ${c.item_name}`).join(', ');
+  const parts = components.map(c => c.quantity > 1 ? `${c.quantity}× ${c.item_name}` : c.item_name).join(' + ');
   return `${sku}: ${parts}`;
 }
 

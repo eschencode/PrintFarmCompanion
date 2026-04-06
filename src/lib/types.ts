@@ -267,7 +267,7 @@ export interface NewPrinter {
  * Grid Cell - Represents a single cell in the 3x3 grid
  */
 export interface GridCell {
-  type: 'printer' | 'stats' | 'settings' | 'spools' | 'storage' | 'empty' | 'inventory';
+  type: 'printer' | 'stats' | 'settings' | 'spools' | 'storage' | 'empty' | 'inventory' | 'products';
   printerId?: number;
 }
 
@@ -352,6 +352,7 @@ export interface InventoryItem {
   last_count_date: number | null;
   last_count_expected: number | null;
   last_count_actual: number | null;
+  category: string;
 }
 
 export type InventoryChangeType = 'add' | 'remove' | 'sold_b2c' | 'sold_b2b' | 'defect' | 'count_adjust';
