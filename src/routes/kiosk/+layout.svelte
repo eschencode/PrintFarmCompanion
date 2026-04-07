@@ -38,8 +38,8 @@
   }
 
   :global(body) {
-    background: #f2f2f7;
-    color: #000000;
+    background: #0a0a0a;
+    color: #f2f2f2;
     font-family: Arial, sans-serif;
     height: 100vh;
     overflow-y: auto;

@@ -29,7 +29,8 @@ function computePrinterFlags(printers: any[], spools: any[], printModules: any[]
     const activeJob = activePrintJobs.find((j: any) => j.printer_id === printer.id);
     const remainingAfterJob = spool ? spool.remaining_weight - (activeJob?.expected_weight || 0) : 0;
     const isPrinting = printer.status === 'PRINTING' || printer.status === 'printing';
-    const printDone = isPrinting && activeJob && activeJob.expected_time > 0 && (serverTime - activeJob.start_time) >= activeJob.expected_time * 60000;
+    // expected_time is stored in SECONDS (Bambu's `prediction` field)
+    const printDone = isPrinting && activeJob && activeJob.expected_time > 0 && (serverTime - activeJob.start_time) >= activeJob.expected_time * 1000;
     if (!spool) {
       flags[printer.id] = { needsNewSpool: true, printableCount: 0, printDone: !!printDone, topSuggested: null };
     } else {
@@ -68,7 +69,7 @@ function computePrinterFlags(printers: any[], spools: any[], printModules: any[]
 export const load: PageServerLoad = async ({ platform }) => {
   const database = platform?.env?.DB;
   if (!database) {
-    return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime: Date.now(), printerFlags: {} };
+    return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime: Date.now(), printerFlags: {}, failedJobId: null };
   }
 
   const printers = await db.getAllPrinters(database);
@@ -79,10 +80,10 @@ export const load: PageServerLoad = async ({ platform }) => {
   const serverTime = Date.now();
   const printerFlags = computePrinterFlags(printers, spools, printModules, spoolPresets, activePrintJobs, serverTime);
 
-  return { view: 'printers', printers, spools, spoolPresets, printModules, activePrintJobs, selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime, printerFlags };
+  return { view: 'printers', printers, spools, spoolPresets, printModules, activePrintJobs, selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime, printerFlags, failedJobId: null };
 };
 
-async function loadFullData(database: any, view: string, printerId: number | null) {
+async function loadFullData(database: any, view: string, printerId: number | null, failedJobId: number | null = null) {
   const printers = await db.getAllPrinters(database);
   const spools = await db.getAllSpools(database);
   const spoolPresets = await db.getAllSpoolPresets(database);
@@ -123,14 +124,14 @@ async function loadFullData(database: any, view: string, printerId: number | nul
 
   const serverTime = Date.now();
   const printerFlags = computePrinterFlags(printers, spools, printModules, spoolPresets, activePrintJobs, serverTime);
-  return { view, printers, spools, spoolPresets, printModules: filteredModules, activePrintJobs, selectedPrinter, selectedSpool, activeJob, suggestedQueue, printerId, serverTime, printerFlags };
+  return { view, printers, spools, spoolPresets, printModules: filteredModules, activePrintJobs, selectedPrinter, selectedSpool, activeJob, suggestedQueue, printerId, serverTime, printerFlags, failedJobId };
 }
 
 export const actions: Actions = {
   navigate: async ({ platform, request }) => {
     const database = platform?.env?.DB;
     if (!database) {
-      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime: Date.now(), printerFlags: {} };
+      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime: Date.now(), printerFlags: {}, failedJobId: null };
     }
 
     const formData = await request.formData();
@@ -143,7 +144,7 @@ export const actions: Actions = {
   loadSpool: async ({ platform, request }) => {
     const database = platform?.env?.DB;
     if (!database) {
-      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime: Date.now(), printerFlags: {} };
+      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime: Date.now(), printerFlags: {}, failedJobId: null };
     }
 
     const formData = await request.formData();
@@ -175,7 +176,7 @@ export const actions: Actions = {
   startPrint: async ({ platform, request }) => {
     const database = platform?.env?.DB;
     if (!database) {
-      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime: Date.now(), printerFlags: {} };
+      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime: Date.now(), printerFlags: {}, failedJobId: null };
     }
 
     const formData = await request.formData();
@@ -190,10 +191,23 @@ export const actions: Actions = {
     return await loadFullData(database, 'printers', null);
   },
 
+  markFailed: async ({ platform, request }) => {
+    // Soft-marks a job as "awaiting failure reason" — does not touch the DB.
+    // Returns the printers view with failedJobId set so the matching card
+    // renders the reason picker. Reason buttons then call ?/completePrint.
+    const database = platform?.env?.DB;
+    if (!database) {
+      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime: Date.now(), printerFlags: {}, failedJobId: null };
+    }
+    const formData = await request.formData();
+    const jobId = Number(formData.get('jobId')) || null;
+    return await loadFullData(database, 'printers', null, jobId);
+  },
+
   completePrint: async ({ platform, request }) => {
     const database = platform?.env?.DB;
     if (!database) {
-      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime: Date.now(), printerFlags: {} };
+      return { view: 'printers', printers: [], spools: [], spoolPresets: [], printModules: [], activePrintJobs: [], selectedPrinter: null, selectedSpool: null, activeJob: null, suggestedQueue: [], printerId: null, serverTime: Date.now(), printerFlags: {}, failedJobId: null };
     }
 
     const formData = await request.formData();
@@ -226,7 +240,8 @@ export const actions: Actions = {
       if (job.printer_id && job.start_time && job.expected_time) {
         let hoursUsed: number;
         if (success) {
-          hoursUsed = job.expected_time / 60;
+          // expected_time is in SECONDS → convert to hours
+          hoursUsed = job.expected_time / 3600;
         } else {
           hoursUsed = (endTime - job.start_time) / (1000 * 60 * 60);
         }
