@@ -74,6 +74,7 @@
   type PiStatus = {
     gcode_state: string; progress: number; layer_num: number; total_layer_num: number; label: string;
     remaining_time?: number | null; nozzle_temp?: number | null; bed_temp?: number | null; chamber_temp?: number | null;
+    subtask_name?: string | null; gcode_file?: string | null;
   };
   // Keyed by printer_serial — works for all printers regardless of print state
   let piStatusBySerial: Record<string, PiStatus> = {};
@@ -90,6 +91,7 @@
         status: {
           gcode_state: string; progress: number; layer_num: number; total_layer_num: number;
           remaining_time?: number | null; nozzle_temp?: number | null; bed_temp?: number | null; chamber_temp?: number | null;
+          subtask_name?: string | null; gcode_file?: string | null;
         } | null;
       };
       if (!d.status) return;
@@ -115,6 +117,8 @@
         nozzle_temp: d.status.nozzle_temp,
         bed_temp: d.status.bed_temp,
         chamber_temp: d.status.chamber_temp,
+        subtask_name: d.status.subtask_name ?? null,
+        gcode_file: d.status.gcode_file ?? null,
       }};
       // Only trigger reload when we observe the TRANSITION into FINISH/FAILED.
       // Requires prevState to be defined (we've seen at least one non-terminal poll)
@@ -215,9 +219,9 @@
     startQueue = startQueue.slice(1);
     if (startQueue.length > 0) {
       dispatchNextStart();
-    } else {
-      setTimeout(() => window.location.reload(), 1_000);
     }
+    // No reload — Pi polling streams live state into piStatusBySerial, and
+    // the printer card uses liveIsPrinting to flip to "Printing" automatically.
   }
 
   async function sendPrinterControl(endpoint: string, printerId: number) {
@@ -865,6 +869,9 @@
         {@const printer = getPrinterForPosition(cell.printerId)}
 
         {#if printer}
+          {@const piLive = piStatusBySerial[printer.printer_serial]}
+          {@const liveIsPrinting = !!piLive && ['RUNNING','PREPARE','PAUSE'].includes(piLive.gcode_state)}
+          {@const liveIsStarting = startingSerials.has(printer.printer_serial)}
           <!-- Active Printer Card -->
           <button
             use:shine
@@ -875,9 +882,9 @@
           >
             <!-- Status Indicator — larger, with glow -->
             <div class="absolute top-3 right-3">
-              {#if startingSerials.has(printer.printer_serial)}
+              {#if liveIsStarting}
                 <div class="w-2.5 h-2.5 bg-amber-400 rounded-full animate-pulse"></div>
-              {:else if printer.status === 'printing'}
+              {:else if liveIsPrinting || printer.status === 'printing'}
                 {@const activePrintForDot = getActivePrintJob(Number(printer.id))}
                 {@const progressForDot = activePrintForDot ? getProgress(Number(activePrintForDot.start_time), Number(activePrintForDot.expected_time)) : 0}
                 {#if progressForDot >= 100}
@@ -947,12 +954,12 @@
             <div class="w-full text-center border-t border-zinc-200/60 dark:border-[#1a1a22] pt-2 mt-2 min-h-0 flex-shrink-0">
               <h3 class="text-[clamp(0.55rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-100 truncate px-1 tracking-tight">{printer.name}</h3>
               <p class="text-[clamp(0.4rem,1.5vw,0.7rem)] font-light tracking-wide uppercase mt-0.5">
-                {#if startingSerials.has(printer.printer_serial)}
+                {#if liveIsStarting}
                   {@const qPos = startQueue.findIndex(e => e.printer.printer_serial === printer.printer_serial)}
                   <span class="text-amber-500 dark:text-amber-400">
                     {qPos === 0 ? 'Starting…' : `Queue ${qPos + 1}/${startQueueTotal}`}
                   </span>
-                {:else if printer.status === 'printing'}
+                {:else if liveIsPrinting || printer.status === 'printing'}
                   <span class="text-blue-500 dark:text-blue-400">Printing</span>
                 {:else if printer.status === 'IDLE'}
                   <span class="text-emerald-500 dark:text-emerald-400">Idle</span>
@@ -962,7 +969,7 @@
               </p>
 
               <!-- Progress Bar for Active Prints -->
-              {#if startingSerials.has(printer.printer_serial)}
+              {#if liveIsStarting}
                 {@const qPos = startQueue.findIndex(e => e.printer.printer_serial === printer.printer_serial)}
                 <div class="mt-2 px-1">
                   <div class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
@@ -972,11 +979,10 @@
                     {qPos === 0 ? 'Sending to printer…' : 'In queue…'}
                   </p>
                 </div>
-              {:else if printer.status === 'printing'}
+              {:else if liveIsPrinting || printer.status === 'printing'}
                 {@const activePrint = getActivePrintJob(Number(printer.id))}
                 {#if activePrint}
-                  {@const piStatus = piStatusBySerial[printer.printer_serial]}
-                  {@const progress = piStatus ? piStatus.progress : getProgress(Number(activePrint.start_time), Number(activePrint.expected_time))}
+                  {@const progress = piLive ? piLive.progress : getProgress(Number(activePrint.start_time), Number(activePrint.expected_time))}
                   <div class="mt-2 px-1">
                     <div class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
                       <div
@@ -985,8 +991,19 @@
                       ></div>
                     </div>
                     <p class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-400 dark:text-zinc-500 mt-1 tabular-nums">
-                      {#if piStatus}{piStatus.label}{:else}{progress}%{/if}
+                      {#if piLive}{piLive.label}{:else}{progress}%{/if}
                     </p>
+                  </div>
+                {:else if piLive}
+                  <!-- External / un-reconciled print: show whatever Pi gives us -->
+                  <div class="mt-2 px-1">
+                    {#if piLive.subtask_name}
+                      <p class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-500 dark:text-zinc-400 truncate mb-1">{piLive.subtask_name}</p>
+                    {/if}
+                    <div class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
+                      <div class="bg-blue-500 h-full rounded-full transition-all duration-500 progress-shimmer" style="width: {Math.min(piLive.progress, 100)}%"></div>
+                    </div>
+                    <p class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-400 dark:text-zinc-500 mt-1 tabular-nums">{piLive.label}</p>
                   </div>
                 {/if}
               {/if}
