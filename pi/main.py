@@ -198,6 +198,8 @@ def get_status(serial: str, request: Request):
                 "nozzle_temp": status.raw.get("nozzle_temper"),
                 "bed_temp": status.raw.get("bed_temper"),
                 "chamber_temp": status.raw.get("chamber_temper"),
+                "subtask_name": status.raw.get("subtask_name"),
+                "gcode_file": status.raw.get("gcode_file"),
             },
         }
 
@@ -292,6 +294,8 @@ def _start_monitor(credentials: PrinterCredentials, task_id: str):
                 "nozzle_temp": status.raw.get("nozzle_temper"),
                 "bed_temp": status.raw.get("bed_temper"),
                 "chamber_temp": status.raw.get("chamber_temper"),
+                "subtask_name": status.raw.get("subtask_name"),
+                "gcode_file": status.raw.get("gcode_file"),
             }
 
         if not WEBHOOK_URL:
@@ -382,6 +386,8 @@ def _poll_idle_printer(credentials: PrinterCredentials):
                     "nozzle_temp": print_data.get("nozzle_temper"),
                     "bed_temp": print_data.get("bed_temper"),
                     "chamber_temp": print_data.get("chamber_temper"),
+                    "subtask_name": print_data.get("subtask_name"),
+                    "gcode_file": print_data.get("gcode_file"),
                 }
             print(f"[Idle] {credentials.serial}: gcode_state={print_data.get('gcode_state')} progress={print_data.get('mc_percent')}%")
             got_response.set()
