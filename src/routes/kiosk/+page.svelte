@@ -4,20 +4,31 @@
   export let form: any;
 
   $: viewData = form || data;
+
+  // expected_time is stored in SECONDS (Bambu's `prediction` field).
+  function formatSeconds(s: number | null | undefined): string {
+    if (!s || s <= 0) return '0m';
+    const total = Math.round(s);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
 </script>
 
 <svelte:head>
   <title>Printer Kiosk</title>
-  {#if viewData.view === 'printers'}
+  {#if viewData.view === 'printers' && !viewData.failedJobId}
     <meta http-equiv="refresh" content="30" />
   {/if}
 </svelte:head>
 
 <style>
+  /* ── Page wrap ───────────────────────────────────────────────── */
   .wrap {
-    max-width: 960px;
+    max-width: 980px;
     margin: 0 auto;
-    padding: 16px 16px 32px 16px;
+    padding: 14px 14px 32px 14px;
   }
 
   .wrap.narrow {
@@ -25,24 +36,7 @@
     padding: 24px 20px 40px 20px;
   }
 
-  /* --- Typography --- */
-  .label {
-    font-size: 11px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: #999;
-    margin: 0 0 4px 0;
-    font-weight: bold;
-  }
-
-  h1 {
-    font-size: 32px;
-    margin: 0 0 28px 0;
-    font-weight: bold;
-    color: #111;
-  }
-
-  /* --- 2-up grid (Safari 9 — basic flexbox, no `gap`) --- */
+  /* ── 2-up grid (Safari 9 — flexbox, no `gap`) ────────────────── */
   .grid {
     display: -webkit-flex;
     display: flex;
@@ -56,95 +50,92 @@
     box-sizing: border-box;
     padding: 0 8px 16px 8px;
   }
-  @media (orientation: portrait), (max-width: 700px) {
+  @media (orientation: portrait), (max-width: 720px) {
     .cell { width: 100%; }
   }
 
-  /* --- Printer Card --- */
+  /* ── Printer card ────────────────────────────────────────────── */
   .card {
-    border: 1px solid #ddd;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 0;
-    background: #fff;
+    border-radius: 14px;
+    padding: 22px 22px 18px 22px;
+    background: #ffffff;
+    color: #111;
+    border: 1px solid rgba(0,0,0,0.08);
   }
 
-  .card.needs-spool {
-    border-color: #ea4335;
-    -webkit-box-shadow: 0 0 0 3px rgba(234, 67, 53, 0.25), 0 2px 8px rgba(234, 67, 53, 0.15);
-    box-shadow: 0 0 0 3px rgba(234, 67, 53, 0.25), 0 2px 8px rgba(234, 67, 53, 0.15);
+  .card.state-printing {
+    background: #cfe6ff;
+    border-color: rgba(0,0,0,0.10);
+  }
+  .card.state-done {
+    background: #c5e7c4;
+    border-color: rgba(0,0,0,0.10);
+  }
+  .card.state-failed {
+    background: #f6c1bb;
+    border-color: rgba(0,0,0,0.12);
   }
 
-  .card.last-print {
-    border-color: #f5a623;
-    -webkit-box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.25), 0 2px 8px rgba(245, 166, 35, 0.15);
-    box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.25), 0 2px 8px rgba(245, 166, 35, 0.15);
-  }
-
-  .card.print-done {
-    border-color: #34a853;
-    -webkit-box-shadow: 0 0 0 3px rgba(52, 168, 83, 0.25), 0 2px 8px rgba(52, 168, 83, 0.15);
-    box-shadow: 0 0 0 3px rgba(52, 168, 83, 0.25), 0 2px 8px rgba(52, 168, 83, 0.15);
-  }
-
+  /* ── Header ──────────────────────────────────────────────────── */
   .card-header {
     display: -webkit-flex;
     display: flex;
-    -webkit-align-items: flex-start;
-    align-items: flex-start;
-    margin-bottom: 16px;
+    -webkit-align-items: center;
+    align-items: center;
+    margin-bottom: 14px;
   }
 
   .status-dot {
-    width: 18px;
-    height: 18px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
-    margin-right: 14px;
-    margin-top: 6px;
+    margin-right: 12px;
     -webkit-flex-shrink: 0;
     flex-shrink: 0;
   }
-
-  .status-dot.idle { background: #34a853; }
-  .status-dot.printing { background: #4285f4; }
-  .status-dot.other { background: #ea4335; }
+  .status-dot.idle      { background: #34a853; }
+  .status-dot.printing  { background: #1a73e8; }
+  .status-dot.done      { background: #1e7a1e; }
+  .status-dot.failed    { background: #c62828; }
+  .status-dot.other     { background: #6b7280; }
 
   .card-title {
-    font-size: 24px;
+    font-size: 22px;
     font-weight: bold;
     color: #111;
-    margin: 0 0 3px 0;
+    -webkit-flex: 1;
+    flex: 1;
   }
 
   .card-status {
-    font-size: 13px;
+    font-size: 12px;
     letter-spacing: 1.5px;
     text-transform: uppercase;
     font-weight: bold;
+    color: #555;
   }
 
-  .card-status.idle { color: #34a853; }
-  .card-status.printing { color: #4285f4; }
-  .card-status.other { color: #ea4335; }
-
-  /* --- Spool Row --- */
-  .spool-row {
+  /* ── Info rows ───────────────────────────────────────────────── */
+  .info-row {
     display: -webkit-flex;
     display: flex;
     -webkit-align-items: center;
     align-items: center;
     -webkit-justify-content: space-between;
     justify-content: space-between;
-    margin-bottom: 6px;
+    margin-bottom: 10px;
     font-size: 15px;
-    color: #555;
+    color: #222;
   }
 
-  .spool-left {
+  .info-left {
     display: -webkit-flex;
     display: flex;
     -webkit-align-items: center;
     align-items: center;
+    min-width: 0;
+    -webkit-flex: 1;
+    flex: 1;
   }
 
   .spool-dot {
@@ -152,90 +143,142 @@
     height: 14px;
     border-radius: 50%;
     margin-right: 10px;
-    border: 1px solid #ccc;
+    border: 1px solid rgba(0,0,0,0.2);
     -webkit-flex-shrink: 0;
     flex-shrink: 0;
   }
 
-  .spool-weight {
-    font-size: 20px;
+  .info-value {
+    font-size: 18px;
     font-weight: bold;
     color: #111;
+    -webkit-flex-shrink: 0;
+    flex-shrink: 0;
   }
 
-  .weight-bar {
-    height: 6px;
-    background: #e0e0e0;
-    border-radius: 3px;
-    margin-bottom: 16px;
-    overflow: hidden;
+  .info-value .after {
+    font-size: 14px;
+    font-weight: normal;
+    color: #555;
+    margin-left: 4px;
   }
 
-  .weight-bar-fill {
-    height: 100%;
-    border-radius: 2px;
-  }
-
-  .weight-bar-fill.ok { background: #34a853; }
-  .weight-bar-fill.low { background: #ea4335; }
-
-  /* --- Job Info --- */
-  .job-row {
-    font-size: 13px;
+  .info-label {
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
     color: #666;
-    margin-bottom: 16px;
-  }
-
-  .job-row strong {
-    color: #333;
-  }
-
-  /* --- No Spool --- */
-  .no-spool {
-    font-size: 13px;
-    color: #ea4335;
     font-weight: bold;
-    letter-spacing: 0.5px;
-    margin-bottom: 16px;
+    margin-right: 8px;
   }
 
-  /* --- Buttons --- */
+  .module-row {
+    margin-bottom: 10px;
+    font-size: 17px;
+    color: #111;
+    font-weight: bold;
+    line-height: 1.25;
+  }
+
+  .module-row .module-prefix {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #666;
+    font-weight: bold;
+    margin-bottom: 2px;
+  }
+
+  .no-spool {
+    font-size: 14px;
+    font-weight: bold;
+    color: #c62828;
+    margin: 6px 0 14px 0;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Buttons ─────────────────────────────────────────────────── */
+  button {
+    width: 100%;
+    padding: 18px 14px;
+    border: 1px solid #111;
+    border-radius: 10px;
+    background: #111;
+    color: #fff;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    text-align: center;
+    -webkit-appearance: none;
+    appearance: none;
+    font-family: Arial, sans-serif;
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
+  }
+  button:active { background: #333; }
+
+  button.secondary {
+    background: #ffffff;
+    color: #111;
+    border-color: #111;
+  }
+  button.secondary:active { background: #e6e6e6; }
+
+  button.green {
+    background: #2e7d32;
+    color: #fff;
+    border-color: #2e7d32;
+  }
+  button.green:active { background: #225722; }
+
+  button.red {
+    background: #c62828;
+    color: #fff;
+    border-color: #c62828;
+  }
+  button.red:active { background: #8e1a1a; }
+
   .btn-row {
     display: -webkit-flex;
     display: flex;
+    margin-top: 16px;
   }
-
   .btn-row form {
     -webkit-flex: 1;
     flex: 1;
     display: block;
   }
-
   .btn-row form + form {
-    margin-left: 12px;
+    margin-left: 10px;
   }
 
-  .btn-row.primary-with-other {
+  .btn-stack {
+    margin-top: 14px;
+  }
+  .btn-stack form {
+    display: block;
     margin-bottom: 10px;
   }
-
-  .btn-row.primary-with-other form:first-child {
-    -webkit-flex: 2;
-    flex: 2;
+  .btn-stack form:last-child {
+    margin-bottom: 0;
   }
 
-  .btn-row.primary-with-other form + form {
-    -webkit-flex: 1;
-    flex: 1;
+  /* ── Failed-state reason picker (red card) ───────────────────── */
+  .reason-prompt {
+    font-size: 16px;
+    font-weight: bold;
+    color: #5a1414;
+    margin: 10px 0 12px 0;
   }
 
-  button {
+  .reason-btn {
     width: 100%;
-    padding: 16px 12px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    background: #f5f5f5;
-    color: #333;
+    padding: 16px 14px;
+    border: 1px solid #5a1414;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #5a1414;
     font-size: 15px;
     font-weight: bold;
     cursor: pointer;
@@ -246,99 +289,38 @@
     -webkit-box-sizing: border-box;
     box-sizing: border-box;
   }
+  .reason-btn:active { background: #f0d8d4; }
 
-  button:active {
-    background: #e0e0e0;
-  }
-
-  button.green {
-    border-color: #34a853;
-    color: #fff;
-    background: #34a853;
-  }
-
-  button.green:active {
-    background: #2d9249;
-  }
-
-  button.primary {
-    background: #111;
-    color: #fff;
-    border-color: #111;
-  }
-
-  button.primary:active {
-    background: #333;
-  }
-
-  button.huge {
-    padding: 28px 16px;
-    font-size: 22px;
-    border-radius: 12px;
-  }
-
-  button.secondary {
-    padding: 14px 16px;
-    font-size: 14px;
-    background: #f5f5f5;
-    color: #555;
-  }
-
-  button.secondary:active {
-    background: #e0e0e0;
-  }
-
-  /* --- Suggested-print line --- */
-  .next-line {
-    font-size: 14px;
-    color: #555;
-    margin-bottom: 14px;
-    line-height: 1.4;
-  }
-
-  .next-line .next-label {
-    font-size: 11px;
-    letter-spacing: 1.5px;
+  /* ── Sub-views (loadSpool / startPrint pickers) ──────────────── */
+  .label {
+    font-size: 12px;
+    letter-spacing: 2px;
     text-transform: uppercase;
-    color: #999;
+    color: #888;
+    margin: 0 0 6px 0;
     font-weight: bold;
-    display: block;
-    margin-bottom: 2px;
   }
 
-  .next-line strong {
-    color: #111;
-    font-size: 16px;
-  }
-
-  /* --- Finish prompt (shown when print exceeds expected time) --- */
-  .finish-prompt {
-    font-size: 16px;
+  h1 {
+    font-size: 30px;
+    margin: 0 0 24px 0;
     font-weight: bold;
-    color: #b5700a;
-    text-align: center;
-    margin-bottom: 12px;
+    color: #f2f2f2;
   }
 
-  .full-width-row {
-    display: block;
-    margin-top: 10px;
-  }
-
-  /* --- Back Button --- */
   .back-form {
     display: block;
-    margin-bottom: 24px;
+    margin-bottom: 22px;
   }
 
   .back-btn {
     width: 100%;
     padding: 22px 16px;
-    border: 1px solid #ddd;
+    border: 1px solid #333;
     border-radius: 10px;
-    background: #f5f5f5;
-    color: #333;
-    font-size: 20px;
+    background: #1c1c1e;
+    color: #f2f2f2;
+    font-size: 18px;
     font-weight: bold;
     cursor: pointer;
     text-align: center;
@@ -346,24 +328,19 @@
     appearance: none;
     font-family: Arial, sans-serif;
   }
+  .back-btn:active { background: #2a2a2c; }
 
-  .back-btn:active {
-    background: #e0e0e0;
-  }
-
-  /* --- Section --- */
   .section {
-    font-size: 14px;
+    font-size: 13px;
     letter-spacing: 2px;
-    color: #999;
+    color: #888;
     text-transform: uppercase;
-    margin: 28px 0 14px 0;
+    margin: 28px 0 12px 0;
     font-weight: bold;
   }
 
-  /* --- Module / Preset List --- */
   .list-item {
-    border: 1px solid #ddd;
+    border: 1px solid #2a2a2c;
     border-radius: 10px;
     padding: 16px;
     margin-bottom: 10px;
@@ -373,87 +350,56 @@
     justify-content: space-between;
     -webkit-align-items: center;
     align-items: center;
-    background: #fff;
+    background: #1c1c1e;
   }
 
   .list-item-info {
     -webkit-flex: 1;
     flex: 1;
     margin-right: 12px;
+    min-width: 0;
   }
 
   .list-item-name {
     font-weight: bold;
-    font-size: 16px;
-    color: #111;
+    font-size: 17px;
+    color: #f2f2f2;
     margin-bottom: 3px;
   }
 
   .list-item-detail {
-    font-size: 12px;
-    color: #888;
+    font-size: 13px;
+    color: #aaa;
   }
 
   .list-item-warn {
     font-size: 12px;
-    color: #ea4335;
-    margin-top: 2px;
+    color: #ff8a80;
+    margin-top: 3px;
   }
 
-  .list-item form {
-    display: block;
-  }
+  .list-item form { display: block; }
 
   .list-item button {
     width: auto;
-    padding: 18px 28px;
-    font-size: 16px;
-  }
-
-  /* --- Spool Detail (start print view) --- */
-  .spool-detail {
-    border: 1px solid #ddd;
-    border-radius: 10px;
-    padding: 16px;
-    margin-bottom: 20px;
-    background: #fff;
-  }
-
-  .spool-detail-label {
-    font-size: 12px;
-    color: #999;
-    margin-bottom: 4px;
-  }
-
-  .spool-detail-text {
+    padding: 16px 24px;
     font-size: 15px;
-    color: #555;
-    margin-bottom: 8px;
   }
 
-  .spool-detail-weight {
-    font-size: 24px;
-    font-weight: bold;
-    color: #111;
-  }
-
-/* --- Currently Loaded --- */
   .current-spool {
-    border: 1px solid #ddd;
+    border: 1px solid #2a2a2c;
     border-radius: 10px;
     padding: 16px;
-    margin-bottom: 20px;
-    background: #fff;
+    margin-bottom: 18px;
+    background: #1c1c1e;
   }
-
   .current-spool div {
     margin: 3px 0;
     font-size: 14px;
-    color: #555;
+    color: #ccc;
   }
-
   .current-spool strong {
-    color: #111;
+    color: #f2f2f2;
   }
 
   .empty {
@@ -462,123 +408,33 @@
     padding: 16px 0;
   }
 
-/* --- Print Time Progress --- */
-  .time-bar {
-    height: 8px;
-    background: #e0e0e0;
-    border-radius: 4px;
-    margin-bottom: 6px;
-    overflow: hidden;
+  .spool-detail {
+    border: 1px solid #2a2a2c;
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 22px;
+    background: #1c1c1e;
   }
 
-  .time-bar-fill {
-    height: 100%;
-    border-radius: 4px;
-    background: #4285f4;
-  }
-
-  .time-bar-fill.done {
-    background: #34a853;
-  }
-
-  .time-info {
-    display: -webkit-flex;
-    display: flex;
-    -webkit-justify-content: space-between;
-    justify-content: space-between;
+  .spool-detail-label {
     font-size: 12px;
-    color: #666;
-    margin-bottom: 16px;
-  }
-
-  .time-done {
+    color: #888;
+    margin-bottom: 4px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
     font-weight: bold;
-    color: #34a853;
   }
 
-  /* --- Inline Fail Panel --- */
-  .fail-wrap {
-    -webkit-flex: 1;
-    flex: 1;
-    margin-left: 12px;
-  }
-
-  .fail-details summary {
-    display: block;
-    width: 100%;
-    padding: 16px 12px;
-    border: 1px solid #ea4335;
-    border-radius: 8px;
-    background: #ea4335;
-    color: #fff;
+  .spool-detail-text {
     font-size: 15px;
-    font-weight: bold;
-    cursor: pointer;
-    text-align: center;
-    -webkit-appearance: none;
-    appearance: none;
-    font-family: Arial, sans-serif;
-    list-style: none;
-    -webkit-box-sizing: border-box;
-    box-sizing: border-box;
-  }
-
-  .fail-details summary.huge {
-    padding: 28px 16px;
-    font-size: 22px;
-    border-radius: 12px;
-  }
-
-  .fail-details summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .fail-details summary:active {
-    background: #d33426;
-  }
-
-  .fail-reasons {
-    margin-top: 12px;
-  }
-
-  .fail-reason-btn {
-    display: block;
-    width: 100%;
-    padding: 14px 12px;
+    color: #ccc;
     margin-bottom: 8px;
-    border: 1px solid #ea4335;
-    border-radius: 8px;
-    background: #fff;
-    color: #ea4335;
-    font-size: 14px;
+  }
+
+  .spool-detail-weight {
+    font-size: 24px;
     font-weight: bold;
-    cursor: pointer;
-    text-align: center;
-    -webkit-appearance: none;
-    appearance: none;
-    font-family: Arial, sans-serif;
-    -webkit-box-sizing: border-box;
-    box-sizing: border-box;
-  }
-
-  .fail-reason-btn:active {
-    background: #fef0ee;
-  }
-
-  .fail-reason-btn:last-child {
-    margin-bottom: 0;
-  }
-
-  /* --- Spool Warning Banner --- */
-  .spool-warn {
-    background: #fef3e8;
-    border: 1px solid #f5a623;
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 13px;
-    font-weight: bold;
-    color: #b5700a;
-    margin-bottom: 16px;
+    color: #f2f2f2;
   }
 </style>
 
@@ -589,146 +445,121 @@
     {#each viewData.printers as printer}
       {@const spool = printer.loaded_spool_id ? viewData.spools.find(s => s.id === printer.loaded_spool_id) : null}
       {@const activeJob = viewData.activePrintJobs.find(j => j.printer_id === printer.id)}
-      {@const isIdle = printer.status === 'IDLE' || printer.status === 'idle'}
       {@const isPrinting = printer.status === 'PRINTING' || printer.status === 'printing'}
-      {@const statusClass = isIdle ? 'idle' : isPrinting ? 'printing' : 'other'}
-      {@const pct = spool ? Math.round((spool.remaining_weight / spool.initial_weight) * 100) : 0}
-
       {@const flags = viewData.printerFlags[printer.id]}
-      {@const printDone = flags && flags.printDone}
-      {@const needsSpool = !isPrinting && flags && flags.needsNewSpool}
-      {@const lastPrint = !isPrinting && flags && !flags.needsNewSpool && flags.printableCount === 1}
+      {@const printDone = !!(flags && flags.printDone)}
       {@const topSuggested = flags && flags.topSuggested}
-      {@const cardClass = printDone ? 'print-done' : needsSpool ? 'needs-spool' : lastPrint ? 'last-print' : ''}
+      {@const isFailedState = !!(viewData.failedJobId && activeJob && activeJob.id === viewData.failedJobId)}
+      {@const cardState = isFailedState ? 'failed' : (isPrinting && printDone ? 'done' : (isPrinting ? 'printing' : 'idle'))}
+      {@const statusDotClass = cardState === 'failed' ? 'failed' : cardState === 'done' ? 'done' : cardState === 'printing' ? 'printing' : 'idle'}
+      {@const statusText = cardState === 'failed' ? 'Failed — pick reason' : cardState === 'done' ? 'Print finished?' : cardState === 'printing' ? 'Printing' : 'Idle'}
+
       <div class="cell">
-      <div class="card {cardClass}">
+      <div class="card state-{cardState}">
         <div class="card-header">
-          <div class="status-dot {statusClass}"></div>
-          <div>
-            <div class="card-title">{printer.name}</div>
-            <div class="card-status {statusClass}">
-              {isIdle ? 'Ready' : isPrinting ? 'Printing' : (printer.status || 'Unknown')}
-            </div>
-          </div>
+          <div class="status-dot {statusDotClass}"></div>
+          <div class="card-title">{printer.name}</div>
+          <div class="card-status">{statusText}</div>
         </div>
 
         {#if spool}
-          <div class="spool-row">
-            <div class="spool-left">
+          {@const afterWeight = isPrinting && activeJob ? Math.max(0, spool.remaining_weight - (activeJob.expected_weight || 0)) : (topSuggested ? Math.max(0, spool.remaining_weight - topSuggested.weight) : null)}
+          <div class="info-row">
+            <div class="info-left">
               <div class="spool-dot" style="background: {spool.color || '#888'};"></div>
-              {spool.brand} {spool.material} &middot; {spool.color || ''}
+              <span>{spool.brand} {spool.material}{spool.color ? ' · ' + spool.color : ''}</span>
             </div>
-            <div class="spool-weight">{spool.remaining_weight} g</div>
+            <div class="info-value">
+              {spool.remaining_weight}g{#if afterWeight !== null}<span class="after">({afterWeight}g)</span>{/if}
+            </div>
           </div>
-          <div class="weight-bar">
-            <div class="weight-bar-fill {pct < 20 ? 'low' : 'ok'}" style="width: {pct}%;"></div>
-          </div>
-
-          {#if activeJob}
-            {@const elapsedMin = Math.round((viewData.serverTime - activeJob.start_time) / 60000)}
-            {@const expectedMin = activeJob.expected_time || 0}
-            {@const timePct = expectedMin > 0 ? Math.min(Math.round((elapsedMin / expectedMin) * 100), 100) : 0}
-            {@const isDone = expectedMin > 0 && elapsedMin >= expectedMin}
-            {@const remainMin = Math.max(0, expectedMin - elapsedMin)}
-
-            <div class="job-row">
-              <strong>{activeJob.module_name || activeJob.name}</strong><br />
-              {activeJob.expected_weight} g &middot; after: <strong>{spool.remaining_weight - activeJob.expected_weight} g</strong>
-            </div>
-
-            {#if expectedMin > 0}
-              <div class="time-bar">
-                <div class="time-bar-fill {isDone ? 'done' : ''}" style="width: {timePct}%;"></div>
-              </div>
-              <div class="time-info">
-                <span>{elapsedMin} min / {expectedMin} min</span>
-                {#if isDone}
-                  <span class="time-done">Should be done</span>
-                {:else}
-                  <span>~{remainMin} min left</span>
-                {/if}
-              </div>
-            {/if}
-          {/if}
-
-          {#if !isPrinting && topSuggested}
-            <div class="next-line">
-              <span class="next-label">Next</span>
-              <strong>{topSuggested.module_name}</strong> &middot; {topSuggested.weight} g
-            </div>
-          {/if}
-
-          {#if !isPrinting && flags && flags.needsNewSpool}
-            <div class="spool-warn">Spool low -- no matching module printable, load new spool</div>
-          {/if}
         {:else}
           <div class="no-spool">No spool loaded</div>
         {/if}
 
         {#if isPrinting && activeJob}
-          {#if printDone}
-            <div class="finish-prompt">Finished? Confirm result:</div>
+          <div class="module-row">
+            <span class="module-prefix">Printing</span>
+            {activeJob.module_name || activeJob.name}
+          </div>
+
+          {@const expectedSec = activeJob.expected_time || 0}
+          {@const elapsedSec = Math.max(0, Math.round((viewData.serverTime - activeJob.start_time) / 1000))}
+          {@const remainSec = Math.max(0, expectedSec - elapsedSec)}
+          {#if expectedSec > 0}
+            <div class="info-row">
+              <div class="info-left"><span class="info-label">Time</span></div>
+              <div class="info-value">{formatSeconds(remainSec)} <span class="after">/ {formatSeconds(expectedSec)}</span></div>
+            </div>
           {/if}
+        {:else if topSuggested}
+          <div class="module-row">
+            <span class="module-prefix">Next</span>
+            {topSuggested.module_name}
+          </div>
+        {/if}
+
+        {#if isFailedState && activeJob}
+          <div class="reason-prompt">Why did the print fail?</div>
+          <div class="btn-stack">
+            {#each ['Spaghetti / Layer Adhesion', 'Nozzle clogged', 'Filament Runout', 'Poor Quality', 'Power Outage', 'Poor First Layer', 'Other'] as reason}
+              <form method="POST" action="?/completePrint">
+                <input type="hidden" name="jobId" value={activeJob.id} />
+                <input type="hidden" name="success" value="false" />
+                <input type="hidden" name="failureReason" value={reason} />
+                <button type="submit" class="reason-btn">{reason}</button>
+              </form>
+            {/each}
+          </div>
+        {:else if isPrinting && printDone && activeJob}
           <div class="btn-row">
             <form method="POST" action="?/completePrint">
               <input type="hidden" name="jobId" value={activeJob.id} />
               <input type="hidden" name="success" value="true" />
               <input type="hidden" name="actualWeight" value={activeJob.expected_weight} />
-              <button type="submit" class="huge green">&#10003; Done</button>
+              <button type="submit" class="green">Successful</button>
             </form>
-            <div class="fail-wrap">
-              <details class="fail-details">
-                <summary class="huge">&#10007; Failed</summary>
-                <div class="fail-reasons">
-                  {#each ['Spaghetti / Layer Adhesion', 'Nozzle clogged', 'Filament Runout', 'Poor Quality', 'Power Outage', 'Poor First Layer', 'Other'] as reason}
-                    <form method="POST" action="?/completePrint">
-                      <input type="hidden" name="jobId" value={activeJob.id} />
-                      <input type="hidden" name="success" value="false" />
-                      <input type="hidden" name="failureReason" value={reason} />
-                      <button type="submit" class="fail-reason-btn">{reason}</button>
-                    </form>
-                  {/each}
-                </div>
-              </details>
+            <form method="POST" action="?/markFailed">
+              <input type="hidden" name="jobId" value={activeJob.id} />
+              <button type="submit" class="red">Failed</button>
+            </form>
+          </div>
+        {:else if !isPrinting}
+          {#if !spool}
+            <div class="btn-row">
+              <form method="POST" action="?/navigate">
+                <input type="hidden" name="view" value="loadSpool" />
+                <input type="hidden" name="printerId" value={printer.id} />
+                <button type="submit">Load Spool</button>
+              </form>
             </div>
-          </div>
-        {:else if !spool}
-          <form method="POST" action="?/navigate">
-            <input type="hidden" name="view" value="loadSpool" />
-            <input type="hidden" name="printerId" value={printer.id} />
-            <button type="submit" class="huge green">Load Spool</button>
-          </form>
-        {:else if topSuggested}
-          <div class="btn-row primary-with-other">
-            <form method="POST" action="?/startPrint">
-              <input type="hidden" name="printerId" value={printer.id} />
-              <input type="hidden" name="moduleId" value={topSuggested.module_id} />
-              <button type="submit" class="huge green">&#9654; Start Next</button>
-            </form>
-            <form method="POST" action="?/navigate">
-              <input type="hidden" name="view" value="startPrint" />
-              <input type="hidden" name="printerId" value={printer.id} />
-              <button type="submit" class="secondary">Other</button>
-            </form>
-          </div>
-          <form method="POST" action="?/navigate" class="full-width-row">
-            <input type="hidden" name="view" value="loadSpool" />
-            <input type="hidden" name="printerId" value={printer.id} />
-            <button type="submit" class="secondary">Load Spool</button>
-          </form>
-        {:else}
-          <div class="btn-row">
-            <form method="POST" action="?/navigate">
-              <input type="hidden" name="view" value="startPrint" />
-              <input type="hidden" name="printerId" value={printer.id} />
-              <button type="submit" class="huge green">Start Print</button>
-            </form>
-            <form method="POST" action="?/navigate">
-              <input type="hidden" name="view" value="loadSpool" />
-              <input type="hidden" name="printerId" value={printer.id} />
-              <button type="submit" class="secondary">Load Spool</button>
-            </form>
-          </div>
+          {:else if topSuggested}
+            <div class="btn-row">
+              <form method="POST" action="?/startPrint">
+                <input type="hidden" name="printerId" value={printer.id} />
+                <input type="hidden" name="moduleId" value={topSuggested.module_id} />
+                <button type="submit" class="green">Start Suggested</button>
+              </form>
+              <form method="POST" action="?/navigate">
+                <input type="hidden" name="view" value="loadSpool" />
+                <input type="hidden" name="printerId" value={printer.id} />
+                <button type="submit" class="secondary">Load Spool</button>
+              </form>
+            </div>
+          {:else}
+            <div class="btn-row">
+              <form method="POST" action="?/navigate">
+                <input type="hidden" name="view" value="startPrint" />
+                <input type="hidden" name="printerId" value={printer.id} />
+                <button type="submit">Start Print</button>
+              </form>
+              <form method="POST" action="?/navigate">
+                <input type="hidden" name="view" value="loadSpool" />
+                <input type="hidden" name="printerId" value={printer.id} />
+                <button type="submit" class="secondary">Load Spool</button>
+              </form>
+            </div>
+          {/if}
         {/if}
       </div>
       </div>
@@ -768,7 +599,7 @@
           <input type="hidden" name="initialWeight" value={preset.default_weight} />
           <input type="hidden" name="remainingWeight" value={preset.default_weight} />
           <input type="hidden" name="cost" value={preset.cost || 0} />
-          <button type="submit" class="primary">Load</button>
+          <button type="submit">Load</button>
         </form>
       </div>
     {/each}
@@ -788,14 +619,10 @@
     <h1>Start Print</h1>
 
     {#if viewData.selectedSpool}
-      {@const pct = Math.round((viewData.selectedSpool.remaining_weight / viewData.selectedSpool.initial_weight) * 100)}
       <div class="spool-detail">
         <div class="spool-detail-label">Loaded Spool</div>
         <div class="spool-detail-text">{viewData.selectedSpool.material} {viewData.selectedSpool.color || ''} ({viewData.selectedSpool.brand})</div>
         <div class="spool-detail-weight">{viewData.selectedSpool.remaining_weight} g remaining</div>
-        <div class="weight-bar" style="margin-top: 10px; margin-bottom: 0;">
-          <div class="weight-bar-fill {pct < 20 ? 'low' : 'ok'}" style="width: {pct}%;"></div>
-        </div>
       </div>
 
       {#if viewData.suggestedQueue.length > 0}
@@ -804,7 +631,7 @@
           <div class="list-item">
             <div class="list-item-info">
               <div class="list-item-name">{mod.module_name || mod.name}</div>
-              <div class="list-item-detail">{mod.weight_of_print || mod.expected_weight} g{mod.expected_time ? ' &middot; ' + mod.expected_time + ' min' : ''}</div>
+              <div class="list-item-detail">{mod.weight_of_print || mod.expected_weight} g{mod.expected_time ? ' · ' + formatSeconds(mod.expected_time) : ''}</div>
               {#if (mod.weight_of_print || mod.expected_weight) > viewData.selectedSpool.remaining_weight}
                 <div class="list-item-warn">Not enough filament ({viewData.selectedSpool.remaining_weight} g left)</div>
               {/if}
@@ -825,7 +652,7 @@
         <div class="list-item">
           <div class="list-item-info">
             <div class="list-item-name">{mod.name}</div>
-            <div class="list-item-detail">{mod.expected_weight} g{mod.expected_time ? ' &middot; ' + mod.expected_time + ' min' : ''}</div>
+            <div class="list-item-detail">{mod.expected_weight} g{mod.expected_time ? ' · ' + formatSeconds(mod.expected_time) : ''}</div>
             {#if mod.expected_weight > viewData.selectedSpool.remaining_weight}
               <div class="list-item-warn">Not enough filament ({viewData.selectedSpool.remaining_weight} g left)</div>
             {/if}
@@ -848,7 +675,7 @@
       <form method="POST" action="?/navigate" class="back-form">
         <input type="hidden" name="view" value="loadSpool" />
         <input type="hidden" name="printerId" value={viewData.selectedPrinter.id} />
-        <button type="submit" class="primary" style="width: 100%;">Load Spool First</button>
+        <button type="submit" style="width: 100%;">Load Spool First</button>
       </form>
     {/if}
 
