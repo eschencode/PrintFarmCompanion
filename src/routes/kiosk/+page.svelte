@@ -15,8 +15,13 @@
 
 <style>
   .wrap {
-    max-width: 640px;
+    max-width: 960px;
     margin: 0 auto;
+    padding: 16px 16px 32px 16px;
+  }
+
+  .wrap.narrow {
+    max-width: 640px;
     padding: 24px 20px 40px 20px;
   }
 
@@ -37,12 +42,30 @@
     color: #111;
   }
 
+  /* --- 2-up grid (Safari 9 — basic flexbox, no `gap`) --- */
+  .grid {
+    display: -webkit-flex;
+    display: flex;
+    -webkit-flex-wrap: wrap;
+    flex-wrap: wrap;
+    margin: 0 -8px;
+  }
+  .cell {
+    width: 50%;
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
+    padding: 0 8px 16px 8px;
+  }
+  @media (orientation: portrait), (max-width: 700px) {
+    .cell { width: 100%; }
+  }
+
   /* --- Printer Card --- */
   .card {
     border: 1px solid #ddd;
     border-radius: 12px;
     padding: 20px;
-    margin-bottom: 20px;
+    margin-bottom: 0;
     background: #fff;
   }
 
@@ -73,11 +96,11 @@
   }
 
   .status-dot {
-    width: 14px;
-    height: 14px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
-    margin-right: 12px;
-    margin-top: 4px;
+    margin-right: 14px;
+    margin-top: 6px;
     -webkit-flex-shrink: 0;
     flex-shrink: 0;
   }
@@ -87,14 +110,14 @@
   .status-dot.other { background: #ea4335; }
 
   .card-title {
-    font-size: 20px;
+    font-size: 24px;
     font-weight: bold;
     color: #111;
-    margin: 0 0 2px 0;
+    margin: 0 0 3px 0;
   }
 
   .card-status {
-    font-size: 11px;
+    font-size: 13px;
     letter-spacing: 1.5px;
     text-transform: uppercase;
     font-weight: bold;
@@ -112,8 +135,8 @@
     align-items: center;
     -webkit-justify-content: space-between;
     justify-content: space-between;
-    margin-bottom: 4px;
-    font-size: 14px;
+    margin-bottom: 6px;
+    font-size: 15px;
     color: #555;
   }
 
@@ -125,8 +148,8 @@
   }
 
   .spool-dot {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     margin-right: 10px;
     border: 1px solid #ccc;
@@ -135,15 +158,15 @@
   }
 
   .spool-weight {
-    font-size: 18px;
+    font-size: 20px;
     font-weight: bold;
     color: #111;
   }
 
   .weight-bar {
-    height: 4px;
+    height: 6px;
     background: #e0e0e0;
-    border-radius: 2px;
+    border-radius: 3px;
     margin-bottom: 16px;
     overflow: hidden;
   }
@@ -192,6 +215,20 @@
     margin-left: 12px;
   }
 
+  .btn-row.primary-with-other {
+    margin-bottom: 10px;
+  }
+
+  .btn-row.primary-with-other form:first-child {
+    -webkit-flex: 2;
+    flex: 2;
+  }
+
+  .btn-row.primary-with-other form + form {
+    -webkit-flex: 1;
+    flex: 1;
+  }
+
   button {
     width: 100%;
     padding: 16px 12px;
@@ -206,6 +243,8 @@
     -webkit-appearance: none;
     appearance: none;
     font-family: Arial, sans-serif;
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
   }
 
   button:active {
@@ -232,6 +271,60 @@
     background: #333;
   }
 
+  button.huge {
+    padding: 28px 16px;
+    font-size: 22px;
+    border-radius: 12px;
+  }
+
+  button.secondary {
+    padding: 14px 16px;
+    font-size: 14px;
+    background: #f5f5f5;
+    color: #555;
+  }
+
+  button.secondary:active {
+    background: #e0e0e0;
+  }
+
+  /* --- Suggested-print line --- */
+  .next-line {
+    font-size: 14px;
+    color: #555;
+    margin-bottom: 14px;
+    line-height: 1.4;
+  }
+
+  .next-line .next-label {
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #999;
+    font-weight: bold;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .next-line strong {
+    color: #111;
+    font-size: 16px;
+  }
+
+  /* --- Finish prompt (shown when print exceeds expected time) --- */
+  .finish-prompt {
+    font-size: 16px;
+    font-weight: bold;
+    color: #b5700a;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+
+  .full-width-row {
+    display: block;
+    margin-top: 10px;
+  }
+
   /* --- Back Button --- */
   .back-form {
     display: block;
@@ -240,12 +333,12 @@
 
   .back-btn {
     width: 100%;
-    padding: 16px;
+    padding: 22px 16px;
     border: 1px solid #ddd;
-    border-radius: 8px;
+    border-radius: 10px;
     background: #f5f5f5;
     color: #333;
-    font-size: 16px;
+    font-size: 20px;
     font-weight: bold;
     cursor: pointer;
     text-align: center;
@@ -260,7 +353,7 @@
 
   /* --- Section --- */
   .section {
-    font-size: 11px;
+    font-size: 14px;
     letter-spacing: 2px;
     color: #999;
     text-transform: uppercase;
@@ -313,8 +406,8 @@
 
   .list-item button {
     width: auto;
-    padding: 12px 24px;
-    font-size: 14px;
+    padding: 18px 28px;
+    font-size: 16px;
   }
 
   /* --- Spool Detail (start print view) --- */
@@ -430,6 +523,12 @@
     box-sizing: border-box;
   }
 
+  .fail-details summary.huge {
+    padding: 28px 16px;
+    font-size: 22px;
+    border-radius: 12px;
+  }
+
   .fail-details summary::-webkit-details-marker {
     display: none;
   }
@@ -483,12 +582,10 @@
   }
 </style>
 
-<div class="wrap">
+<div class="wrap" class:narrow={viewData.view !== 'printers'}>
   {#if viewData.view === 'printers'}
     <!-- PRINTERS LIST -->
-    <div class="label">Overview</div>
-    <h1>All Printers</h1>
-
+    <div class="grid">
     {#each viewData.printers as printer}
       {@const spool = printer.loaded_spool_id ? viewData.spools.find(s => s.id === printer.loaded_spool_id) : null}
       {@const activeJob = viewData.activePrintJobs.find(j => j.printer_id === printer.id)}
@@ -501,7 +598,9 @@
       {@const printDone = flags && flags.printDone}
       {@const needsSpool = !isPrinting && flags && flags.needsNewSpool}
       {@const lastPrint = !isPrinting && flags && !flags.needsNewSpool && flags.printableCount === 1}
+      {@const topSuggested = flags && flags.topSuggested}
       {@const cardClass = printDone ? 'print-done' : needsSpool ? 'needs-spool' : lastPrint ? 'last-print' : ''}
+      <div class="cell">
       <div class="card {cardClass}">
         <div class="card-header">
           <div class="status-dot {statusClass}"></div>
@@ -533,7 +632,8 @@
             {@const remainMin = Math.max(0, expectedMin - elapsedMin)}
 
             <div class="job-row">
-              Job: <strong>{activeJob.module_name || activeJob.name}</strong> &middot; {activeJob.expected_weight} g &middot; after: <strong>{spool.remaining_weight - activeJob.expected_weight} g</strong>
+              <strong>{activeJob.module_name || activeJob.name}</strong><br />
+              {activeJob.expected_weight} g &middot; after: <strong>{spool.remaining_weight - activeJob.expected_weight} g</strong>
             </div>
 
             {#if expectedMin > 0}
@@ -551,6 +651,13 @@
             {/if}
           {/if}
 
+          {#if !isPrinting && topSuggested}
+            <div class="next-line">
+              <span class="next-label">Next</span>
+              <strong>{topSuggested.module_name}</strong> &middot; {topSuggested.weight} g
+            </div>
+          {/if}
+
           {#if !isPrinting && flags && flags.needsNewSpool}
             <div class="spool-warn">Spool low -- no matching module printable, load new spool</div>
           {/if}
@@ -558,17 +665,20 @@
           <div class="no-spool">No spool loaded</div>
         {/if}
 
-        <div class="btn-row">
-          {#if isPrinting && activeJob}
+        {#if isPrinting && activeJob}
+          {#if printDone}
+            <div class="finish-prompt">Finished? Confirm result:</div>
+          {/if}
+          <div class="btn-row">
             <form method="POST" action="?/completePrint">
               <input type="hidden" name="jobId" value={activeJob.id} />
               <input type="hidden" name="success" value="true" />
               <input type="hidden" name="actualWeight" value={activeJob.expected_weight} />
-              <button type="submit" class="green">Done</button>
+              <button type="submit" class="huge green">&#10003; Done</button>
             </form>
             <div class="fail-wrap">
               <details class="fail-details">
-                <summary>Failed</summary>
+                <summary class="huge">&#10007; Failed</summary>
                 <div class="fail-reasons">
                   {#each ['Spaghetti / Layer Adhesion', 'Nozzle clogged', 'Filament Runout', 'Poor Quality', 'Power Outage', 'Poor First Layer', 'Other'] as reason}
                     <form method="POST" action="?/completePrint">
@@ -581,23 +691,49 @@
                 </div>
               </details>
             </div>
-          {:else}
+          </div>
+        {:else if !spool}
+          <form method="POST" action="?/navigate">
+            <input type="hidden" name="view" value="loadSpool" />
+            <input type="hidden" name="printerId" value={printer.id} />
+            <button type="submit" class="huge green">Load Spool</button>
+          </form>
+        {:else if topSuggested}
+          <div class="btn-row primary-with-other">
+            <form method="POST" action="?/startPrint">
+              <input type="hidden" name="printerId" value={printer.id} />
+              <input type="hidden" name="moduleId" value={topSuggested.module_id} />
+              <button type="submit" class="huge green">&#9654; Start Next</button>
+            </form>
+            <form method="POST" action="?/navigate">
+              <input type="hidden" name="view" value="startPrint" />
+              <input type="hidden" name="printerId" value={printer.id} />
+              <button type="submit" class="secondary">Other</button>
+            </form>
+          </div>
+          <form method="POST" action="?/navigate" class="full-width-row">
+            <input type="hidden" name="view" value="loadSpool" />
+            <input type="hidden" name="printerId" value={printer.id} />
+            <button type="submit" class="secondary">Load Spool</button>
+          </form>
+        {:else}
+          <div class="btn-row">
+            <form method="POST" action="?/navigate">
+              <input type="hidden" name="view" value="startPrint" />
+              <input type="hidden" name="printerId" value={printer.id} />
+              <button type="submit" class="huge green">Start Print</button>
+            </form>
             <form method="POST" action="?/navigate">
               <input type="hidden" name="view" value="loadSpool" />
               <input type="hidden" name="printerId" value={printer.id} />
-              <button type="submit">Load Spool</button>
+              <button type="submit" class="secondary">Load Spool</button>
             </form>
-            {#if spool && isIdle}
-              <form method="POST" action="?/navigate">
-                <input type="hidden" name="view" value="startPrint" />
-                <input type="hidden" name="printerId" value={printer.id} />
-                <button type="submit" class="green">Start Print</button>
-              </form>
-            {/if}
-          {/if}
-        </div>
+          </div>
+        {/if}
+      </div>
       </div>
     {/each}
+    </div>
 
   {:else if viewData.view === 'loadSpool' && viewData.selectedPrinter}
     <!-- LOAD SPOOL -->

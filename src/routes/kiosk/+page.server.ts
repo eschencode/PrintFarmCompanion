@@ -14,8 +14,16 @@ function getCompatibleModules(printer: any, spool: any, printModules: any[], spo
   });
 }
 
+type TopSuggested = { module_id: number; module_name: string; weight: number } | null;
+type PrinterFlags = {
+  needsNewSpool: boolean;
+  printableCount: number;
+  printDone: boolean;
+  topSuggested: TopSuggested;
+};
+
 function computePrinterFlags(printers: any[], spools: any[], printModules: any[], spoolPresets: any[], activePrintJobs: any[], serverTime: number) {
-  const flags: Record<number, { needsNewSpool: boolean; printableCount: number; printDone: boolean }> = {};
+  const flags: Record<number, PrinterFlags> = {};
   for (const printer of printers) {
     const spool = printer.loaded_spool_id ? spools.find((s: any) => s.id === printer.loaded_spool_id) : null;
     const activeJob = activePrintJobs.find((j: any) => j.printer_id === printer.id);
@@ -23,11 +31,35 @@ function computePrinterFlags(printers: any[], spools: any[], printModules: any[]
     const isPrinting = printer.status === 'PRINTING' || printer.status === 'printing';
     const printDone = isPrinting && activeJob && activeJob.expected_time > 0 && (serverTime - activeJob.start_time) >= activeJob.expected_time * 60000;
     if (!spool) {
-      flags[printer.id] = { needsNewSpool: true, printableCount: 0, printDone: !!printDone };
+      flags[printer.id] = { needsNewSpool: true, printableCount: 0, printDone: !!printDone, topSuggested: null };
     } else {
       const compatible = getCompatibleModules(printer, spool, printModules, spoolPresets);
       const printableCount = compatible.filter((m: any) => m.expected_weight <= remainingAfterJob).length;
-      flags[printer.id] = { needsNewSpool: printableCount === 0, printableCount, printDone: !!printDone };
+
+      // Top printable suggestion: first non-DONE queue item that maps to a
+      // compatible module and fits the remaining spool weight after any inflight job.
+      let topSuggested: TopSuggested = null;
+      if (!isPrinting && printer.suggested_queue) {
+        let queue: any[] = [];
+        try {
+          queue = Array.isArray(printer.suggested_queue)
+            ? printer.suggested_queue
+            : JSON.parse(printer.suggested_queue);
+        } catch { queue = []; }
+
+        for (const item of queue) {
+          if (item.status === 'DONE') continue;
+          const mod = compatible.find((m: any) => m.id === item.module_id);
+          if (!mod) continue;
+          const w = item.weight_of_print ?? mod.expected_weight ?? 0;
+          if (w > 0 && w <= remainingAfterJob) {
+            topSuggested = { module_id: mod.id, module_name: item.module_name || mod.name, weight: w };
+            break;
+          }
+        }
+      }
+
+      flags[printer.id] = { needsNewSpool: printableCount === 0, printableCount, printDone: !!printDone, topSuggested };
     }
   }
   return flags;
