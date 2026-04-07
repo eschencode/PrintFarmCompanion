@@ -133,6 +133,11 @@
           setTimeout(() => window.location.reload(), 2000);
         }
       }
+      // Advance start queue when front-of-queue printer moves from PREPARE to RUNNING
+      const isHeadOfQueue = startQueue.length > 0 && startQueue[0].printer.printer_serial === serial;
+      if (isHeadOfQueue && prevState === 'PREPARE' && newState === 'RUNNING') {
+        advanceStartQueue();
+      }
     } catch { /* network error — will retry on next poll */ }
   }
 
@@ -156,7 +161,64 @@
   onDestroy(() => { Object.values(piPollingIntervals).forEach(clearTimeout); });
 
   let controlLoading: string | null = null;
-  let printStarting = false;
+
+  // ── Sequential start queue ────────────────────────────────────────────────
+  type StartQueueEntry = { printer: any; module: any; enqueuedAt: number; startedAt: number | null };
+  let startQueue: StartQueueEntry[] = [];
+  let startQueueTimeout: ReturnType<typeof setTimeout> | null = null;
+  $: startingSerials = new Set(startQueue.map(e => e.printer.printer_serial));
+  $: startQueueTotal = startQueue.length;
+
+  function enqueueStart(module: any, printer: any) {
+    closePrinterModal();
+    startQueue = [...startQueue, { printer, module, enqueuedAt: Date.now(), startedAt: null }];
+    if (startQueue.length === 1) dispatchNextStart();
+  }
+
+  async function dispatchNextStart() {
+    if (startQueue.length === 0) return;
+    startQueue[0] = { ...startQueue[0], startedAt: Date.now() };
+    startQueue = [...startQueue];
+    const { module, printer } = startQueue[0];
+    startQueueTimeout = setTimeout(advanceStartQueue, 30_000);
+    const hasPi = module.file_stored_on_pi && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
+    const hasLocalHandler = module.local_file_handler_path && fileHandlerState.connected;
+    try {
+      if (hasPi) {
+        const res = await fetch('/api/pi/print', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ module_id: module.id, printer_id: printer.id }),
+        });
+        const result = await res.json() as { success: boolean; error?: string };
+        if (result.success) {
+          startPiPolling(printer.printer_serial);
+          // Stays in queue — advances on PREPARE→RUNNING or 30s timeout
+        } else {
+          advanceStartQueue();
+        }
+      } else {
+        const formData = new FormData();
+        formData.append('printerId', String(printer.id));
+        formData.append('moduleId', String(module.id));
+        const res = await fetch('?/startPrint', { method: 'POST', body: formData });
+        if (res.ok && hasLocalHandler) await openFileLocally(module.local_file_handler_path, module.name, printer.id);
+        setTimeout(advanceStartQueue, 3_000);
+      }
+    } catch {
+      advanceStartQueue();
+    }
+  }
+
+  function advanceStartQueue() {
+    if (startQueueTimeout) { clearTimeout(startQueueTimeout); startQueueTimeout = null; }
+    startQueue = startQueue.slice(1);
+    if (startQueue.length > 0) {
+      dispatchNextStart();
+    } else {
+      setTimeout(() => window.location.reload(), 1_000);
+    }
+  }
 
   async function sendPrinterControl(endpoint: string, printerId: number) {
     controlLoading = endpoint;
@@ -176,45 +238,6 @@
     if (mins == null || mins <= 0) return '';
     if (mins >= 60) return `${Math.floor(mins / 60)}h ${mins % 60}m`;
     return `${mins}m`;
-  }
-
-  // ── Priority print start ──────────────────────────────────────────────────
-  async function startPrintWithPriority(module: any, printer: any) {
-    printStarting = true;
-    const hasPi = module.file_stored_on_pi && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
-    const hasLocalHandler = module.local_file_handler_path && fileHandlerState.connected;
-
-    try {
-    if (hasPi) {
-      // Pi path: call /api/pi/print directly (creates job record + triggers printer)
-      const res = await fetch('/api/pi/print', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ module_id: module.id, printer_id: printer.id }),
-      });
-      const result = await res.json() as { success: boolean; job_id?: number; task_id?: string; error?: string };
-      if (result.success) {
-        startPiPolling(printer.printer_serial);
-      }
-      closePrinterModal();
-      window.location.reload();
-      return;
-    }
-
-    // Local handler or fallback: POST to ?/startPrint to create job record
-    const formData = new FormData();
-    formData.append('printerId', String(printer.id));
-    formData.append('moduleId', String(module.id));
-    const res = await fetch('?/startPrint', { method: 'POST', body: formData });
-    if (res.ok && hasLocalHandler) {
-      await openFileLocally(module.local_file_handler_path, module.name, printer.id);
-    }
-    closePrinterModal();
-    window.location.reload();
-    } catch (e) {
-      printStarting = false;
-      throw e;
-    }
   }
 
   // Predefined failure reasons
@@ -251,7 +274,7 @@
       if (secsLeft <= 0) {
         clearInterval(timer);
         autoQueueCountdown = null;
-        startPrintWithPriority(nextModule, printer);
+        enqueueStart(nextModule, printer);
       }
     }, 1000);
     autoQueueCountdown = { seconds: secsLeft, moduleName: nextItem.module_name, module: nextModule, printer, timer };
@@ -852,7 +875,9 @@
           >
             <!-- Status Indicator — larger, with glow -->
             <div class="absolute top-3 right-3">
-              {#if printer.status === 'printing'}
+              {#if startingSerials.has(printer.printer_serial)}
+                <div class="w-2.5 h-2.5 bg-amber-400 rounded-full animate-pulse"></div>
+              {:else if printer.status === 'printing'}
                 {@const activePrintForDot = getActivePrintJob(Number(printer.id))}
                 {@const progressForDot = activePrintForDot ? getProgress(Number(activePrintForDot.start_time), Number(activePrintForDot.expected_time)) : 0}
                 {#if progressForDot >= 100}
@@ -922,7 +947,12 @@
             <div class="w-full text-center border-t border-zinc-200/60 dark:border-[#1a1a22] pt-2 mt-2 min-h-0 flex-shrink-0">
               <h3 class="text-[clamp(0.55rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-100 truncate px-1 tracking-tight">{printer.name}</h3>
               <p class="text-[clamp(0.4rem,1.5vw,0.7rem)] font-light tracking-wide uppercase mt-0.5">
-                {#if printer.status === 'printing'}
+                {#if startingSerials.has(printer.printer_serial)}
+                  {@const qPos = startQueue.findIndex(e => e.printer.printer_serial === printer.printer_serial)}
+                  <span class="text-amber-500 dark:text-amber-400">
+                    {qPos === 0 ? 'Starting…' : `Queue ${qPos + 1}/${startQueueTotal}`}
+                  </span>
+                {:else if printer.status === 'printing'}
                   <span class="text-blue-500 dark:text-blue-400">Printing</span>
                 {:else if printer.status === 'IDLE'}
                   <span class="text-emerald-500 dark:text-emerald-400">Idle</span>
@@ -932,7 +962,17 @@
               </p>
 
               <!-- Progress Bar for Active Prints -->
-              {#if printer.status === 'printing'}
+              {#if startingSerials.has(printer.printer_serial)}
+                {@const qPos = startQueue.findIndex(e => e.printer.printer_serial === printer.printer_serial)}
+                <div class="mt-2 px-1">
+                  <div class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
+                    <div class="bg-amber-400 h-full rounded-full progress-shimmer w-full opacity-70"></div>
+                  </div>
+                  <p class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-400 dark:text-zinc-500 mt-1">
+                    {qPos === 0 ? 'Sending to printer…' : 'In queue…'}
+                  </p>
+                </div>
+              {:else if printer.status === 'printing'}
                 {@const activePrint = getActivePrintJob(Number(printer.id))}
                 {#if activePrint}
                   {@const piStatus = piStatusBySerial[printer.printer_serial]}
@@ -1205,8 +1245,8 @@
           <!-- Next print card (big start button) -->
           <button
             type="button"
-            disabled={printStarting}
-            onclick={() => startPrintWithPriority(nextModule, selectedPrinter)}
+            disabled={startingSerials.has(selectedPrinter?.printer_serial)}
+            onclick={() => enqueueStart(nextModule, selectedPrinter)}
             class="w-full text-left bg-emerald-500/5 border-2 border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/40 rounded-2xl p-6 mb-4 transition-all duration-200 disabled:opacity-50 group"
           >
             <div class="flex items-center gap-4">
@@ -1217,7 +1257,7 @@
               </div>
               <div class="flex-1 min-w-0">
                 <p class="text-[10px] uppercase tracking-widest text-zinc-400 mb-1">
-                  {printStarting ? 'Starting…' : 'Start Next Print'}
+                  {startingSerials.has(selectedPrinter?.printer_serial) ? 'Starting…' : 'Start Next Print'}
                 </p>
                 <p class="text-lg font-medium text-zinc-900 dark:text-zinc-50 leading-snug truncate">{nextPrint.module_name}</p>
                 <div class="flex items-center gap-2 mt-1.5">
@@ -1585,8 +1625,8 @@
     {@const matchingModule = allModules.find(m => m.id === nextPrint.module_id)}
     <button
       type="button"
-      disabled={printStarting}
-      onclick={() => matchingModule && startPrintWithPriority(matchingModule, selectedPrinter)}
+      disabled={startingSerials.has(selectedPrinter?.printer_serial)}
+      onclick={() => matchingModule && enqueueStart(matchingModule, selectedPrinter)}
       class="w-full text-left bg-emerald-500/5 border border-emerald-500/15 rounded-xl p-5 mt-4 hover:bg-emerald-500/10 hover:border-emerald-500/25 transition-all duration-200 disabled:opacity-50"
     >
         <div class="flex items-center gap-4">
@@ -1615,11 +1655,10 @@
                 Load Spool
               </button>
               <button
-                disabled={printStarting}
                 onclick={handleStartPrint}
-                class="bg-emerald-500/8 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium border border-emerald-500/10 hover:border-emerald-500/20 disabled:opacity-50"
+                class="bg-emerald-500/8 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium border border-emerald-500/10 hover:border-emerald-500/20"
               >
-                {printStarting ? 'Starting…' : 'Start Print'}
+                Start Print
               </button>
             </div>
           </div>
@@ -2190,13 +2229,11 @@
               {@const selectedModule = allModules.find(m => m.id === selectedModuleId)}
               <button
                 type="button"
-                disabled={printStarting}
-                onclick={() => selectedModule && startPrintWithPriority(selectedModule, selectedPrinter)}
+                disabled={startingSerials.has(selectedPrinter?.printer_serial)}
+                onclick={() => selectedModule && enqueueStart(selectedModule, selectedPrinter)}
                 class="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium disabled:opacity-50"
               >
-                {#if printStarting}
-                  Starting…
-                {:else if selectedModule && loadedSpool && selectedModule.expected_weight > loadedSpool.remaining_weight}
+                {#if selectedModule && loadedSpool && selectedModule.expected_weight > loadedSpool.remaining_weight}
                   Start Print (Low Material)
                 {:else if selectedModule?.file_stored_on_pi && selectedPrinter?.printer_ip}
                   Start Print (Pi)
@@ -2486,6 +2523,18 @@
     >
       Cancel
     </button>
+  </div>
+{/if}
+
+<!-- ── Start Queue Toast (when > 1 printer queued) ───────────────────────── -->
+{#if startQueueTotal > 1}
+  <div class="fixed bottom-6 left-6 z-[60] bg-zinc-900 dark:bg-[#111] border border-zinc-700 dark:border-[#2a2a2a] rounded-2xl shadow-2xl px-5 py-4 flex items-center gap-3 max-w-xs">
+    <div class="w-2 h-2 bg-amber-400 rounded-full animate-pulse shrink-0"></div>
+    <div>
+      <p class="text-xs text-zinc-400 uppercase tracking-widest">Print Queue</p>
+      <p class="text-sm font-medium text-zinc-100">Starting {startQueueTotal} printers sequentially</p>
+      <p class="text-xs text-zinc-500 mt-0.5">Next starts when current reaches RUNNING</p>
+    </div>
   </div>
 {/if}
 
