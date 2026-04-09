@@ -31,6 +31,7 @@ from .bambu_client import (
     _find_gcode_param,
     _read_filament_info,
 )
+from .log_buffer import log, get_logs, get_printers
 
 load_dotenv()
 
@@ -75,6 +76,44 @@ def health():
     return {"ok": True, "files_dir": str(FILES_DIR), "active_monitors": list(_monitors.keys())}
 
 
+# ── Webhook misroute catch ────────────────────────────────────────────────────
+
+@app.post("/api/pi/webhook")
+def webhook_misroute_warning():
+    """Catch webhook requests that loop back to the Pi due to WEBHOOK_URL misconfiguration."""
+    log("warning", "Webhook", "Received webhook on Pi — WEBHOOK_URL is misconfigured. "
+        "It should point to your Cloudflare Pages domain, not the tunnel URL.")
+    return {"error": "Webhook received on Pi server — WEBHOOK_URL misconfigured",
+            "fix": "Set WEBHOOK_URL in .env to your Cloudflare Pages domain (e.g. https://your-app.pages.dev/api/pi/webhook)"}
+
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+
+@app.get("/logs", dependencies=[Depends(verify_secret)])
+def get_log_entries(
+    printer: str = "",
+    level: str = "",
+    category: str = "",
+    limit: int = 200,
+    since: float = 0,
+):
+    """Return filtered log entries from the in-memory buffer."""
+    entries = get_logs(
+        printer=printer,
+        level=level,
+        category=category,
+        limit=min(limit, 1000),
+        since=since,
+    )
+    return {"entries": entries, "count": len(entries)}
+
+
+@app.get("/logs/printers", dependencies=[Depends(verify_secret)])
+def get_log_printers():
+    """Return list of unique printers seen in the log buffer."""
+    return {"printers": get_printers()}
+
+
 # ── File upload ───────────────────────────────────────────────────────────────
 
 @app.post("/upload", dependencies=[Depends(verify_secret)])
@@ -104,6 +143,7 @@ class PrintRequest(BaseModel):
     printer_ip: str
     printer_serial: str
     printer_access_code: str
+    printer_name: Optional[str] = None  # friendly name from D1
     options: Optional[dict] = None
 
 
@@ -117,12 +157,14 @@ def trigger_print(req: PrintRequest):
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {req.file_path}")
 
-    print(f"[Print] file={req.file_path} ip={req.printer_ip} serial={req.printer_serial} access_code={'*'*4+req.printer_access_code[-2:] if req.printer_access_code else 'MISSING'}")
+    log("info", "Print", f"file={req.file_path} ip={req.printer_ip} access_code={'*'*4+req.printer_access_code[-2:] if req.printer_access_code else 'MISSING'}",
+        printer_serial=req.printer_serial, printer_name=req.printer_name or "")
 
     credentials = PrinterCredentials(
         ip=req.printer_ip,
         serial=req.printer_serial,
         access_code=req.printer_access_code,
+        name=req.printer_name or "",
     )
 
     # Register printer for idle polling
@@ -132,7 +174,8 @@ def trigger_print(req: PrintRequest):
     # 1. Upload file synchronously — must succeed before we return
     try:
         remote_path = upload_file_ftps(credentials, str(path), path.name)
-        print(f"[Bambu] Uploaded to {remote_path}")
+        log("info", "Bambu", f"Uploaded to {remote_path}",
+            printer_serial=req.printer_serial, printer_name=req.printer_name or "")
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -141,7 +184,8 @@ def trigger_print(req: PrintRequest):
     # Inspect the local .3mf to find the correct internal gcode path and filament info
     gcode_param = _find_gcode_param(str(path))
     filament_info = _read_filament_info(str(path))
-    print(f"[Print] Using gcode param: {gcode_param}, filament slots: {len(filament_info)}")
+    log("info", "Print", f"Using gcode param: {gcode_param}, filament slots: {len(filament_info)}",
+        printer_serial=req.printer_serial, printer_name=req.printer_name or "")
 
     task_id = str(uuid.uuid4())
     options = req.options or {}
@@ -151,7 +195,8 @@ def trigger_print(req: PrintRequest):
         try:
             send_print_command(credentials, remote_path, task_id, options, param=gcode_param, filament_info=filament_info)
         except Exception as e:
-            print(f"[Print] MQTT error: {e}")
+            log("error", "Print", f"MQTT error: {e}",
+                printer_serial=credentials.serial, printer_name=credentials.name)
         _start_monitor(credentials, task_id)
 
     threading.Thread(target=_send_and_monitor, daemon=True).start()
@@ -169,13 +214,15 @@ def get_status(serial: str, request: Request):
     # on every poll, so the first request after restart triggers a pushall immediately.
     printer_ip = request.headers.get("x-printer-ip", "")
     printer_code = request.headers.get("x-printer-code", "")
+    printer_name = request.headers.get("x-printer-name", "")
     with _registry_lock:
         already_registered = serial in _printer_registry
     if printer_ip and printer_code and not already_registered:
-        creds = PrinterCredentials(ip=printer_ip, serial=serial, access_code=printer_code)
+        creds = PrinterCredentials(ip=printer_ip, serial=serial, access_code=printer_code, name=printer_name)
         with _registry_lock:
             _printer_registry[serial] = creds
-        print(f"[Status] Auto-registered {serial} — triggering background poll")
+        log("info", "Status", f"Auto-registered — triggering background poll",
+            printer_serial=serial, printer_name=printer_name)
         threading.Thread(target=_poll_idle_printer, args=(creds,), daemon=True).start()
 
     with _monitors_lock:
@@ -318,9 +365,16 @@ def _start_monitor(credentials: PrinterCredentials, task_id: str):
             headers["X-Webhook-Secret"] = WEBHOOK_SECRET
 
         try:
-            requests.post(WEBHOOK_URL, json=payload, headers=headers, timeout=5)
+            resp = requests.post(WEBHOOK_URL, json=payload, headers=headers, timeout=5)
+            if resp.status_code == 404:
+                log("warning", "Webhook", f"Got 404 from {WEBHOOK_URL} — is WEBHOOK_URL pointing back to the Pi instead of Cloudflare Pages?",
+                    printer_serial=credentials.serial, printer_name=credentials.name)
+            elif resp.status_code >= 400:
+                log("warning", "Webhook", f"Got {resp.status_code} from {WEBHOOK_URL}",
+                    printer_serial=credentials.serial, printer_name=credentials.name)
         except Exception as e:
-            print(f"[Webhook] Failed to send: {e}")
+            log("error", "Webhook", f"Failed to send: {e}",
+                printer_serial=credentials.serial, printer_name=credentials.name)
 
         # Stop monitoring when print completes
         if mapped in ("success", "failed"):
@@ -338,7 +392,8 @@ def _start_monitor(credentials: PrinterCredentials, task_id: str):
         try:
             monitor.connect()
         except Exception as e:
-            print(f"[MQTT] Monitor failed for {credentials.serial}: {e}")
+            log("error", "MQTT", f"Monitor failed: {e}",
+                printer_serial=credentials.serial, printer_name=credentials.name)
 
     threading.Thread(target=run, daemon=True).start()
 
@@ -354,7 +409,8 @@ def _stop_monitor(serial: str):
 
 def _poll_idle_printer(credentials: PrinterCredentials):
     """One-shot MQTT pushall to refresh status cache for an idle printer."""
-    print(f"[Idle] Polling {credentials.serial} ...")
+    log("info", "Idle", "Polling ...",
+        printer_serial=credentials.serial, printer_name=credentials.name)
     got_response = threading.Event()
 
     client = mqtt.Client()
@@ -389,7 +445,8 @@ def _poll_idle_printer(credentials: PrinterCredentials):
                     "subtask_name": print_data.get("subtask_name"),
                     "gcode_file": print_data.get("gcode_file"),
                 }
-            print(f"[Idle] {credentials.serial}: gcode_state={print_data.get('gcode_state')} progress={print_data.get('mc_percent')}%")
+            log("info", "Idle", f"gcode_state={print_data.get('gcode_state')} progress={print_data.get('mc_percent')}%",
+                printer_serial=credentials.serial, printer_name=credentials.name)
             got_response.set()
         except Exception:
             pass
@@ -404,7 +461,8 @@ def _poll_idle_printer(credentials: PrinterCredentials):
         client.loop_stop()
         client.disconnect()
     except Exception as e:
-        print(f"[Idle] Poll failed for {credentials.serial}: {e}")
+        log("error", "Idle", f"Poll failed: {e}",
+            printer_serial=credentials.serial, printer_name=credentials.name)
 
 
 def _idle_watchdog():
@@ -428,3 +486,5 @@ threading.Thread(target=_idle_watchdog, daemon=True).start()
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# need to add a function that deletes a module form the pi here 

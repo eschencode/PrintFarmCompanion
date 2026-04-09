@@ -18,12 +18,19 @@ from typing import Callable, Optional
 
 import paho.mqtt.client as mqtt
 
+from .log_buffer import log
+
 
 @dataclass
 class PrinterCredentials:
     ip: str
     serial: str
     access_code: str
+    name: str = ""
+
+    @property
+    def display_name(self) -> str:
+        return self.name or self.serial
 
 
 @dataclass
@@ -94,11 +101,13 @@ def upload_file_ftps(credentials: PrinterCredentials, local_path: str, remote_fi
     context.verify_mode = ssl.CERT_NONE  # Bambu uses self-signed cert
 
     file_size = Path(local_path).stat().st_size
-    print(f"[FTPS] Connecting to {credentials.ip}:990 ... file size: {file_size} bytes ({file_size/1024/1024:.1f} MB)")
+    log("info", "FTPS", f"Connecting to {credentials.ip}:990 ... file size: {file_size} bytes ({file_size/1024/1024:.1f} MB)",
+        printer_serial=credentials.serial, printer_name=credentials.name)
 
     with ImplicitFTP_TLS(context=context) as ftp:
         ftp.connect(host=credentials.ip, port=990, timeout=30)
-        print(f"[FTPS] Connected — logging in as bblp ...")
+        log("info", "FTPS", "Connected — logging in as bblp ...",
+            printer_serial=credentials.serial, printer_name=credentials.name)
         ftp.login(user="bblp", passwd=credentials.access_code)
         ftp.prot_p()  # switch to encrypted data channel
 
@@ -107,15 +116,18 @@ def upload_file_ftps(credentials: PrinterCredentials, local_path: str, remote_fi
         for subdir in ["cache", "model", ""]:
             stor_cmd = f"STOR {subdir}/{remote_filename}" if subdir else f"STOR {remote_filename}"
             remote_path = f"/{subdir}/{remote_filename}" if subdir else f"/{remote_filename}"
-            print(f"[FTPS] Trying {stor_cmd} ...")
+            log("info", "FTPS", f"Trying {stor_cmd} ...",
+                printer_serial=credentials.serial, printer_name=credentials.name)
             try:
                 with open(local_path, "rb") as f:
                     ftp.storbinary(stor_cmd, f)
-                print(f"[FTPS] Upload complete → {remote_path}")
+                log("info", "FTPS", f"Upload complete → {remote_path}",
+                    printer_serial=credentials.serial, printer_name=credentials.name)
                 return remote_path
             except ftplib.error_perm as e:
                 if "553" in str(e):
-                    print(f"[FTPS] 553 on {subdir or 'root'}, trying next ...")
+                    log("warning", "FTPS", f"553 on {subdir or 'root'}, trying next ...",
+                        printer_serial=credentials.serial, printer_name=credentials.name)
                     continue
                 raise
 
@@ -127,18 +139,18 @@ def _find_gcode_param(local_path: str) -> str:
     try:
         with zipfile.ZipFile(local_path, 'r') as z:
             names = z.namelist()
-            print(f"[3MF] Internal paths: {names}")
+            log("info", "3MF", f"Internal paths: {names}")
             for name in names:
                 if name.startswith("Metadata/plate_") and name.endswith(".gcode"):
-                    print(f"[3MF] Found gcode at: {name}")
+                    log("info", "3MF", f"Found gcode at: {name}")
                     return name
             for name in names:
                 if name.endswith(".gcode"):
-                    print(f"[3MF] Fallback gcode at: {name}")
+                    log("info", "3MF", f"Fallback gcode at: {name}")
                     return name
     except Exception as e:
-        print(f"[3MF] Could not read archive: {e}")
-    print(f"[3MF] No gcode found — using default Metadata/plate_1.gcode")
+        log("error", "3MF", f"Could not read archive: {e}")
+    log("warning", "3MF", "No gcode found — using default Metadata/plate_1.gcode")
     return "Metadata/plate_1.gcode"
 
 
@@ -152,10 +164,10 @@ def _read_filament_info(local_path: str) -> list:
         with zipfile.ZipFile(local_path, 'r') as z:
             if 'Metadata/filament_sequence.json' in z.namelist():
                 data = json.loads(z.read('Metadata/filament_sequence.json').decode())
-                print(f"[3MF] filament_sequence.json: {json.dumps(data)}")
+                log("info", "3MF", f"filament_sequence.json: {json.dumps(data)}")
                 return data if isinstance(data, list) else []
     except Exception as e:
-        print(f"[3MF] Could not read filament_sequence.json: {e}")
+        log("error", "3MF", f"Could not read filament_sequence.json: {e}")
     return []
 
 
@@ -170,13 +182,13 @@ def _build_ams_mapping(filament_info: list, use_ams: bool) -> list:
         # External spool: map every filament in the print to virtual external spool
         count = max(len(filament_info), 1)
         mapping = [{"ams": 255, "slot": 255} for _ in range(count)]
-        print(f"[3MF] External spool ams_mapping: {mapping}")
+        log("info", "3MF", f"External spool ams_mapping: {mapping}")
         return mapping
     # AMS: use provided filament info to build slot mapping
     mapping = []
     for i, f in enumerate(filament_info):
         mapping.append({"ams": f.get("ams_id", 0), "slot": f.get("slot_id", i)})
-    print(f"[3MF] AMS ams_mapping: {mapping}")
+    log("info", "3MF", f"AMS ams_mapping: {mapping}")
     return mapping
 
 
@@ -198,8 +210,8 @@ def build_print_command(
     """
     # Convert absolute path to file:// URL for local printer filesystem
     url = f"file:///sdcard{remote_path}"
-    print(f"[MQTT] Building print command: url={url} param={param} task_id={task_id}")
-    print(f"[MQTT] Options: bed_leveling={bed_leveling} vibration_cali={vibration_calibration} use_ams={use_ams} timelapse={timelapse}")
+    log("info", "MQTT", f"Building print command: url={url} param={param} task_id={task_id}")
+    log("info", "MQTT", f"Options: bed_leveling={bed_leveling} vibration_cali={vibration_calibration} use_ams={use_ams} timelapse={timelapse}")
     return {
         "print": {
             "sequence_id": str(int(time.time())),
@@ -272,7 +284,8 @@ class BambuMQTTClient:
             self._connected = True
             client.subscribe(self.report_topic)
         else:
-            print(f"[MQTT] Connection failed with code {rc}")
+            log("error", "MQTT", f"Connection failed with code {rc}",
+                printer_serial=self.credentials.serial, printer_name=self.credentials.name)
 
     def _on_disconnect(self, client, userdata, rc):
         self._connected = False
@@ -306,7 +319,8 @@ class BambuMQTTClient:
         incoming_task = str(print_data.get("task_id", ""))
         task_changed = bool(incoming_task and last and incoming_task != last.task_id)
         if task_changed:
-            print(f"[MQTT] {self.credentials.serial}: new task_id {last.task_id!r} → {incoming_task!r}, resetting progress/layers")
+            log("info", "MQTT", f"new task_id {last.task_id!r} → {incoming_task!r}, resetting progress/layers",
+                printer_serial=self.credentials.serial, printer_name=self.credentials.name)
 
         status = PrintStatus(
             task_id=incoming_task or (last.task_id if last else ""),
@@ -319,16 +333,14 @@ class BambuMQTTClient:
             raw=merged_raw,
         )
 
-        # Debug: log all MQTT fields so we can verify field names and available data
-        print(
-            f"[MQTT] {self.credentials.serial}: state={status.gcode_state} "
-            f"progress={status.progress}% layer={status.layer_num}/{status.total_layer_num} "
+        log("info", "MQTT",
+            f"state={status.gcode_state} progress={status.progress}% "
+            f"layer={status.layer_num}/{status.total_layer_num} "
             f"remaining={print_data.get('mc_remaining_time')}min "
             f"nozzle={print_data.get('nozzle_temper')}°C "
             f"bed={print_data.get('bed_temper')}°C "
-            f"chamber={print_data.get('chamber_temper')}°C | "
-            f"keys={list(print_data.keys())}"
-        )
+            f"chamber={print_data.get('chamber_temper')}°C",
+            printer_serial=self.credentials.serial, printer_name=self.credentials.name)
 
         with self._lock:
             self.last_status = status
@@ -351,7 +363,8 @@ def send_print_command(
     """
     options = options or {}
     use_ams = options.get("use_ams", False)
-    print(f"[MQTT] send_print_command start — ip={credentials.ip} serial={credentials.serial} remote_path={remote_path} param={param} use_ams={use_ams}")
+    log("info", "MQTT", f"send_print_command start — ip={credentials.ip} remote_path={remote_path} param={param} use_ams={use_ams}",
+        printer_serial=credentials.serial, printer_name=credentials.name)
 
     ams_mapping = _build_ams_mapping(filament_info or [], use_ams)
 
@@ -366,7 +379,8 @@ def send_print_command(
         use_ams=use_ams,
         timelapse=options.get("timelapse", False),
     )
-    print(f"[MQTT] Full command payload: {json.dumps(cmd)}")
+    log("info", "MQTT", f"Full command payload: {json.dumps(cmd)}",
+        printer_serial=credentials.serial, printer_name=credentials.name)
 
     connected = threading.Event()
     client = mqtt.Client()
@@ -376,64 +390,70 @@ def send_print_command(
 
     report_topic = f"device/{credentials.serial}/report"
 
+    _sn = credentials.serial
+    _nm = credentials.name
+
     def on_connect(_c, _u, _f, rc):
-        print(f"[MQTT] on_connect rc={rc}")
+        log("info", "MQTT", f"on_connect rc={rc}", printer_serial=_sn, printer_name=_nm)
         if rc == 0:
             connected.set()
         else:
-            print(f"[MQTT] Connection refused — rc={rc} (1=bad protocol, 2=bad client id, 3=server unavailable, 4=bad credentials, 5=not authorised)")
+            log("error", "MQTT", f"Connection refused — rc={rc} (1=bad protocol, 2=bad client id, 3=server unavailable, 4=bad credentials, 5=not authorised)",
+                printer_serial=_sn, printer_name=_nm)
 
     def on_publish(_c, _u, mid):
-        print(f"[MQTT] on_publish mid={mid} — message delivered to broker")
+        log("info", "MQTT", f"on_publish mid={mid} — message delivered to broker", printer_serial=_sn, printer_name=_nm)
 
     def on_disconnect(_c, _u, rc):
-        print(f"[MQTT] on_disconnect rc={rc}")
+        log("info", "MQTT", f"on_disconnect rc={rc}", printer_serial=_sn, printer_name=_nm)
 
     def on_message(_c, _u, msg):
         try:
             data = json.loads(msg.payload.decode())
             print_data = data.get("print", {})
-            print(f"[MQTT] Printer response: gcode_state={print_data.get('gcode_state')} "
-                  f"print_error={print_data.get('print_error')} "
-                  f"mc_print_stage={print_data.get('mc_print_stage')} "
-                  f"full={json.dumps(print_data)[:400]}")
+            log("info", "MQTT", f"Printer response: gcode_state={print_data.get('gcode_state')} "
+                f"print_error={print_data.get('print_error')} "
+                f"mc_print_stage={print_data.get('mc_print_stage')} "
+                f"full={json.dumps(print_data)[:400]}",
+                printer_serial=_sn, printer_name=_nm)
         except Exception as e:
-            print(f"[MQTT] Could not parse response: {e} raw={msg.payload[:200]}")
+            log("error", "MQTT", f"Could not parse response: {e} raw={msg.payload[:200]}",
+                printer_serial=_sn, printer_name=_nm)
 
     client.on_connect = on_connect
     client.on_publish = on_publish
     client.on_disconnect = on_disconnect
     client.on_message = on_message
 
-    print(f"[MQTT] Connecting to {credentials.ip}:8883 ...")
+    log("info", "MQTT", f"Connecting to {credentials.ip}:8883 ...", printer_serial=_sn, printer_name=_nm)
     client.connect(credentials.ip, port=8883, keepalive=10)
     client.loop_start()
-    print(f"[MQTT] loop_start done — waiting for on_connect (timeout=15s) ...")
+    log("info", "MQTT", "loop_start done — waiting for on_connect (timeout=15s) ...", printer_serial=_sn, printer_name=_nm)
 
     if not connected.wait(timeout=15):
         client.loop_stop()
-        print("[MQTT] Connection timed out after 15s — print command NOT sent")
+        log("error", "MQTT", "Connection timed out after 15s — print command NOT sent", printer_serial=_sn, printer_name=_nm)
         return
 
-    print(f"[MQTT] Subscribing to {report_topic} to capture printer response ...")
+    log("info", "MQTT", f"Subscribing to {report_topic} to capture printer response ...", printer_serial=_sn, printer_name=_nm)
     client.subscribe(report_topic)
 
     # Request a full status push to see current printer state before sending print command
     pushall = {"pushing": {"sequence_id": str(int(time.time())), "command": "pushall"}}
     topic = f"device/{credentials.serial}/request"
-    print(f"[MQTT] Sending pushall to get full printer state ...")
+    log("info", "MQTT", "Sending pushall to get full printer state ...", printer_serial=_sn, printer_name=_nm)
     client.publish(topic, json.dumps(pushall), qos=0)
     time.sleep(2)  # give printer time to respond with full push_status (msg:0)
 
     payload = json.dumps(cmd)
-    print(f"[MQTT] Publishing print command to topic={topic} payload_len={len(payload)} qos=0")
+    log("info", "MQTT", f"Publishing print command to topic={topic} payload_len={len(payload)} qos=0", printer_serial=_sn, printer_name=_nm)
     client.publish(topic, payload, qos=0)
-    print(f"[MQTT] Waiting 5s for printer response ...")
+    log("info", "MQTT", "Waiting 5s for printer response ...", printer_serial=_sn, printer_name=_nm)
     time.sleep(5)
-    print(f"[MQTT] loop_stop ...")
+    log("info", "MQTT", "loop_stop ...", printer_serial=_sn, printer_name=_nm)
     client.loop_stop()
     client.disconnect()
-    print(f"[Bambu] Print command sent successfully. task_id={task_id}")
+    log("info", "Bambu", f"Print command sent successfully. task_id={task_id}", printer_serial=_sn, printer_name=_nm)
 
 
 def start_print(
@@ -450,7 +470,8 @@ def start_print(
     task_id = str(uuid.uuid4())
 
     remote_path = upload_file_ftps(credentials, local_path, remote_filename)
-    print(f"[Bambu] Uploaded to {remote_path}")
+    log("info", "Bambu", f"Uploaded to {remote_path}",
+        printer_serial=credentials.serial, printer_name=credentials.name)
 
     send_print_command(credentials, remote_path, task_id, options)
     return task_id
