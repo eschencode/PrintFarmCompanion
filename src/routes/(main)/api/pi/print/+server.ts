@@ -61,6 +61,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         printer_ip: printer.printer_ip,
         printer_serial: printer.printer_serial,
         printer_access_code: printer.printer_access_code,
+        printer_name: printer.name,
         options: options ?? {},
       }),
     });

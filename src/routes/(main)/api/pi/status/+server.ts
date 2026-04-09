@@ -23,19 +23,22 @@ export const GET: RequestHandler = async ({ url, platform }) => {
   // Look up credentials so Pi can auto-register + pushall after a restart
   let printerIp = '';
   let printerCode = '';
+  let printerName = '';
   if (db) {
     const printer = await db
-      .prepare('SELECT printer_ip, printer_access_code FROM printers WHERE printer_serial = ?')
+      .prepare('SELECT printer_ip, printer_access_code, name FROM printers WHERE printer_serial = ?')
       .bind(serial)
-      .first() as { printer_ip?: string; printer_access_code?: string } | null;
+      .first() as { printer_ip?: string; printer_access_code?: string; name?: string } | null;
     printerIp = printer?.printer_ip ?? '';
     printerCode = printer?.printer_access_code ?? '';
+    printerName = printer?.name ?? '';
   }
 
   try {
     const headers: Record<string, string> = { 'x-pi-secret': piSecret };
     if (printerIp) headers['x-printer-ip'] = printerIp;
     if (printerCode) headers['x-printer-code'] = printerCode;
+    if (printerName) headers['x-printer-name'] = printerName;
 
     const piResp = await fetch(`${piUrl}/status/${serial}`, { headers });
     const data = await piResp.json() as Record<string, any>;
