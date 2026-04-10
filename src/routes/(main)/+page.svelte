@@ -184,7 +184,7 @@
     startQueue[0] = { ...startQueue[0], startedAt: Date.now() };
     startQueue = [...startQueue];
     const { module, printer } = startQueue[0];
-    startQueueTimeout = setTimeout(advanceStartQueue, 30_000);
+    startQueueTimeout = setTimeout(advanceStartQueue, 120_000);
     const hasPi = module.file_stored_on_pi && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
     const hasLocalHandler = module.local_file_handler_path && fileHandlerState.connected;
     try {
