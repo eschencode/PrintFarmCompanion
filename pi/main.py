@@ -190,6 +190,23 @@ def trigger_print(req: PrintRequest):
     task_id = str(uuid.uuid4())
     options = req.options or {}
 
+    # Immediately set status cache to PREPARE so the frontend doesn't briefly show IDLE
+    with _status_cache_lock:
+        _status_cache[req.printer_serial] = {
+            "task_id": task_id,
+            "gcode_state": "PREPARE",
+            "progress": 0,
+            "layer_num": 0,
+            "total_layer_num": 0,
+            "error_code": 0,
+            "remaining_time": None,
+            "nozzle_temp": None,
+            "bed_temp": None,
+            "chamber_temp": None,
+            "subtask_name": None,
+            "gcode_file": None,
+        }
+
     # 2. Send MQTT command + start monitor in background so HTTP response returns immediately
     def _send_and_monitor():
         try:
