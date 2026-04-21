@@ -109,10 +109,10 @@
 
   $: if (typeof window !== 'undefined' && !dataLoaded) loadData();
 
-  function formatTime(seconds: number | null): string {
-    if (!seconds) return '—';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
+  function formatTime(minutes: number | null): string {
+    if (!minutes) return '—';
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
     if (h > 0) return `${h}h ${m}m`;
     return `${m}m`;
   }

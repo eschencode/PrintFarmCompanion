@@ -28,7 +28,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: formData.name,
-          expected_weight: formData.expected_weight ? parseInt(formData.expected_weight) : null,
+          expected_weight: formData.expected_weight ? Math.ceil(parseFloat(formData.expected_weight)) : null,
           expected_time: formData.expected_time ? parseInt(formData.expected_time) : null,
           objects_per_print: formData.objects_per_print ? parseInt(formData.objects_per_print) : 1,
           plate_type: formData.plate_type || null,
@@ -199,7 +199,7 @@
                 <input id="edit-weight" type="number" bind:value={formData.expected_weight} placeholder="0" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
               </div>
               <div>
-                <label for="edit-time" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Expected Time (seconds)</label>
+                <label for="edit-time" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Expected Time (min)</label>
                 <input id="edit-time" type="number" bind:value={formData.expected_time} placeholder="0" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
               </div>
             </div>

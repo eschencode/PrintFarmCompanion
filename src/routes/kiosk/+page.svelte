@@ -5,14 +5,13 @@
 
   $: viewData = form || data;
 
-  // expected_time is stored in SECONDS (Bambu's `prediction` field).
-  function formatSeconds(s: number | null | undefined): string {
-    if (!s || s <= 0) return '0m';
-    const total = Math.round(s);
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
+  // expected_time is stored in MINUTES.
+  function formatMinutes(m: number | null | undefined): string {
+    if (!m || m <= 0) return '0m';
+    const h = Math.floor(m / 60);
+    const rem = m % 60;
+    if (h > 0) return `${h}h ${rem}m`;
+    return `${rem}m`;
   }
 </script>
 
@@ -483,13 +482,13 @@
             {activeJob.module_name || activeJob.name}
           </div>
 
-          {@const expectedSec = activeJob.expected_time || 0}
-          {@const elapsedSec = Math.max(0, Math.round((viewData.serverTime - activeJob.start_time) / 1000))}
-          {@const remainSec = Math.max(0, expectedSec - elapsedSec)}
-          {#if expectedSec > 0}
+          {@const expectedMin = activeJob.expected_time || 0}
+          {@const elapsedMin = Math.max(0, Math.round((viewData.serverTime - activeJob.start_time) / 60_000))}
+          {@const remainMin = Math.max(0, expectedMin - elapsedMin)}
+          {#if expectedMin > 0}
             <div class="info-row">
               <div class="info-left"><span class="info-label">Time</span></div>
-              <div class="info-value">{formatSeconds(remainSec)} <span class="after">/ {formatSeconds(expectedSec)}</span></div>
+              <div class="info-value">{formatMinutes(remainMin)} <span class="after">/ {formatMinutes(expectedMin)}</span></div>
             </div>
           {/if}
         {:else if topSuggested}
@@ -631,7 +630,7 @@
           <div class="list-item">
             <div class="list-item-info">
               <div class="list-item-name">{mod.module_name || mod.name}</div>
-              <div class="list-item-detail">{mod.weight_of_print || mod.expected_weight} g{mod.expected_time ? ' · ' + formatSeconds(mod.expected_time) : ''}</div>
+              <div class="list-item-detail">{mod.weight_of_print || mod.expected_weight} g{mod.expected_time ? ' · ' + formatMinutes(mod.expected_time) : ''}</div>
               {#if (mod.weight_of_print || mod.expected_weight) > viewData.selectedSpool.remaining_weight}
                 <div class="list-item-warn">Not enough filament ({viewData.selectedSpool.remaining_weight} g left)</div>
               {/if}
@@ -652,7 +651,7 @@
         <div class="list-item">
           <div class="list-item-info">
             <div class="list-item-name">{mod.name}</div>
-            <div class="list-item-detail">{mod.expected_weight} g{mod.expected_time ? ' · ' + formatSeconds(mod.expected_time) : ''}</div>
+            <div class="list-item-detail">{mod.expected_weight} g{mod.expected_time ? ' · ' + formatMinutes(mod.expected_time) : ''}</div>
             {#if mod.expected_weight > viewData.selectedSpool.remaining_weight}
               <div class="list-item-warn">Not enough filament ({viewData.selectedSpool.remaining_weight} g left)</div>
             {/if}

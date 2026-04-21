@@ -173,8 +173,8 @@ export const actions: Actions = {
       if (job.printer_id && job.start_time && job.expected_time) {
         let hoursUsed: number;
         if (success) {
-          // expected_time is in SECONDS → convert to hours
-          hoursUsed = job.expected_time / 3600;
+          // expected_time is in MINUTES → convert to hours
+          hoursUsed = job.expected_time / 60;
         } else {
           hoursUsed = (endTime - job.start_time) / (1000 * 60 * 60);
         }
