@@ -279,6 +279,10 @@
         objectsPerPrint
       });
 
+      // Normalize units: store time in minutes, weight as whole grams
+      if (estimatedTime !== null) estimatedTime = Math.round(estimatedTime / 60);
+      if (expectedWeight !== null) expectedWeight = Math.ceil(expectedWeight);
+
       previewData = {
         name: f.name.replace(/\.3mf$/i, ''),
         thumbnail,
@@ -381,9 +385,9 @@
     if (fileInput) fileInput.value = '';
   }
 
-  function formatTime(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
+  function formatTime(minutes: number): string {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
     if (h > 0) return `${h}h ${m}m`;
     return `${m}m`;
   }
@@ -472,11 +476,11 @@
               <input
                 id="upload-time"
                 type="number"
-                value={previewData.estimatedTime !== null ? Math.round(previewData.estimatedTime / 60) : ''}
+                value={previewData.estimatedTime ?? ''}
                 oninput={(e) => {
                   if (!previewData) return;
                   const val = parseInt((e.target as HTMLInputElement).value, 10);
-                  previewData.estimatedTime = isNaN(val) ? null : val * 60;
+                  previewData.estimatedTime = isNaN(val) ? null : val;
                 }}
                 placeholder="min"
                 class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"

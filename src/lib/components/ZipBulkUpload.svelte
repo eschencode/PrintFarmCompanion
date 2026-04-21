@@ -188,6 +188,10 @@
       }
     } catch { /* not a valid 3mf zip */ }
 
+    // Normalize units: store time in minutes, weight as whole grams
+    if (estimatedTime !== null) estimatedTime = Math.round(estimatedTime / 60);
+    if (expectedWeight !== null) expectedWeight = Math.ceil(expectedWeight);
+
     return { thumbnail, estimatedTime, expectedWeight, nozzleDiameter, plateType, objectsPerPrint };
   }
 
@@ -273,9 +277,9 @@
     });
   }
 
-  function formatTime(secs: number | null): string {
-    if (!secs) return '—';
-    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+  function formatTime(minutes: number | null): string {
+    if (!minutes) return '—';
+    const h = Math.floor(minutes / 60), m = minutes % 60;
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   }
 </script>

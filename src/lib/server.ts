@@ -409,10 +409,13 @@ export async function loadSpool(db: D1Database, params: {
 // Print Modules
 export async function getAllPrintModules(db: D1Database) {
   const result = await db.prepare(`
-    SELECT pm.*, pmod.name as printer_model_name, GROUP_CONCAT(msp.spool_preset_id) as spool_preset_ids
+    SELECT pm.*, pmod.name as printer_model_name,
+           sp.name as spool_preset_name, sp.color as spool_preset_color,
+           GROUP_CONCAT(msp.spool_preset_id) as spool_preset_ids
     FROM print_modules pm
     LEFT JOIN module_spool_presets msp ON pm.id = msp.module_id
     LEFT JOIN printer_models pmod ON pm.printer_model_id = pmod.id
+    LEFT JOIN spool_presets sp ON pm.default_spool_preset_id = sp.id
     GROUP BY pm.id
   `).all();
   return (result.results || []).map((m: any) => ({

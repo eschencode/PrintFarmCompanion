@@ -130,13 +130,13 @@
     return `${mins}m`;
   }
 
-  function formatSeconds(s: number | null | undefined): string {
-    if (!s || s <= 0) return '0m';
-    const total = Math.round(s);
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
+  // expected_time is stored in MINUTES
+  function formatMinutes(m: number | null | undefined): string {
+    if (!m || m <= 0) return '0m';
+    const h = Math.floor(m / 60);
+    const rem = m % 60;
+    if (h > 0) return `${h}h ${rem}m`;
+    return `${rem}m`;
   }
 
   // ── Card state derivation ─────────────────────────────────────────────────
@@ -261,10 +261,10 @@
         <!-- ── PRINTING ── -->
         {@const moduleName = piLive?.subtask_name ?? activeJob?.module_name ?? activeJob?.name ?? 'Print'}
         {@const remMin = piLive?.remaining_time}
-        {@const expectedSec = activeJob?.expected_time || 0}
-        {@const elapsedSec = activeJob ? Math.max(0, Math.round((now - activeJob.start_time) / 1000)) : 0}
-        {@const fallbackRemainSec = Math.max(0, expectedSec - elapsedSec)}
-        {@const progress = piLive?.progress ?? (expectedSec > 0 ? Math.min(100, Math.round((elapsedSec / expectedSec) * 100)) : 0)}
+        {@const expectedMin = activeJob?.expected_time || 0}
+        {@const elapsedMin = activeJob ? Math.max(0, Math.round((now - activeJob.start_time) / 60_000)) : 0}
+        {@const fallbackRemainMin = Math.max(0, expectedMin - elapsedMin)}
+        {@const progress = piLive?.progress ?? (expectedMin > 0 ? Math.min(100, Math.round((elapsedMin / expectedMin) * 100)) : 0)}
 
         <div class="module-name">{moduleName}</div>
 
@@ -274,8 +274,8 @@
             <div class="metric-value">
               {#if remMin != null && remMin > 0}
                 {formatRemainingMinutes(remMin)}
-              {:else if expectedSec > 0}
-                {formatSeconds(fallbackRemainSec)}
+              {:else if expectedMin > 0}
+                {formatMinutes(fallbackRemainMin)}
               {:else}
                 —
               {/if}
@@ -284,7 +284,7 @@
           <div class="metric">
             <div class="metric-label">Total</div>
             <div class="metric-value muted">
-              {expectedSec > 0 ? formatSeconds(expectedSec) : (remMin != null ? formatRemainingMinutes(remMin) : '—')}
+              {expectedMin > 0 ? formatMinutes(expectedMin) : (remMin != null ? formatRemainingMinutes(remMin) : '—')}
             </div>
           </div>
         </div>
@@ -453,7 +453,7 @@
                   <div class="sheet-row-name">{mod.name}</div>
                   <div class="sheet-row-meta">
                     {mod.expected_weight ?? 0}g
-                    {#if mod.expected_time}· {formatSeconds(mod.expected_time)}{/if}
+                    {#if mod.expected_time}· {formatMinutes(mod.expected_time)}{/if}
                     {#if !fits}<span class="warn"> · won't fit</span>{/if}
                   </div>
                 </div>

@@ -29,8 +29,8 @@ function computePrinterFlags(printers: any[], spools: any[], printModules: any[]
     const activeJob = activePrintJobs.find((j: any) => j.printer_id === printer.id);
     const remainingAfterJob = spool ? spool.remaining_weight - (activeJob?.expected_weight || 0) : 0;
     const isPrinting = printer.status === 'PRINTING' || printer.status === 'printing';
-    // expected_time is stored in SECONDS (Bambu's `prediction` field)
-    const printDone = isPrinting && activeJob && activeJob.expected_time > 0 && (serverTime - activeJob.start_time) >= activeJob.expected_time * 1000;
+    // expected_time is stored in MINUTES
+    const printDone = isPrinting && activeJob && activeJob.expected_time > 0 && (serverTime - activeJob.start_time) >= activeJob.expected_time * 60_000;
     if (!spool) {
       flags[printer.id] = { needsNewSpool: true, printableCount: 0, printDone: !!printDone, topSuggested: null };
     } else {
@@ -240,8 +240,8 @@ export const actions: Actions = {
       if (job.printer_id && job.start_time && job.expected_time) {
         let hoursUsed: number;
         if (success) {
-          // expected_time is in SECONDS → convert to hours
-          hoursUsed = job.expected_time / 3600;
+          // expected_time is in MINUTES → convert to hours
+          hoursUsed = job.expected_time / 60;
         } else {
           hoursUsed = (endTime - job.start_time) / (1000 * 60 * 60);
         }
