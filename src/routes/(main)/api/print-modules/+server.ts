@@ -110,6 +110,13 @@ export const PATCH: RequestHandler = async ({ url, request, platform }) => {
     return json({ success: false, error: 'Invalid JSON body' }, { status: 400 });
   }
 
+  // Active toggle — lightweight action, doesn't require other fields
+  if ('active' in body) {
+    await db.prepare('UPDATE print_modules SET active = ? WHERE id = ?')
+      .bind(body.active ? 1 : 0, id).run();
+    return json({ success: true });
+  }
+
   const {
     name,
     estimated_time, plate_type, nozzle_diameter,
@@ -163,9 +170,35 @@ export const DELETE: RequestHandler = async ({ url, platform }) => {
   if (!id) return json({ success: false, error: 'id is required' }, { status: 400 });
 
   try {
+    // Fetch file paths before deleting so we can clean them up
+    const module = await db
+      .prepare('SELECT pi_file_path, local_file_handler_path FROM print_modules WHERE id = ?')
+      .bind(id)
+      .first<{ pi_file_path: string | null; local_file_handler_path: string | null }>();
+
+    // Delete file from Pi if it exists — non-fatal if Pi is unreachable
+    const piUrl = platform?.env?.PI_TUNNEL_URL;
+    const piSecret = (platform?.env?.PI_SECRET as string | undefined) ?? '';
+    if (module?.pi_file_path && piUrl) {
+      try {
+        await fetch(`${piUrl}/file`, {
+          method: 'DELETE',
+          headers: { 'content-type': 'application/json', 'x-pi-secret': piSecret },
+          body: JSON.stringify({ file_path: module.pi_file_path }),
+        });
+      } catch (e) {
+        console.warn('[pi/delete-file] Pi unreachable, skipping file cleanup:', e);
+      }
+    }
+
     await db.prepare('UPDATE print_jobs SET module_id = NULL WHERE module_id = ?').bind(id).run();
     await db.prepare('DELETE FROM print_modules WHERE id = ?').bind(id).run();
-    return json({ success: true });
+
+    // Return file paths so the client can clean up the local file via the file handler
+    return json({
+      success: true,
+      local_file_handler_path: module?.local_file_handler_path ?? null,
+    });
   } catch (e) {
     console.error('Failed to delete print module:', e);
     return json({ success: false, error: 'Failed to delete module' }, { status: 500 });

@@ -26,3 +26,8 @@ vite.config.ts.timestamp-*
 /worker-configuration.d.ts
 .dev.vars
 remote-backup.sql
+
+# Tauri
+desktop/src-tauri/target/
+desktop/src-tauri/gen/schemas/
+desktop/src-tauri/binaries/

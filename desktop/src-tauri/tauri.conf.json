@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Print Farm Companion",
+  "version": "0.1.0",
+  "identifier": "dev.eschencode.printfarmcompanion",
+  "build": {
+    "beforeDevCommand": "cd .. && npm run dev",
+    "beforeBuildCommand": "",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist-stub"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": [],
+    "icon": [],
+    "externalBin": ["binaries/pfc-file-handler"],
+    "category": "Productivity",
+    "shortDescription": "Desktop shell for Print Farm Companion",
+    "longDescription": "Native desktop shell for the Print Farm Companion web app, with bundled file handler and direct printer control.",
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}

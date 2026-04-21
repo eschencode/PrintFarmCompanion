@@ -15,12 +15,15 @@ app.use(express.json());
 // Generate or load authentication token
 const AUTH_TOKEN = process.env.AUTH_TOKEN || crypto.randomBytes(32).toString('hex');
 
-// Whitelist of allowed directories - UPDATE THESE TO YOUR ACTUAL PATHS
-const ALLOWED_DIRECTORIES = [
-  '/Users/linus/Documents/3d-models',
-  '/Users/linus/Downloads/prints',
-  // Add more directories as needed
-];
+// Whitelist of allowed directories.
+// When running as a Tauri sidecar, ALLOWED_DIRS is injected via env var (colon-separated).
+// Otherwise falls back to the hardcoded list below.
+const ALLOWED_DIRECTORIES = process.env.ALLOWED_DIRS
+  ? process.env.ALLOWED_DIRS.split(':').filter(Boolean)
+  : [
+      '/Users/linus/Documents/3d-models',
+      '/Users/linus/Downloads/prints',
+    ];
 
 // Allowed file extensions
 const ALLOWED_EXTENSIONS = ['.3mf', '.gcode', '.stl', '.obj'];
@@ -63,8 +66,9 @@ app.use((req, res, next) => {
   const allowedOrigins = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
-    'https://printfarmcompanion.pages.dev',  // ✅ Add your Cloudflare domain
-    // You can add more if needed
+    'https://printfarmcompanion.pages.dev',
+    'tauri://localhost',        // Tauri desktop shell (production)
+    'http://tauri.localhost',   // Tauri desktop shell (dev, some platforms)
   ];
   
   // Check if the request origin is in the allowed list
@@ -223,6 +227,46 @@ app.post('/open-file', (req, res) => {
       path: normalizedPath
     });
   });
+});
+
+// Delete a local file (used when a module is deleted from the app)
+app.delete('/file', (req, res) => {
+  const { filePath } = req.body;
+
+  if (!filePath) {
+    return res.status(400).json({ error: 'filePath is required' });
+  }
+
+  const normalizedPath = path.normalize(filePath);
+
+  const isInAllowedDirectory = ALLOWED_DIRECTORIES.some(dir =>
+    normalizedPath.startsWith(path.normalize(dir))
+  );
+
+  if (!isInAllowedDirectory) {
+    console.error(`❌ Blocked unauthorized delete: ${normalizedPath}`);
+    return res.status(403).json({ error: 'Path not in allowed directories' });
+  }
+
+  const fileExtension = path.extname(normalizedPath).toLowerCase();
+  if (!ALLOWED_EXTENSIONS.includes(fileExtension)) {
+    return res.status(400).json({ error: 'Invalid file type' });
+  }
+
+  try {
+    let deleted = false;
+    if (fs.existsSync(normalizedPath)) {
+      fs.unlinkSync(normalizedPath);
+      deleted = true;
+      console.log(`🗑️  Deleted file: ${normalizedPath}`);
+    } else {
+      console.log(`ℹ️  Delete requested but file not found: ${normalizedPath}`);
+    }
+    res.json({ success: true, deleted, path: normalizedPath });
+  } catch (err) {
+    console.error('❌ Error deleting file:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // Test endpoint (requires auth)

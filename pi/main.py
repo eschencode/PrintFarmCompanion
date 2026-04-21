@@ -500,8 +500,36 @@ def _idle_watchdog():
 threading.Thread(target=_idle_watchdog, daemon=True).start()
 
 
+class DeleteFileRequest(BaseModel):
+    file_path: str  # absolute path on Pi disk
+
+
+@app.delete("/file", dependencies=[Depends(verify_secret)])
+def delete_file(req: DeleteFileRequest):
+    """
+    Delete a module file from Pi disk.
+    Security: the path must be inside FILES_DIR to prevent arbitrary deletion.
+    """
+    try:
+        target = Path(req.file_path).resolve()
+        files_dir_resolved = FILES_DIR.resolve()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid path: {e}")
+
+    if not str(target).startswith(str(files_dir_resolved)):
+        raise HTTPException(status_code=403, detail="Access denied: path outside FILES_DIR")
+
+    deleted = False
+    if target.exists():
+        target.unlink()
+        deleted = True
+        log("info", "Files", f"Deleted {target.name}")
+    else:
+        log("info", "Files", f"Delete requested but file not found: {target.name}")
+
+    return {"success": True, "deleted": deleted, "path": str(target)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-# need to add a function that deletes a module form the pi here 

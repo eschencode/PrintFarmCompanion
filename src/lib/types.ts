@@ -25,6 +25,9 @@ export interface Spool {
   cost: number | null;
 }
 
+/** How a printer sends print commands and receives status updates. */
+export type TransportMode = 'auto' | 'direct' | 'pi';
+
 /**
  * Printer - Represents a 3D printer
  */
@@ -42,6 +45,8 @@ export interface Printer {
   printer_ip: string | null;
   printer_serial: string | null;
   printer_access_code: string | null;
+  // Transport preference ('auto' | 'direct' | 'pi'). Defaults to 'auto'.
+  transport: TransportMode;
 }
 
 /**
@@ -75,6 +80,8 @@ export interface PrintModule {
   // Pi bridge system
   pi_file_path: string | null;
   file_stored_on_pi: number; // 0 or 1
+  // Recommendation flag — 0 = saved but excluded from queue/AI suggestions
+  active: number; // 0 or 1, default 1
 }
 
 /**
@@ -298,7 +305,19 @@ export interface NewGridPreset {
 /**
  * Enum-like types for better type safety
  */
-export type PrinterStatus = 'WAITING' | 'IDLE' | 'PRINTING' | 'ERROR' | 'MAINTENANCE';
+export type PrinterStatus = 'WAITING' | 'IDLE' | 'PRINTING' | 'ERROR' | 'MAINTENANCE' | 'BROKEN';
+
+/**
+ * Printer Downtime — one event per repair period.
+ * ended_at is NULL while the printer is still broken.
+ */
+export interface PrinterDowntime {
+  id: number;
+  printer_id: number;
+  started_at: number;   // unix ms
+  ended_at: number | null;
+  note: string | null;
+}
 
 export type PrintResult = 'SUCCESS' | 'FAILED' | 'IN_PROGRESS';
 

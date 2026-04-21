@@ -124,6 +124,43 @@ export async function updatePrinterStatus(db: D1Database, id: number | null, sta
   }
 }
 
+export async function updatePrinterTransport(db: D1Database, id: number, transport: 'auto' | 'direct' | 'pi'): Promise<void> {
+  await db.prepare('UPDATE printers SET transport = ? WHERE id = ?').bind(transport, id).run();
+}
+
+/** Mark a printer as broken — closes any orphan open event, inserts a new one, sets status. */
+export async function markPrinterBroken(db: D1Database, id: number, note?: string): Promise<void> {
+  const now = Date.now();
+  await db.prepare('UPDATE printer_downtime SET ended_at = ? WHERE printer_id = ? AND ended_at IS NULL')
+    .bind(now, id).run();
+  await db.prepare('INSERT INTO printer_downtime (printer_id, started_at, note) VALUES (?, ?, ?)')
+    .bind(id, now, note ?? null).run();
+  await db.prepare("UPDATE printers SET status = 'BROKEN' WHERE id = ?").bind(id).run();
+}
+
+/** Mark a printer as repaired — closes the open downtime event, resets status to IDLE. */
+export async function markPrinterRepaired(db: D1Database, id: number): Promise<void> {
+  const now = Date.now();
+  await db.prepare('UPDATE printer_downtime SET ended_at = ? WHERE printer_id = ? AND ended_at IS NULL')
+    .bind(now, id).run();
+  await db.prepare("UPDATE printers SET status = 'IDLE' WHERE id = ?").bind(id).run();
+}
+
+/** Fetch all downtime rows overlapping [periodStart, periodEnd] across all printers. */
+export async function getAllDowntimeInRange(
+  db: D1Database,
+  periodStart: number,
+  periodEnd: number,
+): Promise<{ id: number; printer_id: number; started_at: number; ended_at: number | null; note: string | null }[]> {
+  const result = await db.prepare(`
+    SELECT id, printer_id, started_at, ended_at, note
+    FROM printer_downtime
+    WHERE started_at < ?
+      AND (ended_at IS NULL OR ended_at > ?)
+  `).bind(periodEnd, periodStart).all<{ id: number; printer_id: number; started_at: number; ended_at: number | null; note: string | null }>();
+  return result.results ?? [];
+}
+
 // Create a new printer
 export async function createPrinter(db: D1Database, printer: {
   name: string;

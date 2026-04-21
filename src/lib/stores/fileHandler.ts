@@ -21,6 +21,16 @@ function createFileHandlerStore() {
     
     init: () => {
       if (!browser) return;
+      // In desktop mode the token is injected by the Tauri init script —
+      // use it directly so the user never has to configure it manually.
+      const desktopToken = window.__FILE_HANDLER_TOKEN__;
+      if (desktopToken) {
+        localStorage.setItem('fileHandlerToken', desktopToken);
+        update(state => ({ ...state, token: desktopToken }));
+        fileHandlerStore.startChecking();
+        return;
+      }
+      // Browser: fall back to the manually entered token stored in localStorage.
       const token = localStorage.getItem('fileHandlerToken') || '';
       update(state => ({ ...state, token }));
       if (token) {
