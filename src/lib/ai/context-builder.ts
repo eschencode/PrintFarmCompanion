@@ -75,6 +75,7 @@ export class AIContextBuilder {
         pm.printer_model_id
       FROM print_modules pm
       LEFT JOIN spool_presets sp ON pm.default_spool_preset_id = sp.id
+      WHERE pm.active = 1
     `).all<ModuleContext>();
 
     return result.results;

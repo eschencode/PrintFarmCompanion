@@ -1,0 +1,29 @@
+[package]
+name = "printfarm-companion-desktop"
+version = "0.1.0"
+description = "Print Farm Companion desktop shell"
+authors = ["eschencode"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "printfarm_companion_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rumqttc = { version = "0.24", features = ["use-rustls"] }
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

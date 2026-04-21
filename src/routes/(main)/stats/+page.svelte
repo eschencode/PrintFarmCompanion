@@ -67,6 +67,7 @@
   let topModulesChart: HTMLDivElement;
   let failureReasonsChart: HTMLDivElement;
   let printerUtilizationChart: HTMLDivElement;
+  let utilizationStackedChartEl: HTMLDivElement;
   let stockFlowChart: HTMLDivElement;
   let shopifyOrdersChart: HTMLDivElement;
 
@@ -92,6 +93,7 @@
 
   // Reactive statements with proper typing
   $: sortedSpools = [...(data.spools || [])].sort((a, b) => b.id - a.id);
+  $: currentUtil = (data.stats.utilizationScores as any)?.[selectedTimeRange] ?? null;
   $: currentBreakdown = (data.stats.moduleBreakdown?.[selectedTimeRange] || {}) as Record<string, CategoryData>;
   $: currentSets = data.stats.setCosts?.[selectedTimeRange] || {};
   $: totalPrintsInRange = Object.values(currentBreakdown).reduce((sum, cat) => sum + (cat?.total || 0), 0);
@@ -468,6 +470,57 @@
       }]
     });
 
+    // Farm Utilization Stacked Bar Chart
+    let utilizationStackedChart: echarts.ECharts | undefined;
+    if (data.stats.utilizationScores && utilizationStackedChartEl) {
+      const util = (data.stats.utilizationScores as any).last30Days;
+      if (util?.perPrinter?.length) {
+        const printerNames = util.perPrinter.map((p: any) => p.name);
+        const printingData = util.perPrinter.map((p: any) => p.printingHrs);
+        const idleData = util.perPrinter.map((p: any) => p.idleHrs);
+        const repairData = util.perPrinter.map((p: any) => p.repairHrs);
+        const chartHeight = Math.max(240, printerNames.length * 52);
+        utilizationStackedChartEl.style.height = `${chartHeight}px`;
+        utilizationStackedChart = echarts.init(utilizationStackedChartEl);
+        utilizationStackedChart.setOption({
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            backgroundColor: tooltipBg,
+            borderColor: tooltipBorder,
+            textStyle: { color: tooltipText },
+            formatter: (params: any[]) => {
+              const rows = params.map((p: any) => `${p.marker}${p.seriesName}: <b>${p.value}h</b>`).join('<br/>');
+              return `<b>${params[0].name}</b><br/>${rows}`;
+            }
+          },
+          legend: {
+            data: ['Printing', 'Idle', 'Repair'],
+            textStyle: { color: textColor },
+            top: 0
+          },
+          grid: { left: 16, right: 24, top: 30, bottom: 0, containLabel: true },
+          xAxis: {
+            type: 'value',
+            axisLine: { lineStyle: { color: axisColor } },
+            axisLabel: { color: textColor, formatter: '{value}h' },
+            splitLine: { lineStyle: { color: gridColor } }
+          },
+          yAxis: {
+            type: 'category',
+            data: printerNames,
+            axisLine: { lineStyle: { color: axisColor } },
+            axisLabel: { color: textColor }
+          },
+          series: [
+            { name: 'Printing', type: 'bar', stack: 'total', data: printingData, itemStyle: { color: '#3b82f6' } },
+            { name: 'Idle',     type: 'bar', stack: 'total', data: idleData,     itemStyle: { color: '#3f3f46' } },
+            { name: 'Repair',   type: 'bar', stack: 'total', data: repairData,   itemStyle: { color: '#ef4444' } }
+          ]
+        });
+      }
+    }
+
     // Stock Flow Chart (Production vs Sales)
     let stockFlowChartInstance: echarts.ECharts | undefined;
     if (data.inventoryStats?.dailyStockFlow && stockFlowChart) {
@@ -650,6 +703,12 @@
         xAxis: axisUpdate,
         yAxis: { ...axisUpdate, ...splitLineUpdate }
       });
+      utilizationStackedChart?.setOption({
+        tooltip: tooltipUpdate,
+        legend: { textStyle: { color: newTextColor } },
+        xAxis: { ...axisUpdate, ...splitLineUpdate },
+        yAxis: axisUpdate
+      });
     };
 
     colorSchemeQuery.addEventListener('change', handleColorSchemeChange);
@@ -662,6 +721,7 @@
       modulesChart.resize();
       failureChart?.resize();
       utilizationChart.resize();
+      utilizationStackedChart?.resize();
       stockFlowChartInstance?.resize();
       shopifyChartInstance?.resize();
     };
@@ -678,6 +738,7 @@
       modulesChart.dispose();
       failureChart?.dispose();
       utilizationChart.dispose();
+      utilizationStackedChart?.dispose();
       stockFlowChartInstance?.dispose();
       shopifyChartInstance?.dispose();
     };
@@ -1491,6 +1552,57 @@
       {#if data.stats.failureReasons.length > 0}
         <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
           <div bind:this={failureReasonsChart} style="width: 100%; height: 400px;"></div>
+        </div>
+      {/if}
+
+      <!-- Farm Utilization Hero Card -->
+      {#if currentUtil}
+        <div class="col-span-2 bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
+          <div class="flex flex-col gap-6">
+            <!-- Hero metric -->
+            <div class="flex items-start justify-between gap-6">
+              <div>
+                <p class="text-zinc-500 text-sm mb-2 tracking-wide uppercase">Farm Utilization</p>
+                <p class="text-5xl font-light tabular-nums text-zinc-900 dark:text-zinc-50">
+                  {currentUtil.farmUtilizationPct.toFixed(1)}<span class="text-2xl text-zinc-400">%</span>
+                </p>
+                <p class="text-sm text-zinc-400 dark:text-zinc-600 mt-1">of available printer time used for printing</p>
+              </div>
+              {#if currentUtil.growthPotential.additionalPrintsPerDay > 0}
+                <div class="bg-emerald-500/5 border border-emerald-500/15 rounded-xl px-5 py-4 text-right flex-shrink-0">
+                  <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase mb-1">Growth Potential</p>
+                  <p class="text-2xl font-light text-emerald-500 tabular-nums">+{currentUtil.growthPotential.additionalPrintsPerDay}</p>
+                  <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">prints/day at {currentUtil.growthPotential.targetPct}% target</p>
+                  <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-0.5">(+{currentUtil.growthPotential.additionalHrsPerDay}h/day)</p>
+                </div>
+              {:else}
+                <div class="bg-blue-500/5 border border-blue-500/15 rounded-xl px-5 py-4 text-right flex-shrink-0">
+                  <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase mb-1">Growth Potential</p>
+                  <p class="text-base text-blue-500 font-medium">At target</p>
+                  <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">Running at {currentUtil.growthPotential.targetPct}%+ utilization</p>
+                </div>
+              {/if}
+            </div>
+            <!-- Hours breakdown -->
+            <div class="flex gap-8 border-t border-zinc-200 dark:border-[#262626] pt-4">
+              <div>
+                <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase mb-1">Printing</p>
+                <p class="text-xl font-light text-blue-500 tabular-nums">{currentUtil.totalPrintingHrs}h</p>
+              </div>
+              <div>
+                <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase mb-1">Idle</p>
+                <p class="text-xl font-light text-zinc-400 tabular-nums">{currentUtil.totalIdleHrs}h</p>
+              </div>
+              {#if currentUtil.totalRepairHrs > 0}
+                <div>
+                  <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase mb-1">Repair</p>
+                  <p class="text-xl font-light text-red-400 tabular-nums">{currentUtil.totalRepairHrs}h</p>
+                </div>
+              {/if}
+            </div>
+            <!-- Stacked bar chart -->
+            <div bind:this={utilizationStackedChartEl} style="width: 100%; height: 240px;"></div>
+          </div>
         </div>
       {/if}
 

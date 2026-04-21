@@ -8,6 +8,8 @@
   import { writable } from 'svelte/store';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
   import { quickStartMode, autoStartMode } from '$lib/stores/autoQueueStore';
+  import { isDesktop } from '$lib/stores/desktop';
+  import type { TransportMode } from '$lib/types';
 
   export let data: PageData;
 
@@ -55,14 +57,82 @@
   const nowStore = writable(Date.now());
   $: now = $nowStore;
   let tickerInterval: ReturnType<typeof setInterval>;
-  onMount(() => {
+  onMount(async () => {
     tickerInterval = setInterval(() => { nowStore.set(Date.now()); }, 5000);
-    // Poll all Pi-configured printers — regardless of print state
+
     for (const printer of data.printers as any[]) {
-      if (printer.printer_serial) {
+      if (!printer.printer_serial) continue;
+      const transport = effectiveTransport(printer);
+      if (transport === 'pi') {
+        // Pi-mode: use polling (existing path)
         startPiPolling(printer.printer_serial);
+      } else {
+        // Direct-mode: subscribe via Tauri MQTT + still start Pi polling as fallback
+        // so the printer shows up in status even before first MQTT event
+        startPiPolling(printer.printer_serial);
+        await subscribeDirectPrinter(printer);
       }
     }
+
+    // Listen for Tauri MQTT status events
+    if ($isDesktop) {
+      const stateLabels: Record<string, string> = {
+        IDLE: 'Idle', PREPARE: 'Preparing…', RUNNING: 'Printing', PAUSE: 'Paused', FINISH: 'Done', FAILED: 'Failed',
+      };
+      const { listen } = await import('@tauri-apps/api/event');
+      const { emit } = await import('@tauri-apps/api/event');
+
+      const unlistenStatus = await listen<{
+        serial: string; printer_id: number;
+        gcode_state: string; stage: string;
+        progress: number; layer_num: number; total_layer_num: number;
+        remaining_time: number | null; nozzle_temp: number | null; bed_temp: number | null; chamber_temp: number | null;
+        subtask_name: string | null;
+      }>('printer-status', ({ payload: s }) => {
+        const prevState = piStatusBySerial[s.serial]?.gcode_state;
+        const newState = s.gcode_state;
+        const label = newState === 'RUNNING'
+          ? `Printing ${s.progress}%`
+          : (stateLabels[newState] ?? newState);
+        piStatusBySerial = {
+          ...piStatusBySerial,
+          [s.serial]: {
+            gcode_state: newState, progress: s.progress,
+            layer_num: s.layer_num, total_layer_num: s.total_layer_num,
+            label, remaining_time: s.remaining_time,
+            nozzle_temp: s.nozzle_temp, bed_temp: s.bed_temp, chamber_temp: s.chamber_temp,
+            subtask_name: s.subtask_name ?? null, gcode_file: null,
+          },
+        };
+        // Advance start queue on PREPARE→RUNNING
+        const isHeadOfQueue = startQueue.length > 0 && startQueue[0].printer.printer_serial === s.serial;
+        if (isHeadOfQueue && prevState === 'PREPARE' && newState === 'RUNNING') advanceStartQueue();
+        // Trigger finish logic
+        const wasTrackedPrinting = (data.activePrintJobs as any[]).some((j: any) => j.printer_serial === s.serial);
+        const isTerminal = newState === 'FINISH' || newState === 'FAILED';
+        const prevWasTerminal = prevState === 'FINISH' || prevState === 'FAILED';
+        const justFinished = isTerminal && prevState !== undefined && !prevWasTerminal;
+        if (wasTrackedPrinting && justFinished && !reloadTriggered.has(s.serial)) {
+          reloadTriggered.add(s.serial);
+          if ($autoStartMode && newState === 'FINISH') startAutoQueueNext(s.serial);
+          else setTimeout(() => window.location.reload(), 2000);
+        }
+      });
+
+      const unlistenConnected = await listen<{ serial: string; printer_id: number }>(
+        'printer-connected', ({ payload }) => {
+          directConnected = new Set([...directConnected, payload.serial]);
+        },
+      );
+      const unlistenDisconnected = await listen<{ serial: string; printer_id: number }>(
+        'printer-disconnected', ({ payload }) => {
+          directConnected = new Set([...directConnected].filter(s => s !== payload.serial));
+        },
+      );
+
+      tauriUnlisteners = [unlistenStatus, unlistenConnected, unlistenDisconnected];
+    }
+
     return () => clearInterval(tickerInterval);
   });
 
@@ -76,11 +146,52 @@
     remaining_time?: number | null; nozzle_temp?: number | null; bed_temp?: number | null; chamber_temp?: number | null;
     subtask_name?: string | null; gcode_file?: string | null;
   };
-  // Keyed by printer_serial — works for all printers regardless of print state
+  // Keyed by printer_serial — receives updates from Pi polling OR direct MQTT events
   let piStatusBySerial: Record<string, PiStatus> = {};
   let piPollingIntervals: Record<string, ReturnType<typeof setTimeout>> = {};
   // Guard: only trigger reload/auto-start once per serial per page load
   const reloadTriggered = new Set<string>();
+
+  // ── Direct MQTT transport (Tauri desktop only) ────────────────────────────
+  // Serials currently connected via direct MQTT
+  let directConnected = new Set<string>();
+  // Unlisten callbacks for Tauri event subscriptions
+  let tauriUnlisteners: Array<() => void> = [];
+
+  /** Effective transport for a given printer — resolved at runtime. */
+  function effectiveTransport(printer: any): 'direct' | 'pi' {
+    const t: TransportMode = printer.transport ?? 'auto';
+    const canDirect = $isDesktop && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
+    if (t === 'direct' && canDirect) return 'direct';
+    if (t === 'pi') return 'pi';
+    // auto: prefer direct in desktop, fall back to pi
+    return canDirect ? 'direct' : 'pi';
+  }
+
+  async function updatePrinterTransport(printer: any, transport: TransportMode) {
+    await fetch(`/api/printer/${printer.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ transport }),
+    });
+    // Optimistic local update so the badge flips immediately
+    printer.transport = transport;
+    // Re-subscribe if switching to direct
+    if ($isDesktop && (transport === 'direct' || transport === 'auto')) {
+      await subscribeDirectPrinter(printer);
+    }
+  }
+
+  async function subscribeDirectPrinter(printer: any) {
+    if (!$isDesktop || !printer.printer_ip || !printer.printer_serial || !printer.printer_access_code) return;
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('subscribe_printer', {
+      printerId: printer.id,
+      ip: printer.printer_ip,
+      serial: printer.printer_serial,
+      accessCode: printer.printer_access_code,
+    }).catch((e: unknown) => console.error('subscribe_printer failed:', e));
+  }
 
   async function fetchPiStatus(serial: string): Promise<void> {
     try {
@@ -187,8 +298,12 @@
     startQueueTimeout = setTimeout(advanceStartQueue, 120_000);
     const hasPi = module.file_stored_on_pi && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
     const hasLocalHandler = module.local_file_handler_path && fileHandlerState.connected;
+    const transport = effectiveTransport(printer);
+    const hasDirect = transport === 'direct' && directConnected.has(printer.printer_serial ?? '');
     try {
       if (hasPi) {
+        // Pi path: Pi handles file upload and print start.
+        // In direct mode, MQTT events (not Pi polling) deliver live status.
         const res = await fetch('/api/pi/print', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -201,6 +316,21 @@
         } else {
           advanceStartQueue();
         }
+      } else if (hasDirect && module.local_file_handler_path) {
+        // Direct mode with local file: register job in DB then send MQTT print command.
+        // The file must already be on the printer SD card at /sdcard/cache/<filename>.
+        const formData = new FormData();
+        formData.append('printerId', String(printer.id));
+        formData.append('moduleId', String(module.id));
+        await fetch('?/startPrint', { method: 'POST', body: formData });
+        const filename = (module.local_file_handler_path as string).split('/').pop() ?? '';
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('start_print_direct', {
+          serial: printer.printer_serial,
+          remotePath: `/cache/${filename}`,
+          param: 'Metadata/plate_1.gcode',
+        }).catch((e: unknown) => console.error('start_print_direct failed:', e));
+        setTimeout(advanceStartQueue, 3_000);
       } else {
         const formData = new FormData();
         formData.append('printerId', String(printer.id));
@@ -227,15 +357,39 @@
   async function sendPrinterControl(endpoint: string, printerId: number) {
     controlLoading = endpoint;
     try {
-      await fetch(`/api/pi/${endpoint}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ printer_id: printerId }),
-      });
+      const printer = (data.printers as any[]).find((p: any) => Number(p.id) === printerId);
+      const transport = printer ? effectiveTransport(printer) : 'pi';
+      const isDirect = transport === 'direct' && printer?.printer_serial && directConnected.has(printer.printer_serial);
+
+      if (isDirect) {
+        // Map Pi API endpoint names to Bambu MQTT command names
+        const commandMap: Record<string, string> = { pause: 'pause', resume: 'resume', cancel: 'stop' };
+        const command = commandMap[endpoint] ?? endpoint;
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('send_printer_command', { serial: printer.printer_serial, command });
+      } else {
+        await fetch(`/api/pi/${endpoint}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ printer_id: printerId }),
+        });
+      }
     } finally {
       // Cancel keeps loading until the page reloads via webhook; Pause/Resume reset immediately
       if (endpoint !== 'cancel') controlLoading = null;
     }
+  }
+
+  async function togglePrinterBroken(printer: any, broken: boolean) {
+    controlLoading = broken ? 'marking-broken' : 'marking-repaired';
+    await fetch(`/api/printer/${printer.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(broken ? { action: 'broken' } : { action: 'repaired' }),
+    });
+    printer.status = broken ? 'BROKEN' : 'IDLE';
+    if (selectedPrinter?.id === printer.id) selectedPrinter = { ...printer };
+    controlLoading = null;
   }
 
   function formatRemainingTime(mins: number | null | undefined): string {
@@ -936,6 +1090,8 @@
                 {:else}
                   <div class="w-2.5 h-2.5 bg-green-500 rounded-full status-glow-green"></div>
                 {/if}
+              {:else if printer.status === 'BROKEN'}
+                <div class="w-2.5 h-2.5 bg-red-500 rounded-full status-glow-red animate-pulse"></div>
               {:else}
                 <div class="w-2.5 h-2.5 bg-zinc-400 dark:bg-zinc-600 rounded-full"></div>
               {/if}
@@ -963,6 +1119,8 @@
                   <span class="text-blue-500 dark:text-blue-400">Printing</span>
                 {:else if printer.status === 'IDLE'}
                   <span class="text-emerald-500 dark:text-emerald-400">Idle</span>
+                {:else if printer.status === 'BROKEN'}
+                  <span class="text-red-500 dark:text-red-400">Broken</span>
                 {:else}
                   <span class="text-zinc-400 dark:text-zinc-500">{printer.status}</span>
                 {/if}
@@ -1359,6 +1517,11 @@
               <div class="w-2 h-2 bg-emerald-500 rounded-full status-glow-green"></div>
               Idle
             </span>
+          {:else if selectedPrinter.status === 'BROKEN'}
+            <span class="inline-flex items-center gap-2.5 px-4 py-1.5 bg-red-500/10 text-red-600 dark:text-red-400 rounded-full text-sm font-light tracking-wide">
+              <div class="w-2 h-2 bg-red-500 rounded-full status-glow-red animate-pulse"></div>
+              Broken / Under Repair
+            </span>
           {/if}
         </div>
 
@@ -1678,6 +1841,35 @@
                 Start Print
               </button>
             </div>
+            <button
+              disabled={controlLoading === 'marking-broken'}
+              onclick={() => togglePrinterBroken(selectedPrinter, true)}
+              class="w-full bg-red-500/5 hover:bg-red-500/10 text-red-500/70 dark:text-red-400/60 hover:text-red-600 dark:hover:text-red-400 px-4 py-2.5 rounded-xl transition-all duration-200 text-sm border border-red-500/8 hover:border-red-500/15 disabled:opacity-50"
+            >
+              {controlLoading === 'marking-broken' ? 'Marking as broken…' : 'Mark as Broken'}
+            </button>
+          </div>
+
+        {:else if selectedPrinter.status === 'BROKEN'}
+          <!-- BROKEN STATUS MENU -->
+          <div class="space-y-5">
+            <div class="bg-red-500/5 border border-red-500/15 rounded-xl p-5">
+              <p class="text-sm text-red-600 dark:text-red-400 font-medium mb-1">Printer is under repair</p>
+              <p class="text-xs text-zinc-400 dark:text-zinc-600">Downtime is being tracked from when this printer was marked broken. Mark as repaired to stop the downtime clock.</p>
+            </div>
+            <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-zinc-400 dark:text-zinc-600">Total Runtime</span>
+                <span class="text-zinc-900 dark:text-zinc-100 text-sm font-medium tabular-nums">{selectedPrinter.total_hours.toFixed(1)}h</span>
+              </div>
+            </div>
+            <button
+              disabled={controlLoading === 'marking-repaired'}
+              onclick={() => togglePrinterBroken(selectedPrinter, false)}
+              class="w-full bg-emerald-500/8 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium border border-emerald-500/10 hover:border-emerald-500/20 disabled:opacity-50"
+            >
+              {controlLoading === 'marking-repaired' ? 'Marking as repaired…' : 'Mark as Repaired'}
+            </button>
           </div>
 
         {:else}
@@ -2475,19 +2667,39 @@
 {/if}
 
 <!-- Status Indicator (Top-right corner) -->
-<div class="fixed top-8 right-8 lg:top-10 lg:right-10 z-50 flex items-center gap-2.5 bg-zinc-50/80 dark:bg-[#0c0c0f]/80 backdrop-blur-xl border border-zinc-200/60 dark:border-[#1a1a22] rounded-xl px-4 py-2.5 shadow-sm">
-  {#if fileHandlerState.checking}
-    <div class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>
-    <span class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide">Checking...</span>
-  {:else if fileHandlerState.connected}
-    <div class="w-2 h-2 rounded-full bg-emerald-400 status-glow-green"></div>
-    <span class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide">File Handler Online</span>
-  {:else if fileHandlerState.token}
-    <div class="w-2 h-2 rounded-full bg-amber-400"></div>
-    <span class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide">File Handler Offline</span>
-  {:else}
-    <div class="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-700"></div>
-    <span class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide">Not Configured</span>
+<div class="fixed top-8 right-8 lg:top-10 lg:right-10 z-50 flex flex-col gap-1.5 items-end">
+  <!-- File Handler row -->
+  <div class="flex items-center gap-2.5 bg-zinc-50/80 dark:bg-[#0c0c0f]/80 backdrop-blur-xl border border-zinc-200/60 dark:border-[#1a1a22] rounded-xl px-4 py-2 shadow-sm">
+    {#if fileHandlerState.checking}
+      <div class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>
+      <span class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide">Checking...</span>
+    {:else if fileHandlerState.connected}
+      <div class="w-2 h-2 rounded-full bg-emerald-400 status-glow-green"></div>
+      <span class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide">File Handler Online</span>
+    {:else if fileHandlerState.token}
+      <div class="w-2 h-2 rounded-full bg-amber-400"></div>
+      <span class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide">File Handler Offline</span>
+    {:else}
+      <div class="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-700"></div>
+      <span class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide">Not Configured</span>
+    {/if}
+  </div>
+
+  <!-- Transport mode row (desktop only) -->
+  {#if $isDesktop}
+    {@const directCount = directConnected.size}
+    {@const totalWithSerial = (data.printers as any[]).filter((p: any) => p.printer_serial).length}
+    <div class="flex items-center gap-2.5 bg-zinc-50/80 dark:bg-[#0c0c0f]/80 backdrop-blur-xl border border-zinc-200/60 dark:border-[#1a1a22] rounded-xl px-4 py-2 shadow-sm">
+      {#if directCount > 0}
+        <div class="w-2 h-2 rounded-full bg-violet-400 status-glow-violet"></div>
+        <span class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide">
+          {directCount}/{totalWithSerial} Direct
+        </span>
+      {:else}
+        <div class="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-700"></div>
+        <span class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide">Pi Only</span>
+      {/if}
+    </div>
   {/if}
 </div>
 
