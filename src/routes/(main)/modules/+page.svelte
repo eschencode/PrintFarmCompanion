@@ -42,9 +42,9 @@
     const seen = new Set<string>();
     return modules
       .filter((m: any) => m.spool_preset_name)
-      .map((m: any) => ({ name: m.spool_preset_name as string, color: m.spool_preset_color as string | null }))
-      .filter(p => { if (seen.has(p.name)) return false; seen.add(p.name); return true; })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .map((m: any) => m.spool_preset_name as string)
+      .filter(name => { if (seen.has(name)) return false; seen.add(name); return true; })
+      .sort((a, b) => a.localeCompare(b));
   })();
 
   // ── Filtered + grouped modules ──────────────────────────────────────────────
@@ -56,7 +56,7 @@
       if (filterModel !== '__none__' && modelKey !== filterModel) return false;
     }
     if (filterPlate !== 'all' && m.plate_type !== filterPlate) return false;
-    if (filterPreset !== 'all' && m.spool_preset_name !== filterPreset) return false;
+    if (filterPreset !== 'all' && (m.spool_preset_name ?? '') !== filterPreset) return false;
     return true;
   });
 
@@ -298,16 +298,13 @@
           </button>
           {#each allPresets as preset}
             <button
-              onclick={() => filterPreset = preset.name}
-              class="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full font-medium transition-colors
-                {filterPreset === preset.name
+              onclick={() => filterPreset = preset}
+              class="px-3 py-1 text-xs rounded-full font-medium transition-colors
+                {filterPreset === preset
                   ? 'bg-emerald-600 text-white'
                   : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}"
             >
-              {#if preset.color}
-                <span class="w-2.5 h-2.5 rounded-full border border-black/10 shrink-0" style="background:{preset.color}"></span>
-              {/if}
-              {preset.name}
+              {preset}
             </button>
           {/each}
         {/if}
