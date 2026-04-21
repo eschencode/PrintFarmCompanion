@@ -1,6 +1,7 @@
 <script lang="ts">
   import JSZip from 'jszip';
   import { createEventDispatcher } from 'svelte';
+  import { normalizePlateType } from '$lib/plate-types';
 
   const dispatch = createEventDispatcher<{ done: void }>();
 
@@ -142,6 +143,7 @@
           }
           if (json.objects_per_print != null) { const v = parseInt(json.objects_per_print, 10); if (!isNaN(v) && v > 0) objectsPerPrint = v; }
           else if (Array.isArray(json.objects) && json.objects.length > 0) objectsPerPrint = json.objects.length;
+          if (!plateType) plateType = normalizePlateType(json.bed_type ?? json.plate_type ?? json.bed_type_preset ?? null);
         } catch { /* skip */ }
         break;
       }
@@ -155,7 +157,9 @@
             const val = Array.isArray(json.nozzle_diameter) ? json.nozzle_diameter[0] : json.nozzle_diameter;
             const v = parseFloat(String(val)); if (!isNaN(v)) nozzleDiameter = v;
           }
-          if (!plateType) plateType = json.bed_type ?? json.plate_type ?? null;
+          if (!plateType) {
+            plateType = normalizePlateType(json.bed_type ?? json.plate_type ?? json.bed_type_preset ?? null);
+          }
         } catch { /* skip */ }
       }
 
@@ -175,7 +179,7 @@
           if (nozzleDiameter === null && (meta.nozzle_diameter ?? meta.nozzle_diameters)) {
             const v = parseFloat(meta.nozzle_diameter ?? meta.nozzle_diameters); if (!isNaN(v)) nozzleDiameter = v;
           }
-          if (!plateType) plateType = meta.plate_type ?? meta.bed_type ?? null;
+          if (!plateType) plateType = normalizePlateType(meta.plate_type ?? meta.bed_type ?? null);
           if (objectsPerPrint === 1) {
             const objs = doc.querySelectorAll('plate > object');
             if (objs.length > 0) objectsPerPrint = objs.length;

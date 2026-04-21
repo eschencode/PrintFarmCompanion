@@ -17,6 +17,7 @@
   // ── Filter state ────────────────────────────────────────────────────────────
   let filterModel = 'all';   // 'all' | printer_model_name | '__none__'
   let filterPlate = 'all';   // 'all' | plate_type
+  let filterPreset = 'all';  // 'all' | spool_preset_name
   let hideInactive = false;  // when true, hide inactive cards
 
   // ── Derived filter options ──────────────────────────────────────────────────
@@ -37,6 +38,15 @@
     return [...new Set(plates)].sort();
   })();
 
+  $: allPresets = (() => {
+    const seen = new Set<string>();
+    return modules
+      .filter((m: any) => m.spool_preset_name)
+      .map((m: any) => ({ name: m.spool_preset_name as string, color: m.spool_preset_color as string | null }))
+      .filter(p => { if (seen.has(p.name)) return false; seen.add(p.name); return true; })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  })();
+
   // ── Filtered + grouped modules ──────────────────────────────────────────────
   $: filteredModules = modules.filter((m: any) => {
     if (hideInactive && !m.active) return false;
@@ -46,6 +56,7 @@
       if (filterModel !== '__none__' && modelKey !== filterModel) return false;
     }
     if (filterPlate !== 'all' && m.plate_type !== filterPlate) return false;
+    if (filterPreset !== 'all' && m.spool_preset_name !== filterPreset) return false;
     return true;
   });
 
@@ -273,6 +284,34 @@
           {/each}
         {/if}
 
+        <!-- Spool preset / color filter chips -->
+        {#if allPresets.length > 1}
+          <div class="w-px h-4 bg-zinc-200 dark:bg-zinc-700 mx-1"></div>
+          <button
+            onclick={() => filterPreset = 'all'}
+            class="px-3 py-1 text-xs rounded-full font-medium transition-colors
+              {filterPreset === 'all'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}"
+          >
+            All colors
+          </button>
+          {#each allPresets as preset}
+            <button
+              onclick={() => filterPreset = preset.name}
+              class="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full font-medium transition-colors
+                {filterPreset === preset.name
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}"
+            >
+              {#if preset.color}
+                <span class="w-2.5 h-2.5 rounded-full border border-black/10 shrink-0" style="background:{preset.color}"></span>
+              {/if}
+              {preset.name}
+            </button>
+          {/each}
+        {/if}
+
         <!-- Active filter toggle -->
         {#if inactiveCount > 0}
           <div class="ml-auto">
@@ -306,7 +345,7 @@
     {:else if filteredModules.length === 0}
       <div class="text-center py-16 text-zinc-400 dark:text-zinc-600">
         <p class="text-sm">No modules match the current filters</p>
-        <button onclick={() => { filterModel = 'all'; filterPlate = 'all'; hideInactive = false; }}
+        <button onclick={() => { filterModel = 'all'; filterPlate = 'all'; filterPreset = 'all'; hideInactive = false; }}
           class="mt-2 text-xs text-blue-500 hover:underline">Clear filters</button>
       </div>
     {:else}

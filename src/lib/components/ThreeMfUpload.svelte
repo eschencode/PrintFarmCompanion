@@ -1,6 +1,7 @@
 <script lang="ts">
   import JSZip from 'jszip';
   import { createEventDispatcher } from 'svelte';
+  import { normalizePlateType } from '$lib/plate-types';
 
   const dispatch = createEventDispatcher<{ uploaded: { id: number; name: string } }>();
 
@@ -166,7 +167,13 @@
             objectsPerPrint = json.objects.length || 1;
             console.log('✅ Found objects array with length:', objectsPerPrint);
           }
-          
+
+          // Plate type from plate_1.json (bed_type is the canonical Bambu field)
+          if (!plateType) {
+            const raw = json.bed_type ?? json.plate_type ?? json.bed_type_preset ?? null;
+            plateType = normalizePlateType(raw);
+          }
+
         } catch (e) {
           console.warn(`Could not parse ${path} as JSON:`, e);
         }
@@ -188,8 +195,7 @@
             if (!isNaN(parsed)) nozzleDiameter = parsed;
           }
           if (!plateType) {
-            const raw = json.bed_type ?? json.plate_type;
-            if (raw) plateType = String(raw).trim() || null;
+            plateType = normalizePlateType(json.bed_type ?? json.plate_type ?? null);
           }
         } catch (e) {
           console.warn('project_settings.config is not JSON or could not be parsed:', e);
@@ -239,13 +245,10 @@
             if (!isNaN(parsed)) nozzleDiameter = parsed;
           }
           
-          if (metadataElements['plate_type'] && !plateType) {
-            plateType = metadataElements['plate_type'];
-          }
-
-          // Try bed_type as alternative (from slice_info)
-          if (metadataElements['bed_type'] && !plateType) {
-            plateType = metadataElements['bed_type'];
+          if (!plateType) {
+            plateType = normalizePlateType(
+              metadataElements['plate_type'] ?? metadataElements['bed_type'] ?? null
+            );
           }
 
           // Count object elements in slice_info.config XML
