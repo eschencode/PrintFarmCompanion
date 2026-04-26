@@ -5,9 +5,10 @@
   import h2sImage from '$lib/assets/H2S.png';
   import { enhance } from '$app/forms';
   import { onMount, onDestroy } from 'svelte';
-  import { writable } from 'svelte/store';
+  import { writable, get } from 'svelte/store';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
   import { quickStartMode, autoStartMode } from '$lib/stores/autoQueueStore';
+  import { fileHandlerEnabled, directPrinterEnabled, printerPiEnabled } from '$lib/stores/connectionToggles';
   import { isDesktop } from '$lib/stores/desktop';
   import type { TransportMode } from '$lib/types';
 
@@ -58,24 +59,32 @@
   $: now = $nowStore;
   let tickerInterval: ReturnType<typeof setInterval>;
   onMount(async () => {
+    // Restore start queue from localStorage
+    const restored = loadStartQueue();
+    if (restored.length > 0) {
+      startQueue = restored;
+      dispatchNextStart();
+    }
+
     tickerInterval = setInterval(() => { nowStore.set(Date.now()); }, 5000);
+
+    const piOn = get(printerPiEnabled);
+    const directOn = get(directPrinterEnabled);
 
     for (const printer of data.printers as any[]) {
       if (!printer.printer_serial) continue;
       const transport = effectiveTransport(printer);
       if (transport === 'pi') {
-        // Pi-mode: use polling (existing path)
-        startPiPolling(printer.printer_serial);
+        if (piOn) startPiPolling(printer.printer_serial);
       } else {
         // Direct-mode: subscribe via Tauri MQTT + still start Pi polling as fallback
-        // so the printer shows up in status even before first MQTT event
-        startPiPolling(printer.printer_serial);
-        await subscribeDirectPrinter(printer);
+        if (piOn) startPiPolling(printer.printer_serial);
+        if (directOn) await subscribeDirectPrinter(printer);
       }
     }
 
     // Listen for Tauri MQTT status events
-    if ($isDesktop) {
+    if ($isDesktop && directOn) {
       const stateLabels: Record<string, string> = {
         IDLE: 'Idle', PREPARE: 'Preparing…', RUNNING: 'Printing', PAUSE: 'Paused', FINISH: 'Done', FAILED: 'Failed',
       };
@@ -137,6 +146,7 @@
   });
 
   async function openFileLocally(filePath: string, moduleName: string, printerId: number) {
+    if (!get(fileHandlerEnabled)) return false;
     return await fileHandlerStore.openFile(filePath, moduleName, printerId);
   }
 
@@ -161,7 +171,8 @@
   /** Effective transport for a given printer — resolved at runtime. */
   function effectiveTransport(printer: any): 'direct' | 'pi' {
     const t: TransportMode = printer.transport ?? 'auto';
-    const canDirect = $isDesktop && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
+    const directEnabled = get(directPrinterEnabled);
+    const canDirect = directEnabled && $isDesktop && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
     if (t === 'direct' && canDirect) return 'direct';
     if (t === 'pi') return 'pi';
     // auto: prefer direct in desktop, fall back to pi
@@ -284,9 +295,43 @@
   $: startingSerials = new Set(startQueue.map(e => e.printer.printer_serial));
   $: startQueueTotal = startQueue.length;
 
+  const START_QUEUE_KEY = 'printfarm_start_queue';
+  type StoredQueueEntry = { printerId: number; moduleId: number; enqueuedAt: number; startedAt: number | null };
+
+  function saveStartQueue() {
+    try {
+      const serializable: StoredQueueEntry[] = startQueue.map(e => ({
+        printerId: e.printer.id,
+        moduleId: e.module.id,
+        enqueuedAt: e.enqueuedAt,
+        startedAt: e.startedAt,
+      }));
+      localStorage.setItem(START_QUEUE_KEY, JSON.stringify(serializable));
+    } catch {}
+  }
+
+  function loadStartQueue(): StartQueueEntry[] {
+    try {
+      const raw = localStorage.getItem(START_QUEUE_KEY);
+      if (!raw) return [];
+      const stored: StoredQueueEntry[] = JSON.parse(raw);
+      return stored
+        .map(s => {
+          const printer = (data.printers as any[]).find(p => p.id === s.printerId);
+          const module = (data.printModules as any[]).find(m => m.id === s.moduleId);
+          if (!printer || !module) return null;
+          return { printer, module, enqueuedAt: s.enqueuedAt, startedAt: s.startedAt } as StartQueueEntry;
+        })
+        .filter((e): e is StartQueueEntry => e !== null);
+    } catch {
+      return [];
+    }
+  }
+
   function enqueueStart(module: any, printer: any) {
     closePrinterModal();
     startQueue = [...startQueue, { printer, module, enqueuedAt: Date.now(), startedAt: null }];
+    saveStartQueue();
     if (startQueue.length === 1) dispatchNextStart();
   }
 
@@ -294,6 +339,7 @@
     if (startQueue.length === 0) return;
     startQueue[0] = { ...startQueue[0], startedAt: Date.now() };
     startQueue = [...startQueue];
+    saveStartQueue();
     const { module, printer } = startQueue[0];
     startQueueTimeout = setTimeout(advanceStartQueue, 120_000);
     const hasPi = module.file_stored_on_pi && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
@@ -347,6 +393,7 @@
   function advanceStartQueue() {
     if (startQueueTimeout) { clearTimeout(startQueueTimeout); startQueueTimeout = null; }
     startQueue = startQueue.slice(1);
+    saveStartQueue();
     if (startQueue.length > 0) {
       dispatchNextStart();
     }

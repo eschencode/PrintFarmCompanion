@@ -5,15 +5,25 @@
 	let { children } = $props();
 
 	import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
+  import { fileHandlerEnabled } from '$lib/stores/connectionToggles';
 
   onMount(() => {
-    console.log('🚀 App initialized - starting file handler');
-    fileHandlerStore.init();
+    if (get(fileHandlerEnabled)) {
+      fileHandlerStore.init();
+    }
 
-    // Cleanup when app closes (browser tab closed)
+    const unsub = fileHandlerEnabled.subscribe((enabled) => {
+      if (enabled) {
+        fileHandlerStore.init();
+      } else {
+        fileHandlerStore.stopChecking();
+      }
+    });
+
     return () => {
-      console.log('👋 App closing - stopping file handler');
+      unsub();
       fileHandlerStore.stopChecking();
     };
   });

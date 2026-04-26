@@ -9,6 +9,30 @@ use bambu::{BambuDirectManager, subscribe_printer, send_printer_command, start_p
 const PROD_URL: &str = "https://printfarmcompanion.pages.dev";
 const DEV_URL: &str = "http://localhost:5173";
 
+/// Save a .3mf file into the app-data modules directory.
+/// Returns the full absolute path to the written file.
+#[tauri::command]
+fn save_module_file(app: tauri::AppHandle, file_name: String, data: Vec<u8>) -> Result<String, String> {
+    let modules_dir = app.path().app_data_dir()
+        .map_err(|e| format!("no app data dir: {e}"))?
+        .join("modules");
+    std::fs::create_dir_all(&modules_dir)
+        .map_err(|e| format!("failed to create modules dir: {e}"))?;
+    let dest = modules_dir.join(&file_name);
+    std::fs::write(&dest, &data)
+        .map_err(|e| format!("failed to write file: {e}"))?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Return the absolute path to the modules directory.
+#[tauri::command]
+fn get_modules_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let modules_dir = app.path().app_data_dir()
+        .map_err(|e| format!("no app data dir: {e}"))?
+        .join("modules");
+    Ok(modules_dir.to_string_lossy().into_owned())
+}
+
 /// Holds the sidecar child process so it stays alive for the duration of the app.
 struct SidecarHandle(std::sync::Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
@@ -34,11 +58,21 @@ pub fn run() {
             subscribe_printer,
             send_printer_command,
             start_print_direct,
+            save_module_file,
+            get_modules_dir,
         ])
         .setup(move |app| {
+            // Ensure the app-data modules directory exists.
+            let app_data = app.path().app_data_dir().expect("no app data dir");
+            let modules_dir = app_data.join("modules");
+            std::fs::create_dir_all(&modules_dir).ok();
+
             // Directories the file handler sidecar is allowed to serve files from.
             let home = std::env::var("HOME").unwrap_or_default();
-            let allowed_dirs = format!("{}/Documents:{}/Downloads", home, home);
+            let allowed_dirs = format!(
+                "{}:{}:{}/Documents:{}/Downloads",
+                modules_dir.display(), app_data.display(), home, home
+            );
 
             // Spawn the file handler sidecar.  Failure is non-fatal — the user
             // can still use a manually started file handler, and the UI will

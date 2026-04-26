@@ -94,6 +94,7 @@
   // Reactive statements with proper typing
   $: sortedSpools = [...(data.spools || [])].sort((a, b) => b.id - a.id);
   $: currentUtil = (data.stats.utilizationScores as any)?.[selectedTimeRange] ?? null;
+  $: currentFailures = (data.stats as any).failureAnalysis?.[selectedTimeRange] ?? null;
   $: currentBreakdown = (data.stats.moduleBreakdown?.[selectedTimeRange] || {}) as Record<string, CategoryData>;
   $: currentSets = data.stats.setCosts?.[selectedTimeRange] || {};
   $: totalPrintsInRange = Object.values(currentBreakdown).reduce((sum, cat) => sum + (cat?.total || 0), 0);
@@ -1174,6 +1175,209 @@
       </div>
     {/if}
 
+    <!-- ── Farm Utilization + Failure Analysis ────────────────────────────── -->
+    {#if currentUtil || currentFailures}
+      <div class="grid grid-cols-2 gap-6 mb-8">
+        <!-- Farm Utilization Score -->
+        {#if currentUtil}
+          <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6 flex flex-col">
+            <div class="flex items-center justify-between mb-5">
+              <p class="text-xs font-medium text-zinc-400 dark:text-zinc-600 tracking-wide uppercase">Farm Utilization</p>
+              <!-- Time Range Selector -->
+              <div class="flex gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5">
+                {#each ['last30Days', 'thisMonth', 'last90Days'] as range}
+                  <button
+                    on:click|stopPropagation={() => selectedTimeRange = range as TimeRange}
+                    class="px-3 py-1.5 rounded-md text-xs font-medium transition-all
+                           {selectedTimeRange === range
+                             ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                             : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50'}"
+                  >
+                    {getTimeRangeLabel(range as TimeRange)}
+                  </button>
+                {/each}
+              </div>
+            </div>
+            <div class="flex items-end gap-1 mb-1">
+              <p class="text-5xl font-light tabular-nums text-zinc-900 dark:text-zinc-50 leading-none">
+                {currentUtil.farmUtilizationPct.toFixed(1)}
+              </p>
+              <span class="text-xl text-zinc-400 dark:text-zinc-600 mb-0.5">%</span>
+            </div>
+            <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-5">of available time used for printing</p>
+            <!-- Hours breakdown -->
+            <div class="flex gap-6 border-t border-zinc-200 dark:border-[#262626] pt-4 mt-auto">
+              <div>
+                <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Printing</p>
+                <p class="text-lg font-light text-blue-500 tabular-nums">{currentUtil.totalPrintingHrs}h</p>
+              </div>
+              <div>
+                <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Idle</p>
+                <p class="text-lg font-light text-zinc-400 tabular-nums">{currentUtil.totalIdleHrs}h</p>
+              </div>
+              {#if currentUtil.totalRepairHrs > 0}
+                <div>
+                  <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Repair</p>
+                  <p class="text-lg font-light text-red-400 tabular-nums">{currentUtil.totalRepairHrs}h</p>
+                </div>
+              {/if}
+              <div class="ml-auto text-right">
+                {#if currentUtil.growthPotential.additionalPrintsPerDay > 0}
+                  <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Growth Potential</p>
+                  <p class="text-lg font-light text-emerald-500 tabular-nums">+{currentUtil.growthPotential.additionalPrintsPerDay} <span class="text-xs text-zinc-400">prints/day</span></p>
+                {:else}
+                  <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Status</p>
+                  <p class="text-sm font-medium text-blue-500">At {currentUtil.growthPotential.targetPct}% target</p>
+                {/if}
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Failure Analysis Score -->
+        {#if currentFailures}
+          <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6 flex flex-col">
+            <p class="text-xs font-medium text-zinc-400 dark:text-zinc-600 tracking-wide uppercase mb-5">Failure Analysis</p>
+            <div class="flex items-end gap-1 mb-1">
+              <p class="text-5xl font-light tabular-nums leading-none {currentFailures.failureRate > 15 ? 'text-red-500' : currentFailures.failureRate > 8 ? 'text-amber-500' : 'text-emerald-500'}">
+                {currentFailures.failureRate}
+              </p>
+              <span class="text-xl text-zinc-400 dark:text-zinc-600 mb-0.5">%</span>
+            </div>
+            <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-5">
+              {currentFailures.totalFailed} failed of {currentFailures.totalCompleted} completed prints
+            </p>
+            <!-- Waste breakdown -->
+            <div class="flex gap-6 border-t border-zinc-200 dark:border-[#262626] pt-4 mt-auto">
+              <div>
+                <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Wasted Material</p>
+                <p class="text-lg font-light text-red-400 tabular-nums">{currentFailures.wastedMaterial}g</p>
+              </div>
+              <div>
+                <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Wasted Cost</p>
+                <p class="text-lg font-light text-red-400 tabular-nums">${currentFailures.wastedCost.toFixed(2)}</p>
+              </div>
+              {#if currentFailures.byReason.length > 0}
+                <div class="ml-auto text-right">
+                  <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Top Reason</p>
+                  <p class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{currentFailures.byReason[0].reason}</p>
+                  <p class="text-xs text-zinc-400">{currentFailures.byReason[0].count} prints ({currentFailures.byReason[0].pct}%)</p>
+                </div>
+              {/if}
+            </div>
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- ── Failure Deep Dive ────────────────────────────────────────────────── -->
+    {#if currentFailures && currentFailures.totalFailed > 0}
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden">
+        <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
+          <h2 class="text-xl font-medium">Failure Deep Dive</h2>
+          <p class="text-sm text-zinc-500 mt-1">Patterns and correlations in print failures</p>
+        </div>
+
+        <div class="p-6">
+          <div class="grid grid-cols-2 gap-8">
+            <!-- Left: Failure Reasons Breakdown -->
+            <div>
+              <h3 class="text-xs font-medium text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-4">Failure Reasons</h3>
+              <div class="space-y-2.5">
+                {#each currentFailures.byReason as item}
+                  <div class="flex items-center gap-3">
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">{item.reason}</span>
+                        <span class="text-xs text-zinc-500 ml-2 shrink-0">{item.count} ({item.pct}%)</span>
+                      </div>
+                      <div class="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+                        <div
+                          class="h-full bg-red-500/80 rounded-full transition-all duration-500"
+                          style="width: {item.pct}%"
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            </div>
+
+            <!-- Right: Failure Rate by Printer -->
+            <div>
+              <h3 class="text-xs font-medium text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-4">Failure Rate by Printer</h3>
+              <div class="space-y-2.5">
+                {#each currentFailures.byPrinter as printer}
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{printer.name}</span>
+                      <div class="flex items-center gap-2">
+                        <span class="text-xs text-zinc-500">{printer.failed}/{printer.total}</span>
+                        <span class="text-xs font-medium tabular-nums {printer.failureRate > 15 ? 'text-red-500' : printer.failureRate > 8 ? 'text-amber-500' : 'text-emerald-500'}">{printer.failureRate}%</span>
+                      </div>
+                    </div>
+                    <div class="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden flex">
+                      <div
+                        class="h-full bg-emerald-500/70 transition-all duration-500"
+                        style="width: {printer.total > 0 ? ((printer.total - printer.failed) / printer.total) * 100 : 0}%"
+                      ></div>
+                      <div
+                        class="h-full bg-red-500/70 transition-all duration-500"
+                        style="width: {printer.total > 0 ? (printer.failed / printer.total) * 100 : 0}%"
+                      ></div>
+                    </div>
+                    {#if printer.topReason}
+                      <p class="text-[10px] text-zinc-400 mt-0.5">Top: {printer.topReason}</p>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            </div>
+          </div>
+
+          <!-- Problematic Modules (full width below) -->
+          {#if currentFailures.byModule.filter((m: any) => m.failed > 0).length > 0}
+            <div class="mt-8 pt-6 border-t border-zinc-200 dark:border-[#262626]">
+              <h3 class="text-xs font-medium text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-4">Module Failure Rates</h3>
+              <div class="overflow-hidden rounded-lg border border-zinc-200 dark:border-[#262626]">
+                <table class="w-full">
+                  <thead>
+                    <tr class="bg-zinc-100 dark:bg-zinc-800">
+                      <th class="px-4 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Module</th>
+                      <th class="px-4 py-2.5 text-right text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Total</th>
+                      <th class="px-4 py-2.5 text-right text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Failed</th>
+                      <th class="px-4 py-2.5 text-right text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Rate</th>
+                      <th class="px-4 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider w-48">Distribution</th>
+                      <th class="px-4 py-2.5 text-left text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Top Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each currentFailures.byModule.filter((m: any) => m.failed > 0) as mod}
+                      <tr class="border-t border-zinc-200 dark:border-[#262626]">
+                        <td class="px-4 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 max-w-48 truncate">{mod.name}</td>
+                        <td class="px-4 py-2.5 text-sm text-zinc-500 text-right tabular-nums">{mod.total}</td>
+                        <td class="px-4 py-2.5 text-sm text-red-500 text-right tabular-nums font-medium">{mod.failed}</td>
+                        <td class="px-4 py-2.5 text-right">
+                          <span class="text-sm font-medium tabular-nums {mod.failureRate > 20 ? 'text-red-500' : mod.failureRate > 10 ? 'text-amber-500' : 'text-zinc-500'}">{mod.failureRate}%</span>
+                        </td>
+                        <td class="px-4 py-2.5">
+                          <div class="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden flex">
+                            <div class="h-full bg-emerald-500/70" style="width: {((mod.total - mod.failed) / mod.total) * 100}%"></div>
+                            <div class="h-full bg-red-500/70" style="width: {(mod.failed / mod.total) * 100}%"></div>
+                          </div>
+                        </td>
+                        <td class="px-4 py-2.5 text-xs text-zinc-400">{mod.topReason || '—'}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
     <!-- ✅ UPDATED: Module Production Breakdown Section -->
     <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden">
       <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
@@ -1555,54 +1759,11 @@
         </div>
       {/if}
 
-      <!-- Farm Utilization Hero Card -->
+      <!-- Per-Printer Utilization Stacked Bar Chart -->
       {#if currentUtil}
         <div class="col-span-2 bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
-          <div class="flex flex-col gap-6">
-            <!-- Hero metric -->
-            <div class="flex items-start justify-between gap-6">
-              <div>
-                <p class="text-zinc-500 text-sm mb-2 tracking-wide uppercase">Farm Utilization</p>
-                <p class="text-5xl font-light tabular-nums text-zinc-900 dark:text-zinc-50">
-                  {currentUtil.farmUtilizationPct.toFixed(1)}<span class="text-2xl text-zinc-400">%</span>
-                </p>
-                <p class="text-sm text-zinc-400 dark:text-zinc-600 mt-1">of available printer time used for printing</p>
-              </div>
-              {#if currentUtil.growthPotential.additionalPrintsPerDay > 0}
-                <div class="bg-emerald-500/5 border border-emerald-500/15 rounded-xl px-5 py-4 text-right flex-shrink-0">
-                  <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase mb-1">Growth Potential</p>
-                  <p class="text-2xl font-light text-emerald-500 tabular-nums">+{currentUtil.growthPotential.additionalPrintsPerDay}</p>
-                  <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">prints/day at {currentUtil.growthPotential.targetPct}% target</p>
-                  <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-0.5">(+{currentUtil.growthPotential.additionalHrsPerDay}h/day)</p>
-                </div>
-              {:else}
-                <div class="bg-blue-500/5 border border-blue-500/15 rounded-xl px-5 py-4 text-right flex-shrink-0">
-                  <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase mb-1">Growth Potential</p>
-                  <p class="text-base text-blue-500 font-medium">At target</p>
-                  <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">Running at {currentUtil.growthPotential.targetPct}%+ utilization</p>
-                </div>
-              {/if}
-            </div>
-            <!-- Hours breakdown -->
-            <div class="flex gap-8 border-t border-zinc-200 dark:border-[#262626] pt-4">
-              <div>
-                <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase mb-1">Printing</p>
-                <p class="text-xl font-light text-blue-500 tabular-nums">{currentUtil.totalPrintingHrs}h</p>
-              </div>
-              <div>
-                <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase mb-1">Idle</p>
-                <p class="text-xl font-light text-zinc-400 tabular-nums">{currentUtil.totalIdleHrs}h</p>
-              </div>
-              {#if currentUtil.totalRepairHrs > 0}
-                <div>
-                  <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase mb-1">Repair</p>
-                  <p class="text-xl font-light text-red-400 tabular-nums">{currentUtil.totalRepairHrs}h</p>
-                </div>
-              {/if}
-            </div>
-            <!-- Stacked bar chart -->
-            <div bind:this={utilizationStackedChartEl} style="width: 100%; height: 240px;"></div>
-          </div>
+          <p class="text-xs font-medium text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-4">Per-Printer Utilization Breakdown</p>
+          <div bind:this={utilizationStackedChartEl} style="width: 100%; height: 240px;"></div>
         </div>
       {/if}
 
