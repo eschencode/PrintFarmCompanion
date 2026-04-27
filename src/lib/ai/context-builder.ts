@@ -3,56 +3,96 @@ import type {
   InventoryWithVelocity,
   Printer,
   ModuleContext,
-  AIRecommendationContext,
-  SalesVelocity
+  AIRecommendationContext
 } from '../types';
+import {
+  StockoutForecast,
+  FORECAST_LOOKBACK_DAYS,
+  confidenceFromDaysWithSales
+} from './forecast';
+
+function computeStockout(stock: number, velocity: number): number {
+  return velocity > 0 ? Math.round((stock / velocity) * 10) / 10 : 999;
+}
+
+const MS_PER_DAY = 86_400_000;
 
 export class AIContextBuilder {
   private db: D1Database;
+  private forecast = new StockoutForecast();
 
   constructor(db: D1Database) {
     this.db = db;
   }
 
+  /** The bootstrap forecast, populated by getInventoryWithVelocity. */
+  getForecast(): StockoutForecast {
+    return this.forecast;
+  }
+
   /**
-   * Get inventory with sales velocity data
+   * Inventory with bootstrap-derived stockout risk over the next horizon days.
+   * Daily sales over the lookback window are aggregated in SQL, then resampled
+   * with replacement in JS to estimate P(demand >= stock).
    */
   async getInventoryWithVelocity(): Promise<InventoryWithVelocity[]> {
-    const result = await this.db.prepare(`
-      SELECT
-        i.slug,
-        i.name,
-        i.stock_count,
-        i.min_threshold,
-        i.stock_count - i.min_threshold as stock_above_min,
-        COALESCE(SUM(CASE
-          WHEN l.change_type IN ('sold_b2c', 'sold_b2b') AND l.created_at > strftime('%s', 'now', '-7 days') * 1000
-          THEN ABS(l.quantity) ELSE 0
-        END), 0) as sold_7d,
-        COALESCE(SUM(CASE
-          WHEN l.change_type IN ('sold_b2c', 'sold_b2b') AND l.created_at > strftime('%s', 'now', '-14 days') * 1000
-          THEN ABS(l.quantity) ELSE 0
-        END), 0) as sold_14d,
-        COALESCE(SUM(CASE
-          WHEN l.change_type IN ('sold_b2c', 'sold_b2b') AND l.created_at > strftime('%s', 'now', '-30 days') * 1000
-          THEN ABS(l.quantity) ELSE 0
-        END), 0) as sold_30d
-      FROM inventory i
-      LEFT JOIN inventory_log l ON l.inventory_id = i.id
-      GROUP BY i.id
-    `).all<InventoryWithVelocity>();
+    const inventoryResult = await this.db.prepare(`
+      SELECT id, slug, name, stock_count, min_threshold
+      FROM inventory
+    `).all<{ id: number; slug: string; name: string; stock_count: number; min_threshold: number }>();
 
-    return result.results.map(row => {
-      // Weighted blend: recent sales matter more than older ones
-      const velocity = row.sold_7d > 0 || row.sold_14d > 0 || row.sold_30d > 0
-        ? Math.round(((row.sold_7d / 7) * 0.6 + (row.sold_14d / 14) * 0.3 + (row.sold_30d / 30) * 0.1) * 100) / 100
-        : 0;
+    const dailyResult = await this.db.prepare(`
+      SELECT
+        l.inventory_id,
+        CAST(l.created_at / ${MS_PER_DAY} AS INTEGER) as day_bucket,
+        SUM(ABS(l.quantity)) as daily_sold
+      FROM inventory_log l
+      WHERE l.change_type IN ('sold_b2c', 'sold_b2b')
+        AND l.created_at > strftime('%s', 'now', '-${FORECAST_LOOKBACK_DAYS} days') * 1000
+      GROUP BY l.inventory_id, day_bucket
+    `).all<{ inventory_id: number; day_bucket: number; daily_sold: number }>();
+
+    const todayBucket = Math.floor(Date.now() / MS_PER_DAY);
+    const startBucket = todayBucket - (FORECAST_LOOKBACK_DAYS - 1);
+
+    const salesByInventory = new Map<number, number[]>();
+    for (const row of dailyResult.results) {
+      const idx = row.day_bucket - startBucket;
+      if (idx < 0 || idx >= FORECAST_LOOKBACK_DAYS) continue;
+      let arr = salesByInventory.get(row.inventory_id);
+      if (!arr) {
+        arr = new Array(FORECAST_LOOKBACK_DAYS).fill(0);
+        salesByInventory.set(row.inventory_id, arr);
+      }
+      arr[idx] = row.daily_sold;
+    }
+
+    return inventoryResult.results.map(item => {
+      const dailySales = salesByInventory.get(item.id) ?? new Array(FORECAST_LOOKBACK_DAYS).fill(0);
+
+      this.forecast.fit(item.slug, dailySales);
+      const stockout_risk = this.forecast.riskAtStock(item.slug, item.stock_count);
+
+      let total = 0;
+      let daysWithSales = 0;
+      for (const v of dailySales) {
+        total += v;
+        if (v > 0) daysWithSales++;
+      }
+      const daily_velocity = Math.round((total / FORECAST_LOOKBACK_DAYS) * 100) / 100;
+      const days_until_stockout = computeStockout(item.stock_count, daily_velocity);
+      const confidence = confidenceFromDaysWithSales(daysWithSales);
+
       return {
-        ...row,
-        daily_velocity: velocity,
-        days_until_stockout: velocity > 0
-          ? Math.round((row.stock_count / velocity) * 10) / 10
-          : 999
+        slug: item.slug,
+        name: item.name,
+        stock_count: item.stock_count,
+        min_threshold: item.min_threshold,
+        daily_velocity,
+        days_until_stockout,
+        stockout_risk,
+        confidence,
+        days_with_sales: daysWithSales
       };
     });
   }
@@ -93,7 +133,7 @@ async getAllPrintersWithQueuedJobs(): Promise<Printer[]> {
       pm.name as module_name,
       pj.status as job_status
     FROM printers p
-    LEFT JOIN print_jobs pj ON pj.printer_id = p.id AND pj.status = 'queued'
+    LEFT JOIN print_jobs pj ON pj.printer_id = p.id AND pj.status IN ('queued', 'printing')
     LEFT JOIN print_modules pm ON pj.module_id = pm.id
     ORDER BY p.id, pj.id
   `).all();
@@ -148,8 +188,9 @@ async getAdjustedInventoryContext(modules: ModuleContext[]): Promise<AIRecommend
       if (!module || !module.inventory_slug) continue;
       const inv = inventoryMap.get(module.inventory_slug);
       if (inv) {
-        // Add the objects_per_print to stock_count
         inv.stock_count += module.objects_per_print;
+        inv.days_until_stockout = computeStockout(inv.stock_count, inv.daily_velocity);
+        inv.stockout_risk = this.forecast.riskAtStock(inv.slug, inv.stock_count);
       }
     }
   }

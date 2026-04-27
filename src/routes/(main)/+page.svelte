@@ -1,13 +1,14 @@
 <script lang="ts">
   import type { PageData } from './$types';
-  import type { GridCell } from '$lib/types';
+  import type { GridCell, SpoolSuggestion } from '$lib/types';
   import p1sImage from '$lib/assets/p1s.png';
   import h2sImage from '$lib/assets/H2S.png';
   import { enhance } from '$app/forms';
   import { onMount, onDestroy } from 'svelte';
-  import { writable } from 'svelte/store';
+  import { writable, get } from 'svelte/store';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
   import { quickStartMode, autoStartMode } from '$lib/stores/autoQueueStore';
+  import { fileHandlerEnabled, directPrinterEnabled, printerPiEnabled } from '$lib/stores/connectionToggles';
   import { isDesktop } from '$lib/stores/desktop';
   import type { TransportMode } from '$lib/types';
 
@@ -58,24 +59,32 @@
   $: now = $nowStore;
   let tickerInterval: ReturnType<typeof setInterval>;
   onMount(async () => {
+    // Restore start queue from localStorage
+    const restored = loadStartQueue();
+    if (restored.length > 0) {
+      startQueue = restored;
+      dispatchNextStart();
+    }
+
     tickerInterval = setInterval(() => { nowStore.set(Date.now()); }, 5000);
+
+    const piOn = get(printerPiEnabled);
+    const directOn = get(directPrinterEnabled);
 
     for (const printer of data.printers as any[]) {
       if (!printer.printer_serial) continue;
       const transport = effectiveTransport(printer);
       if (transport === 'pi') {
-        // Pi-mode: use polling (existing path)
-        startPiPolling(printer.printer_serial);
+        if (piOn) startPiPolling(printer.printer_serial);
       } else {
         // Direct-mode: subscribe via Tauri MQTT + still start Pi polling as fallback
-        // so the printer shows up in status even before first MQTT event
-        startPiPolling(printer.printer_serial);
-        await subscribeDirectPrinter(printer);
+        if (piOn) startPiPolling(printer.printer_serial);
+        if (directOn) await subscribeDirectPrinter(printer);
       }
     }
 
     // Listen for Tauri MQTT status events
-    if ($isDesktop) {
+    if ($isDesktop && directOn) {
       const stateLabels: Record<string, string> = {
         IDLE: 'Idle', PREPARE: 'Preparing…', RUNNING: 'Printing', PAUSE: 'Paused', FINISH: 'Done', FAILED: 'Failed',
       };
@@ -137,6 +146,7 @@
   });
 
   async function openFileLocally(filePath: string, moduleName: string, printerId: number) {
+    if (!get(fileHandlerEnabled)) return false;
     return await fileHandlerStore.openFile(filePath, moduleName, printerId);
   }
 
@@ -161,7 +171,8 @@
   /** Effective transport for a given printer — resolved at runtime. */
   function effectiveTransport(printer: any): 'direct' | 'pi' {
     const t: TransportMode = printer.transport ?? 'auto';
-    const canDirect = $isDesktop && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
+    const directEnabled = get(directPrinterEnabled);
+    const canDirect = directEnabled && $isDesktop && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
     if (t === 'direct' && canDirect) return 'direct';
     if (t === 'pi') return 'pi';
     // auto: prefer direct in desktop, fall back to pi
@@ -284,9 +295,43 @@
   $: startingSerials = new Set(startQueue.map(e => e.printer.printer_serial));
   $: startQueueTotal = startQueue.length;
 
+  const START_QUEUE_KEY = 'printfarm_start_queue';
+  type StoredQueueEntry = { printerId: number; moduleId: number; enqueuedAt: number; startedAt: number | null };
+
+  function saveStartQueue() {
+    try {
+      const serializable: StoredQueueEntry[] = startQueue.map(e => ({
+        printerId: e.printer.id,
+        moduleId: e.module.id,
+        enqueuedAt: e.enqueuedAt,
+        startedAt: e.startedAt,
+      }));
+      localStorage.setItem(START_QUEUE_KEY, JSON.stringify(serializable));
+    } catch {}
+  }
+
+  function loadStartQueue(): StartQueueEntry[] {
+    try {
+      const raw = localStorage.getItem(START_QUEUE_KEY);
+      if (!raw) return [];
+      const stored: StoredQueueEntry[] = JSON.parse(raw);
+      return stored
+        .map(s => {
+          const printer = (data.printers as any[]).find(p => p.id === s.printerId);
+          const module = (data.printModules as any[]).find(m => m.id === s.moduleId);
+          if (!printer || !module) return null;
+          return { printer, module, enqueuedAt: s.enqueuedAt, startedAt: s.startedAt } as StartQueueEntry;
+        })
+        .filter((e): e is StartQueueEntry => e !== null);
+    } catch {
+      return [];
+    }
+  }
+
   function enqueueStart(module: any, printer: any) {
     closePrinterModal();
     startQueue = [...startQueue, { printer, module, enqueuedAt: Date.now(), startedAt: null }];
+    saveStartQueue();
     if (startQueue.length === 1) dispatchNextStart();
   }
 
@@ -294,6 +339,7 @@
     if (startQueue.length === 0) return;
     startQueue[0] = { ...startQueue[0], startedAt: Date.now() };
     startQueue = [...startQueue];
+    saveStartQueue();
     const { module, printer } = startQueue[0];
     startQueueTimeout = setTimeout(advanceStartQueue, 120_000);
     const hasPi = module.file_stored_on_pi && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
@@ -347,6 +393,7 @@
   function advanceStartQueue() {
     if (startQueueTimeout) { clearTimeout(startQueueTimeout); startQueueTimeout = null; }
     startQueue = startQueue.slice(1);
+    saveStartQueue();
     if (startQueue.length > 0) {
       dispatchNextStart();
     }
@@ -844,7 +891,21 @@
 	}
   // Modal handlers
 
-  let suggestedSpoolSuggestion: { preset_id: number; preset_name: string; reason: string } | null = null;
+  let suggestedSpools: SpoolSuggestion[] = [];
+
+  $: orderedSpoolPresets = (() => {
+    const presets = data.spoolPresets ?? [];
+    if (presets.length === 0) return [] as Array<{ preset: typeof presets[number]; suggestion: SpoolSuggestion | null }>;
+    const suggestionByPreset = new Map<number, SpoolSuggestion>();
+    suggestedSpools.forEach(s => suggestionByPreset.set(s.preset_id, s));
+    const suggested = suggestedSpools
+      .map(s => ({ preset: presets.find(p => p.id === s.preset_id), suggestion: s }))
+      .filter((x): x is { preset: typeof presets[number]; suggestion: SpoolSuggestion } => !!x.preset);
+    const unsuggested = presets
+      .filter(p => !suggestionByPreset.has(p.id))
+      .map(p => ({ preset: p, suggestion: null as SpoolSuggestion | null }));
+    return [...suggested, ...unsuggested];
+  })();
 
   async function handleLoadSpool() {
     if (!selectedPrinter?.id) {
@@ -853,35 +914,14 @@
     }
 
     try {
-        // Call AI suggestion endpoint (may return object or primitive)
         const resp = await fetch(
         `/api/ai-recommendations?type=spool&printerId=${selectedPrinter.id}`
         );
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const body = await resp.json();
 
-        // Normalize into suggestion object or null
-        let suggestion = null;
-        if (body === null) {
-          suggestion = null;
-        } else if (typeof body === 'object' && body !== null) {
-          const id = Number(body.preset_id ?? body.id ?? body.presetId);
-          if (Number.isInteger(id)) {
-            suggestion = {
-              preset_id: id,
-              preset_name: String(body.preset_name ?? body.name ?? ''),
-              reason: String(body.reason ?? '')
-            };
-          }
-        } else {
-          const id = Number(body);
-          if (Number.isInteger(id)) {
-            suggestion = { preset_id: id, preset_name: '', reason: '' };
-          }
-        }
-
-        suggestedSpoolSuggestion = suggestion;
-        if (suggestion) selectedPresetId = suggestion.preset_id;
+        suggestedSpools = Array.isArray(body) ? body : [];
+        if (suggestedSpools[0]) selectedPresetId = suggestedSpools[0].preset_id;
     } catch (err) {
         console.error('Failed to fetch spool suggestion:', err);
     } finally {
@@ -989,15 +1029,6 @@
     </div>
     <div class="flex items-center gap-6">
       <div class="flex items-center gap-4 text-sm text-zinc-400 dark:text-zinc-500 font-light tracking-wide">
-        <span class="flex items-center gap-2">
-          <span class="text-zinc-900 dark:text-zinc-100 font-medium tabular-nums">{data.printers.length}</span>
-          <span>Printers</span>
-        </span>
-        <span class="w-px h-4 bg-zinc-200 dark:bg-zinc-800"></span>
-        <span class="flex items-center gap-2">
-          <span class="text-zinc-900 dark:text-zinc-100 font-medium tabular-nums">{data.activePrintJobs.length}</span>
-          <span>Active</span>
-        </span>
       </div>
     </div>
   </div>
@@ -1921,24 +1952,10 @@
             </button>
           </div>
 
-          <!-- Suggested Spool (if any) -->
-          {#if suggestedSpoolSuggestion}
-            {@const sugg = suggestedSpoolSuggestion}
-            <div class="mb-6 p-5 rounded-xl border border-emerald-500/15 bg-emerald-500/5 flex items-start justify-between gap-4">
-              <div>
-                <div class="text-xs text-zinc-400 dark:text-zinc-500 tracking-wide uppercase mb-1">Suggested Spool</div>
-                <div class="text-zinc-900 dark:text-zinc-100 font-medium">{sugg.preset_name || `Preset #${sugg.preset_id}`}</div>
-                {#if sugg.reason}
-                  <div class="text-xs text-zinc-400 dark:text-zinc-600 mt-1.5">{sugg.reason}</div>
-                {/if}
-              </div>
-            </div>
-          {/if}
-
-          <!-- Spool Presets Grid -->
-          {#if data.spoolPresets && data.spoolPresets.length > 0}
+          <!-- Spool Presets Grid (suggested ones first, in priority order) -->
+          {#if orderedSpoolPresets.length > 0}
             <div class="grid grid-cols-2 gap-4">
-              {#each data.spoolPresets as preset}
+              {#each orderedSpoolPresets as { preset, suggestion } (preset.id)}
                 <button
                   type="button"
                   onclick={() => selectSpoolPreset(preset.id)}
@@ -1969,6 +1986,9 @@
                         <span class="text-zinc-400 dark:text-zinc-600">Cost</span>
                         <span class="text-emerald-500 dark:text-emerald-400 tabular-nums">${preset.cost.toFixed(2)}</span>
                       </div>
+                    {/if}
+                    {#if suggestion?.reason}
+                      <div class="text-xs text-zinc-400 dark:text-zinc-600 mt-3 pt-3 border-t border-zinc-200/60 dark:border-[#1a1a22]">{suggestion.reason}</div>
                     {/if}
                   </div>
                 </button>

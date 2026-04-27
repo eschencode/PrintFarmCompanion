@@ -25,7 +25,8 @@ export const load: PageServerLoad = async ({ platform }) => {
         topModules: [],
         printerUtilization: [],
         moduleBreakdown: { last30Days: {}, thisMonth: {}, last90Days: {} },
-        utilizationScores: null
+        utilizationScores: null,
+        failureAnalysis: null
       },
       inventoryStats: null,
       shopifyStats: null
@@ -605,6 +606,106 @@ function buildModuleBreakdown(jobs: any[]) {
     last90Days: computeUtilization(printers, printJobs, allDowntime, ninetyDaysAgo, now, now)
   };
 
+  // ── Failure Analysis (per time period) ──────────────────────────────────────
+  function buildFailureAnalysis(jobs: typeof printJobs) {
+    const completed = jobs.filter(j => j.status !== 'printing');
+    const failed = jobs.filter(j => j.status === 'failed');
+    const totalCompleted = completed.length;
+    const totalFailed = failed.length;
+    const failureRate = totalCompleted > 0
+      ? Math.round((totalFailed / totalCompleted) * 1000) / 10
+      : 0;
+
+    // Wasted material + cost
+    let wastedMaterial = 0;
+    let wastedCost = 0;
+    failed.forEach(j => {
+      const w = j.actual_weight || 0;
+      wastedMaterial += w;
+      const spool = spools.find(s => s.id === j.spool_id);
+      if (spool?.cost && spool.initial_weight) {
+        wastedCost += w * (spool.cost / spool.initial_weight);
+      }
+    });
+
+    // By reason
+    const reasonMap = new Map<string, number>();
+    failed.forEach(j => {
+      const r = j.failure_reason || 'Unknown';
+      reasonMap.set(r, (reasonMap.get(r) || 0) + 1);
+    });
+    const byReason = [...reasonMap.entries()]
+      .map(([reason, count]) => ({ reason, count, pct: totalFailed > 0 ? Math.round((count / totalFailed) * 1000) / 10 : 0 }))
+      .sort((a, b) => b.count - a.count);
+
+    // By printer
+    const printerMap = new Map<number, { name: string; total: number; failed: number; reasons: Map<string, number> }>();
+    completed.forEach(j => {
+      if (!j.printer_id) return;
+      if (!printerMap.has(j.printer_id)) {
+        const p = printers.find(pr => pr.id === j.printer_id);
+        printerMap.set(j.printer_id, { name: p?.name || `#${j.printer_id}`, total: 0, failed: 0, reasons: new Map() });
+      }
+      const e = printerMap.get(j.printer_id)!;
+      e.total++;
+      if (j.status === 'failed') {
+        e.failed++;
+        const r = j.failure_reason || 'Unknown';
+        e.reasons.set(r, (e.reasons.get(r) || 0) + 1);
+      }
+    });
+    const byPrinter = [...printerMap.values()]
+      .map(p => ({
+        name: p.name,
+        total: p.total,
+        failed: p.failed,
+        failureRate: p.total > 0 ? Math.round((p.failed / p.total) * 1000) / 10 : 0,
+        topReason: p.reasons.size > 0 ? [...p.reasons.entries()].sort((a, b) => b[1] - a[1])[0][0] : null
+      }))
+      .sort((a, b) => b.failureRate - a.failureRate);
+
+    // By module (only modules with 2+ completed prints)
+    const moduleMap = new Map<string, { total: number; failed: number; reasons: Map<string, number> }>();
+    completed.forEach(j => {
+      const name = j.module_name || j.name || 'Unknown';
+      if (!moduleMap.has(name)) moduleMap.set(name, { total: 0, failed: 0, reasons: new Map() });
+      const e = moduleMap.get(name)!;
+      e.total++;
+      if (j.status === 'failed') {
+        e.failed++;
+        const r = j.failure_reason || 'Unknown';
+        e.reasons.set(r, (e.reasons.get(r) || 0) + 1);
+      }
+    });
+    const byModule = [...moduleMap.entries()]
+      .filter(([, d]) => d.total >= 2)
+      .map(([name, d]) => ({
+        name,
+        total: d.total,
+        failed: d.failed,
+        failureRate: d.total > 0 ? Math.round((d.failed / d.total) * 1000) / 10 : 0,
+        topReason: d.reasons.size > 0 ? [...d.reasons.entries()].sort((a, b) => b[1] - a[1])[0][0] : null
+      }))
+      .sort((a, b) => b.failureRate - a.failureRate);
+
+    return {
+      totalCompleted,
+      totalFailed,
+      failureRate,
+      wastedMaterial: Math.round(wastedMaterial),
+      wastedCost: Math.round(wastedCost * 100) / 100,
+      byReason,
+      byPrinter,
+      byModule
+    };
+  }
+
+  const failureAnalysis = {
+    last30Days: buildFailureAnalysis(last30DaysJobs),
+    thisMonth:  buildFailureAnalysis(thisMonthJobs),
+    last90Days: buildFailureAnalysis(last90DaysJobs)
+  };
+
   const stats = {
     totalPrints,
     successfulPrints,
@@ -620,7 +721,8 @@ function buildModuleBreakdown(jobs: any[]) {
     printerUtilization,
     moduleBreakdown,
     setCosts,
-    utilizationScores
+    utilizationScores,
+    failureAnalysis
   };
 
   // Inventory & Shopify stats

@@ -63,14 +63,15 @@
       
       console.log('📦 3mf Archive contents:', allFiles);
       
-      // Try to get the file path from the File object
+      // In desktop mode the file is saved automatically during upload,
+      // so we just show a placeholder. In browser mode, suggest a path.
       let suggestedLocalPath: string | null = null;
-      
-      if ('webkitRelativePath' in f && (f as any).webkitRelativePath) {
+
+      if (window.__IS_DESKTOP__) {
+        suggestedLocalPath = '(saved automatically on upload)';
+      } else if ('webkitRelativePath' in f && (f as any).webkitRelativePath) {
         suggestedLocalPath = (f as any).webkitRelativePath.replace(/\/[^/]*$/, '');
-      }
-      
-      if (!suggestedLocalPath) {
+      } else {
         suggestedLocalPath = `/Users/linus/Documents/3d-models/${f.name.replace(/\.3mf$/i, '')}/${f.name}`;
       }
 
@@ -336,6 +337,21 @@
       } catch (piErr) {
         // Pi endpoint unreachable or returned non-JSON — continue without Pi
         console.warn('[Pi] Upload skipped:', piErr);
+      }
+
+      // ── Step 1.5: Save file locally in desktop mode ─────────────────────────────
+      if (window.__IS_DESKTOP__ && currentFile) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const bytes = new Uint8Array(await currentFile.arrayBuffer());
+          const localPath = await invoke<string>('save_module_file', {
+            fileName: currentFile.name,
+            data: Array.from(bytes),
+          });
+          previewData.localFileHandlerPath = localPath;
+        } catch (e) {
+          console.warn('[Desktop] Local file save failed:', e);
+        }
       }
 
       // ── Step 2: Save metadata to D1 ──────────────────────────────────────────────

@@ -4,13 +4,15 @@
   import { goto } from '$app/navigation';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
   import { quickStartMode, autoStartMode } from '$lib/stores/autoQueueStore';
+  import { fileHandlerEnabled, directPrinterEnabled, printerPiEnabled } from '$lib/stores/connectionToggles';
+  import { isDesktop } from '$lib/stores/desktop';
   import { enhance } from '$app/forms';
   import { onMount } from 'svelte';
 
   let activeSection = 'printer-models';
 
   onMount(() => {
-    const ids = ['printer-models','printers','spool-presets','grid-presets','shopify','sku-mappings','file-handler','auto-queue'];
+    const ids = ['printer-models','printers','spool-presets','grid-presets','shopify','sku-mappings','connections','auto-queue'];
     const observers = ids.map(id => {
       const el = document.getElementById(id);
       if (!el) return null;
@@ -27,14 +29,23 @@
   export let data: PageData;
   export let form: ActionData;
 
-  // Subscribe to store
+  // Subscribe to stores
   $: fileHandlerState = $fileHandlerStore;
   $: qsMode = $quickStartMode;
   $: asMode = $autoStartMode;
+  $: fhEnabled = $fileHandlerEnabled;
+  $: dpEnabled = $directPrinterEnabled;
+  $: piEnabled = $printerPiEnabled;
+  $: desktop = $isDesktop;
 
   let fileHandlerToken = '';
-  let testingConnection = false;
-  let connectionStatus: 'untested' | 'success' | 'failed' = 'untested';
+
+  // Per-connection test state
+  let testStatus: Record<string, { testing: boolean; result: 'untested' | 'success' | 'failed' }> = {
+    fileHandler: { testing: false, result: 'untested' },
+    directPrinter: { testing: false, result: 'untested' },
+    printerPi: { testing: false, result: 'untested' },
+  };
 
   // Shopify sync state
   let syncingShopify = false;
@@ -339,23 +350,45 @@ function populateFields() {
 
   function saveFileHandlerToken() {
     fileHandlerStore.setToken(fileHandlerToken);
-    connectionStatus = 'untested';
-    alert('✅ Token saved! Connection will be tested automatically.');
+    testStatus = { ...testStatus, fileHandler: { testing: false, result: 'untested' } };
   }
 
-  async function testConnection() {
-    if (!fileHandlerToken) {
-      alert('⚠️ Please enter a token first');
+  async function testFileHandler() {
+    if (!desktop && !fileHandlerToken) return;
+    testStatus = { ...testStatus, fileHandler: { testing: true, result: 'untested' } };
+    const connected = await fileHandlerStore.testConnection();
+    testStatus = { ...testStatus, fileHandler: { testing: false, result: connected ? 'success' : 'failed' } };
+  }
+
+  async function testDirectPrinter() {
+    testStatus = { ...testStatus, directPrinter: { testing: true, result: 'untested' } };
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      if (typeof invoke === 'function') {
+        testStatus = { ...testStatus, directPrinter: { testing: false, result: 'success' } };
+      } else {
+        testStatus = { ...testStatus, directPrinter: { testing: false, result: 'failed' } };
+      }
+    } catch {
+      testStatus = { ...testStatus, directPrinter: { testing: false, result: 'failed' } };
+    }
+  }
+
+  async function testPrinterPi() {
+    const printers = data.printers as any[];
+    const serial = printers.find((p: any) => p.printer_serial)?.printer_serial;
+    if (!serial) {
+      testStatus = { ...testStatus, printerPi: { testing: false, result: 'failed' } };
       return;
     }
-
-    testingConnection = true;
-    connectionStatus = 'untested';
-
-    const connected = await fileHandlerStore.testConnection();
-
-    connectionStatus = connected ? 'success' : 'failed';
-    testingConnection = false;
+    testStatus = { ...testStatus, printerPi: { testing: true, result: 'untested' } };
+    try {
+      const res = await fetch(`/api/pi/status?serial=${serial}`);
+      const d = await res.json() as { pi_available?: boolean };
+      testStatus = { ...testStatus, printerPi: { testing: false, result: d.pi_available ? 'success' : 'failed' } };
+    } catch {
+      testStatus = { ...testStatus, printerPi: { testing: false, result: 'failed' } };
+    }
   }
 
   // ✅ Update image preview when selection changes
@@ -381,7 +414,7 @@ function populateFields() {
         { id: 'grid-presets',   label: 'Grid Presets' },
         { id: 'shopify',        label: 'Shopify' },
         { id: 'sku-mappings',   label: 'SKU Mappings' },
-        { id: 'file-handler',   label: 'File Handler' },
+        { id: 'connections',    label: 'Connections' },
         { id: 'auto-queue',     label: 'Auto Queue' },
       ] as section}
         <a
@@ -419,6 +452,27 @@ function populateFields() {
       </a>
       <h1 class="text-[2rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 leading-none">Settings</h1>
       <p class="text-zinc-400 dark:text-zinc-500 text-sm mt-2">Configure your workspace</p>
+
+      <div class="flex flex-wrap items-center gap-2 mt-5">
+        <a
+          href="/recommendations"
+          onclick={(e) => { e.preventDefault(); goto('/recommendations'); }}
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-[#161616] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-[#1f1f1f] transition-colors"
+        >
+         
+          Recommendations Logs
+        </a>
+        <a
+          href="/logs"
+          onclick={(e) => { e.preventDefault(); goto('/logs'); }}
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-[#161616] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-[#1f1f1f] transition-colors"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+          </svg>
+          Pi Logs
+        </a>
+      </div>
     </div>
 
     <!-- Flash messages -->
@@ -1163,47 +1217,167 @@ function populateFields() {
       </div>
     </div>
 
-    <!-- ── Local File Handler ────────────────────────────────────────── -->
-    <div id="file-handler" class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-10">
+    <!-- ── Connections ─────────────────────────────────────────────────── -->
+    <div id="connections" class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-10">
       <div class="px-5 py-4 border-b border-zinc-50 dark:border-[#1a1a1a]">
-        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Local File Handler</p>
-        <p class="text-xs text-zinc-400 mt-1">Enables automatic file opening on print start</p>
+        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Connections</p>
+        <p class="text-xs text-zinc-400 mt-1">Enable or disable the services your print farm relies on. Each connection can be tested independently.</p>
       </div>
-      <div class="p-5 space-y-4">
-        <div>
-          <label for="fileHandlerToken" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Auth Token</label>
-          <input
-            type="text"
-            id="fileHandlerToken"
-            bind:value={fileHandlerToken}
-            placeholder="Paste your AUTH_TOKEN here"
-            class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 font-mono focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-          />
-          <p class="text-xs text-zinc-400 mt-1.5">Stored locally in your browser. Find it in <code class="bg-zinc-100 dark:bg-[#1a1a1a] px-1.5 py-0.5 rounded">local-file-handler/.env</code></p>
-        </div>
-        <div class="flex gap-2">
-          <button onclick={saveFileHandlerToken}
-            class="flex-1 h-9 rounded-lg text-sm font-medium bg-white text-zinc-900 hover:bg-zinc-100 transition-colors">
-            Save Token
-          </button>
-          <button onclick={testConnection} disabled={testingConnection || !fileHandlerToken}
-            class="flex-1 h-9 rounded-lg text-sm font-medium border border-zinc-200 dark:border-[#262626] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1a1a1a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-            {testingConnection ? 'Testing...' : 'Test Connection'}
-          </button>
-        </div>
-        {#if connectionStatus === 'success'}
-          <div class="flex items-center gap-2.5 px-3.5 py-2.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 rounded-lg">
-            <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-            </svg>
-            <span class="text-sm text-emerald-700 dark:text-emerald-400">Connection successful — file handler is online</span>
+      <div class="p-5 space-y-5">
+
+        <!-- ── File Handler ── -->
+        <div class="rounded-lg border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden">
+          <div class="px-4 py-3 bg-zinc-50 dark:bg-[#161616] flex items-center justify-between gap-4">
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">File Handler</p>
+            </div>
+            <button
+              type="button"
+              onclick={() => fileHandlerEnabled.toggle()}
+              class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {fhEnabled ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'}"
+              role="switch"
+              aria-checked={fhEnabled}
+            >
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform {fhEnabled ? 'translate-x-6' : 'translate-x-1'}"></span>
+            </button>
           </div>
-        {:else if connectionStatus === 'failed'}
-          <div class="px-3.5 py-2.5 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 rounded-lg">
-            <p class="text-sm font-medium text-red-700 dark:text-red-400">Connection failed</p>
-            <p class="text-xs text-zinc-400 mt-1">Make sure the handler is running: <code class="bg-zinc-100 dark:bg-[#1a1a1a] px-1.5 py-0.5 rounded">cd local-file-handler && bun run start</code></p>
+          <div class="px-4 py-3 space-y-3">
+            <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              {desktop
+                ? 'A bundled background service that automatically opens .3mf files in Bambu Studio when you start a print. Runs as a sidecar inside the desktop app — no setup needed.'
+                : 'A local server that opens .3mf files in Bambu Studio when you start a print. Requires a running file handler process and an auth token to connect.'}
+            </p>
+            {#if fhEnabled}
+              {#if !desktop}
+                <div>
+                  <label for="fileHandlerToken" class="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 block mb-1">Auth Token</label>
+                  <div class="flex gap-2">
+                    <input
+                      type="text"
+                      id="fileHandlerToken"
+                      bind:value={fileHandlerToken}
+                      placeholder="Paste token from file handler"
+                      class="flex-1 h-8 bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-md px-2.5 text-xs text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 font-mono focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+                    />
+                    <button onclick={saveFileHandlerToken}
+                      class="h-8 px-3 rounded-md text-[11px] font-medium border border-zinc-200 dark:border-[#262626] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1a1a1a] transition-colors">
+                      Save
+                    </button>
+                  </div>
+                </div>
+              {/if}
+              <div class="flex items-center gap-2.5">
+                <button onclick={testFileHandler}
+                  disabled={testStatus.fileHandler.testing || (!desktop && !fileHandlerToken)}
+                  class="h-7 px-2.5 rounded-md text-[11px] font-medium border border-zinc-200 dark:border-[#262626] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1a1a1a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  {testStatus.fileHandler.testing ? 'Testing...' : 'Test'}
+                </button>
+                {#if testStatus.fileHandler.result === 'success'}
+                  <span class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                    Connected
+                  </span>
+                {:else if testStatus.fileHandler.result === 'failed'}
+                  <span class="inline-flex items-center gap-1 text-[11px] font-medium text-red-600 dark:text-red-400">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                    Offline
+                  </span>
+                {/if}
+              </div>
+            {/if}
           </div>
-        {/if}
+        </div>
+
+        <!-- ── Direct Printer (Tauri MQTT) ── -->
+        <div class="rounded-lg border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden">
+          <div class="px-4 py-3 bg-zinc-50 dark:bg-[#161616] flex items-center justify-between gap-4">
+            <div class="flex-1 min-w-0 flex items-center gap-2">
+              <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Direct Printer</p>
+              {#if !desktop}
+                <span class="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">Desktop only</span>
+              {/if}
+            </div>
+            <button
+              type="button"
+              onclick={() => directPrinterEnabled.toggle()}
+              disabled={!desktop}
+              class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {!desktop ? 'opacity-40 cursor-not-allowed' : ''} {dpEnabled && desktop ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'}"
+              role="switch"
+              aria-checked={dpEnabled && desktop}
+            >
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform {dpEnabled && desktop ? 'translate-x-6' : 'translate-x-1'}"></span>
+            </button>
+          </div>
+          <div class="px-4 py-3 space-y-3">
+            <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              Connects directly to Bambu Lab printers on your local network using MQTT. Enables real-time status updates, sending print commands, and starting prints without going through the Pi. Requires the desktop app — each printer needs an IP, serial number, and access code configured.
+            </p>
+            {#if dpEnabled && desktop}
+              <div class="flex items-center gap-2.5">
+                <button onclick={testDirectPrinter}
+                  disabled={testStatus.directPrinter.testing}
+                  class="h-7 px-2.5 rounded-md text-[11px] font-medium border border-zinc-200 dark:border-[#262626] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1a1a1a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  {testStatus.directPrinter.testing ? 'Testing...' : 'Test'}
+                </button>
+                {#if testStatus.directPrinter.result === 'success'}
+                  <span class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                    Tauri bridge available
+                  </span>
+                {:else if testStatus.directPrinter.result === 'failed'}
+                  <span class="inline-flex items-center gap-1 text-[11px] font-medium text-red-600 dark:text-red-400">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                    Tauri bridge unavailable
+                  </span>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        </div>
+
+        <!-- ── Printer Pi ── -->
+        <div class="rounded-lg border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden">
+          <div class="px-4 py-3 bg-zinc-50 dark:bg-[#161616] flex items-center justify-between gap-4">
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Printer Pi</p>
+            </div>
+            <button
+              type="button"
+              onclick={() => printerPiEnabled.toggle()}
+              class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {piEnabled ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'}"
+              role="switch"
+              aria-checked={piEnabled}
+            >
+              <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform {piEnabled ? 'translate-x-6' : 'translate-x-1'}"></span>
+            </button>
+          </div>
+          <div class="px-4 py-3 space-y-3">
+            <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              A Raspberry Pi on your local network acts as a bridge to your printers via a Cloudflare tunnel. Handles file uploads, print commands, and live status polling. Works from any browser — no desktop app needed. Requires PI_TUNNEL_URL to be configured on the server.
+            </p>
+            {#if piEnabled}
+              <div class="flex items-center gap-2.5">
+                <button onclick={testPrinterPi}
+                  disabled={testStatus.printerPi.testing}
+                  class="h-7 px-2.5 rounded-md text-[11px] font-medium border border-zinc-200 dark:border-[#262626] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1a1a1a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  {testStatus.printerPi.testing ? 'Testing...' : 'Test'}
+                </button>
+                {#if testStatus.printerPi.result === 'success'}
+                  <span class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                    Pi reachable
+                  </span>
+                {:else if testStatus.printerPi.result === 'failed'}
+                  <span class="inline-flex items-center gap-1 text-[11px] font-medium text-red-600 dark:text-red-400">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                    {(data.printers as any[]).some((p: any) => p.printer_serial) ? 'Pi unreachable' : 'No printers with serial configured'}
+                  </span>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        </div>
+
       </div>
     </div>
 
