@@ -452,6 +452,27 @@ function populateFields() {
       </a>
       <h1 class="text-[2rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 leading-none">Settings</h1>
       <p class="text-zinc-400 dark:text-zinc-500 text-sm mt-2">Configure your workspace</p>
+
+      <div class="flex flex-wrap items-center gap-2 mt-5">
+        <a
+          href="/recommendations"
+          onclick={(e) => { e.preventDefault(); goto('/recommendations'); }}
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-[#161616] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-[#1f1f1f] transition-colors"
+        >
+         
+          Recommendations Logs
+        </a>
+        <a
+          href="/logs"
+          onclick={(e) => { e.preventDefault(); goto('/logs'); }}
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-[#161616] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-[#1f1f1f] transition-colors"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+          </svg>
+          Pi Logs
+        </a>
+      </div>
     </div>
 
     <!-- Flash messages -->

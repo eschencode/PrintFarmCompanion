@@ -55,6 +55,15 @@
   <div class="max-w-6xl mx-auto px-6 py-10 space-y-10">
 
     <header>
+      <a
+        href="/"
+        class="inline-flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 mb-4 tracking-wide transition-colors"
+      >
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+        </svg>
+        Dashboard
+      </a>
       <h1 class="text-2xl font-medium tracking-tight">Recommendation debug</h1>
       <p class="text-sm text-zinc-500 dark:text-zinc-500 mt-1">
         Inputs, computation, and bucketing for the AI recommendation pipeline.
