@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PageData } from './$types';
-  import type { GridCell } from '$lib/types';
+  import type { GridCell, SpoolSuggestion } from '$lib/types';
   import p1sImage from '$lib/assets/p1s.png';
   import h2sImage from '$lib/assets/H2S.png';
   import { enhance } from '$app/forms';
@@ -891,7 +891,21 @@
 	}
   // Modal handlers
 
-  let suggestedSpoolSuggestion: { preset_id: number; preset_name: string; reason: string } | null = null;
+  let suggestedSpools: SpoolSuggestion[] = [];
+
+  $: orderedSpoolPresets = (() => {
+    const presets = data.spoolPresets ?? [];
+    if (presets.length === 0) return [] as Array<{ preset: typeof presets[number]; suggestion: SpoolSuggestion | null }>;
+    const suggestionByPreset = new Map<number, SpoolSuggestion>();
+    suggestedSpools.forEach(s => suggestionByPreset.set(s.preset_id, s));
+    const suggested = suggestedSpools
+      .map(s => ({ preset: presets.find(p => p.id === s.preset_id), suggestion: s }))
+      .filter((x): x is { preset: typeof presets[number]; suggestion: SpoolSuggestion } => !!x.preset);
+    const unsuggested = presets
+      .filter(p => !suggestionByPreset.has(p.id))
+      .map(p => ({ preset: p, suggestion: null as SpoolSuggestion | null }));
+    return [...suggested, ...unsuggested];
+  })();
 
   async function handleLoadSpool() {
     if (!selectedPrinter?.id) {
@@ -900,35 +914,14 @@
     }
 
     try {
-        // Call AI suggestion endpoint (may return object or primitive)
         const resp = await fetch(
         `/api/ai-recommendations?type=spool&printerId=${selectedPrinter.id}`
         );
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const body = await resp.json();
 
-        // Normalize into suggestion object or null
-        let suggestion = null;
-        if (body === null) {
-          suggestion = null;
-        } else if (typeof body === 'object' && body !== null) {
-          const id = Number(body.preset_id ?? body.id ?? body.presetId);
-          if (Number.isInteger(id)) {
-            suggestion = {
-              preset_id: id,
-              preset_name: String(body.preset_name ?? body.name ?? ''),
-              reason: String(body.reason ?? '')
-            };
-          }
-        } else {
-          const id = Number(body);
-          if (Number.isInteger(id)) {
-            suggestion = { preset_id: id, preset_name: '', reason: '' };
-          }
-        }
-
-        suggestedSpoolSuggestion = suggestion;
-        if (suggestion) selectedPresetId = suggestion.preset_id;
+        suggestedSpools = Array.isArray(body) ? body : [];
+        if (suggestedSpools[0]) selectedPresetId = suggestedSpools[0].preset_id;
     } catch (err) {
         console.error('Failed to fetch spool suggestion:', err);
     } finally {
@@ -1036,15 +1029,6 @@
     </div>
     <div class="flex items-center gap-6">
       <div class="flex items-center gap-4 text-sm text-zinc-400 dark:text-zinc-500 font-light tracking-wide">
-        <span class="flex items-center gap-2">
-          <span class="text-zinc-900 dark:text-zinc-100 font-medium tabular-nums">{data.printers.length}</span>
-          <span>Printers</span>
-        </span>
-        <span class="w-px h-4 bg-zinc-200 dark:bg-zinc-800"></span>
-        <span class="flex items-center gap-2">
-          <span class="text-zinc-900 dark:text-zinc-100 font-medium tabular-nums">{data.activePrintJobs.length}</span>
-          <span>Active</span>
-        </span>
       </div>
     </div>
   </div>
@@ -1968,24 +1952,10 @@
             </button>
           </div>
 
-          <!-- Suggested Spool (if any) -->
-          {#if suggestedSpoolSuggestion}
-            {@const sugg = suggestedSpoolSuggestion}
-            <div class="mb-6 p-5 rounded-xl border border-emerald-500/15 bg-emerald-500/5 flex items-start justify-between gap-4">
-              <div>
-                <div class="text-xs text-zinc-400 dark:text-zinc-500 tracking-wide uppercase mb-1">Suggested Spool</div>
-                <div class="text-zinc-900 dark:text-zinc-100 font-medium">{sugg.preset_name || `Preset #${sugg.preset_id}`}</div>
-                {#if sugg.reason}
-                  <div class="text-xs text-zinc-400 dark:text-zinc-600 mt-1.5">{sugg.reason}</div>
-                {/if}
-              </div>
-            </div>
-          {/if}
-
-          <!-- Spool Presets Grid -->
-          {#if data.spoolPresets && data.spoolPresets.length > 0}
+          <!-- Spool Presets Grid (suggested ones first, in priority order) -->
+          {#if orderedSpoolPresets.length > 0}
             <div class="grid grid-cols-2 gap-4">
-              {#each data.spoolPresets as preset}
+              {#each orderedSpoolPresets as { preset, suggestion } (preset.id)}
                 <button
                   type="button"
                   onclick={() => selectSpoolPreset(preset.id)}
@@ -2016,6 +1986,9 @@
                         <span class="text-zinc-400 dark:text-zinc-600">Cost</span>
                         <span class="text-emerald-500 dark:text-emerald-400 tabular-nums">${preset.cost.toFixed(2)}</span>
                       </div>
+                    {/if}
+                    {#if suggestion?.reason}
+                      <div class="text-xs text-zinc-400 dark:text-zinc-600 mt-3 pt-3 border-t border-zinc-200/60 dark:border-[#1a1a22]">{suggestion.reason}</div>
                     {/if}
                   </div>
                 </button>

@@ -362,7 +362,7 @@ export interface InventoryItem {
   description: string | null;
   image_path: string | null;
   stock_count: number;
-  min_threshold: number; //not used maybe implemt if ai recomendations fail
+  min_threshold: number;
   total_added: number;
   total_sold: number;
   total_sold_b2c: number;
@@ -390,12 +390,11 @@ export interface InventoryWithVelocity {
   name: string;
   stock_count: number;
   min_threshold: number;
-  stock_above_min: number;
-  sold_7d: number;
-  sold_14d: number;
-  sold_30d: number;
   daily_velocity: number;
   days_until_stockout: number;
+  stockout_risk: number;
+  confidence: 'high' | 'medium' | 'low';
+  days_with_sales: number;
 }
 
 
@@ -439,11 +438,29 @@ export interface AIRecommendationContext {
 
 export type InventoryPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW';
 
+export interface SpoolSuggestion {
+  preset_id: number;
+  preset_name: string;
+  priority: InventoryPriority;
+  inventory_slug: string;
+  inventory_name: string;
+  stock_count: number;
+  daily_velocity: number;
+  days_until_stockout: number;
+  module_id: number;
+  module_name: string;
+  reason: string;
+}
+
 export interface PrioritizedInventoryItem {
   slug: string;
   name: string;
   stock_count: number;
+  min_threshold: number;
   daily_velocity: number;
+  days_until_stockout: number;
+  stockout_risk: number;
+  confidence: 'high' | 'medium' | 'low';
   priority: InventoryPriority;
 }
 
