@@ -966,14 +966,15 @@ export async function getActivePrintJobs(db: D1Database) {
 
 export async function getAllPrintJobs(db: D1Database) {
   const result = await db.prepare(`
-    SELECT 
+    SELECT
       pj.*,
-      pm.name as module_name
+      pm.name as module_name,
+      pm.expected_time
     FROM print_jobs pj
     LEFT JOIN print_modules pm ON pj.module_id = pm.id
     ORDER BY pj.start_time DESC
   `).all();
-  
+
   return result.results || [];
 }
 

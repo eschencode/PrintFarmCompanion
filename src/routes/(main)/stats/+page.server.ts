@@ -121,77 +121,66 @@ export const load: PageServerLoad = async ({ platform }) => {
   // ✅ NEW: Module breakdown by time periods
   const ninetyDaysAgo = now - (90 * 24 * 60 * 60 * 1000);
 
-  // Fetch all downtime events overlapping the 90-day window (widest period we compute)
-  const allDowntime = await db.getAllDowntimeInRange(database, ninetyDaysAgo, now);
-
   function computeUtilization(
     printersArr: typeof printers,
-    jobsArr: typeof printJobs,
-    downtimeArr: typeof allDowntime,
+    jobsArr: any[],
     periodStart: number,
-    periodEnd: number,
-    nowMs: number
+    periodEnd: number
   ) {
     const periodMs = periodEnd - periodStart;
     const periodDays = periodMs / (24 * 60 * 60 * 1000);
+    const jobDurationMs = (j: any) => (j.expected_time || 0) * 60 * 1000;
 
     const perPrinterRaw = printersArr.map(p => {
-      const printerJobs = jobsArr.filter(j =>
+      const printerJobs = jobsArr.filter((j: any) =>
         j.printer_id === p.id &&
         (j.status === 'success' || j.status === 'failed') &&
-        j.end_time != null &&
-        j.start_time < periodEnd &&
-        j.end_time > periodStart
+        j.start_time >= periodStart && j.start_time < periodEnd
       );
 
-      const printingMs = printerJobs.reduce((sum, j) => {
-        const start = Math.max(j.start_time, periodStart);
-        const end = Math.min(j.end_time!, periodEnd);
-        return sum + Math.max(0, end - start);
-      }, 0);
-
-      const printerDowntime = downtimeArr.filter(d => d.printer_id === p.id);
-      const repairMs = printerDowntime.reduce((sum, d) => {
-        const start = Math.max(d.started_at, periodStart);
-        const end = Math.min(d.ended_at ?? nowMs, periodEnd);
-        return sum + Math.max(0, end - start);
-      }, 0);
-
-      const availableMs = Math.max(0, periodMs - repairMs);
-      const idleMs = Math.max(0, availableMs - printingMs);
-      const utilizationPct = availableMs > 0 ? (printingMs / availableMs) * 100 : 0;
+      const successMs = printerJobs
+        .filter((j: any) => j.status === 'success')
+        .reduce((sum: number, j: any) => sum + jobDurationMs(j), 0);
+      const failedMs = printerJobs
+        .filter((j: any) => j.status === 'failed')
+        .reduce((sum: number, j: any) => sum + jobDurationMs(j), 0);
+      const printingMs = successMs + failedMs;
+      const idleMs = Math.max(0, periodMs - printingMs);
+      const utilizationPct = periodMs > 0 ? (printingMs / periodMs) * 100 : 0;
+      const failedPct = periodMs > 0 ? (failedMs / periodMs) * 100 : 0;
 
       return {
         printerId: p.id,
         name: p.name,
+        successMs,
+        failedMs,
         printingMs,
         idleMs,
-        repairMs,
-        availableMs,
+        successHrs: Math.round((successMs / 3_600_000) * 10) / 10,
+        failedHrs: Math.round((failedMs / 3_600_000) * 10) / 10,
         printingHrs: Math.round((printingMs / 3_600_000) * 10) / 10,
         idleHrs: Math.round((idleMs / 3_600_000) * 10) / 10,
-        repairHrs: Math.round((repairMs / 3_600_000) * 10) / 10,
-        utilizationPct: Math.round(utilizationPct * 10) / 10
+        utilizationPct: Math.round(utilizationPct * 10) / 10,
+        failedPct: Math.round(failedPct * 10) / 10
       };
     });
 
-    const farmPrintingMs = perPrinterRaw.reduce((s, p) => s + p.printingMs, 0);
-    const farmAvailableMs = perPrinterRaw.reduce((s, p) => s + p.availableMs, 0);
-    const farmRepairMs = perPrinterRaw.reduce((s, p) => s + p.repairMs, 0);
-    const farmIdleMs = perPrinterRaw.reduce((s, p) => s + p.idleMs, 0);
+    const farmSuccessMs = perPrinterRaw.reduce((s, p) => s + p.successMs, 0);
+    const farmFailedMs = perPrinterRaw.reduce((s, p) => s + p.failedMs, 0);
+    const farmPrintingMs = farmSuccessMs + farmFailedMs;
+    const farmAvailableMs = periodMs * printersArr.length;
+    const farmIdleMs = Math.max(0, farmAvailableMs - farmPrintingMs);
     const farmUtilizationPct = farmAvailableMs > 0
       ? Math.round((farmPrintingMs / farmAvailableMs) * 1000) / 10
       : 0;
 
     // Average job duration for growth potential
-    const periodJobs = jobsArr.filter(j =>
+    const periodJobs = jobsArr.filter((j: any) =>
       (j.status === 'success' || j.status === 'failed') &&
-      j.end_time != null &&
       j.start_time >= periodStart && j.start_time < periodEnd
     );
-    const durations = periodJobs.map(j => j.end_time! - j.start_time);
-    const avgJobDurationMs = durations.length > 0
-      ? durations.reduce((s, d) => s + d, 0) / durations.length
+    const avgJobDurationMs = periodJobs.length > 0
+      ? periodJobs.reduce((s: number, j: any) => s + jobDurationMs(j), 0) / periodJobs.length
       : 0;
 
     const dailyPrintingMs = farmPrintingMs / periodDays;
@@ -203,13 +192,14 @@ export const load: PageServerLoad = async ({ platform }) => {
     const additionalHrsPerDay = Math.round((additionalMsPerDay / 3_600_000) * 10) / 10;
 
     // Strip internal ms fields from perPrinter output
-    const perPrinter = perPrinterRaw.map(({ printingMs: _a, idleMs: _b, repairMs: _c, availableMs: _d, ...rest }) => rest);
+    const perPrinter = perPrinterRaw.map(({ successMs: _a, failedMs: _b, printingMs: _c, idleMs: _d, ...rest }) => rest);
 
     return {
       farmUtilizationPct,
+      totalSuccessHrs: Math.round((farmSuccessMs / 3_600_000) * 10) / 10,
+      totalFailedHrs: Math.round((farmFailedMs / 3_600_000) * 10) / 10,
       totalPrintingHrs: Math.round((farmPrintingMs / 3_600_000) * 10) / 10,
       totalIdleHrs: Math.round((farmIdleMs / 3_600_000) * 10) / 10,
-      totalRepairHrs: Math.round((farmRepairMs / 3_600_000) * 10) / 10,
       perPrinter,
       growthPotential: {
         targetPct: 80,
@@ -601,9 +591,9 @@ function buildModuleBreakdown(jobs: any[]) {
   };
 
   const utilizationScores = {
-    last30Days: computeUtilization(printers, printJobs, allDowntime, thirtyDaysAgo, now, now),
-    thisMonth:  computeUtilization(printers, printJobs, allDowntime, thisMonthStart, now, now),
-    last90Days: computeUtilization(printers, printJobs, allDowntime, ninetyDaysAgo, now, now)
+    last30Days: computeUtilization(printers, printJobs, thirtyDaysAgo, now),
+    thisMonth:  computeUtilization(printers, printJobs, thisMonthStart, now),
+    last90Days: computeUtilization(printers, printJobs, ninetyDaysAgo, now)
   };
 
   // ── Failure Analysis (per time period) ──────────────────────────────────────
