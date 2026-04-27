@@ -68,6 +68,9 @@
   let failureReasonsChart: HTMLDivElement;
   let printerUtilizationChart: HTMLDivElement;
   let utilizationStackedChartEl: HTMLDivElement;
+  let utilizationPieChartEl!: HTMLDivElement;
+  let utilizationStackedChart: echarts.ECharts | undefined;
+  let utilizationPieChart: echarts.ECharts | undefined;
   let stockFlowChart: HTMLDivElement;
   let shopifyOrdersChart: HTMLDivElement;
 
@@ -94,6 +97,25 @@
   // Reactive statements with proper typing
   $: sortedSpools = [...(data.spools || [])].sort((a, b) => b.id - a.id);
   $: currentUtil = (data.stats.utilizationScores as any)?.[selectedTimeRange] ?? null;
+  $: if (currentUtil) {
+    utilizationStackedChart?.setOption({
+      yAxis: { data: currentUtil.perPrinter.map((p: any) => p.name) },
+      series: [
+        { data: currentUtil.perPrinter.map((p: any) => p.successHrs) },
+        { data: currentUtil.perPrinter.map((p: any) => p.failedHrs) },
+        { data: currentUtil.perPrinter.map((p: any) => p.idleHrs) }
+      ]
+    });
+    utilizationPieChart?.setOption({
+      series: [{
+        data: [
+          { value: currentUtil.totalSuccessHrs, name: 'Successful', itemStyle: { color: '#22c55e' } },
+          { value: currentUtil.totalFailedHrs,  name: 'Failed',     itemStyle: { color: '#ef4444' } },
+          { value: currentUtil.totalIdleHrs,    name: 'Idle',       itemStyle: { color: '#3f3f46' } }
+        ]
+      }]
+    });
+  }
   $: currentFailures = (data.stats as any).failureAnalysis?.[selectedTimeRange] ?? null;
   $: currentBreakdown = (data.stats.moduleBreakdown?.[selectedTimeRange] || {}) as Record<string, CategoryData>;
   $: currentSets = data.stats.setCosts?.[selectedTimeRange] || {};
@@ -472,14 +494,13 @@
     });
 
     // Farm Utilization Stacked Bar Chart
-    let utilizationStackedChart: echarts.ECharts | undefined;
     if (data.stats.utilizationScores && utilizationStackedChartEl) {
-      const util = (data.stats.utilizationScores as any).last30Days;
+      const util = (data.stats.utilizationScores as any)[selectedTimeRange];
       if (util?.perPrinter?.length) {
         const printerNames = util.perPrinter.map((p: any) => p.name);
-        const printingData = util.perPrinter.map((p: any) => p.printingHrs);
+        const successData = util.perPrinter.map((p: any) => p.successHrs);
+        const failedData = util.perPrinter.map((p: any) => p.failedHrs);
         const idleData = util.perPrinter.map((p: any) => p.idleHrs);
-        const repairData = util.perPrinter.map((p: any) => p.repairHrs);
         const chartHeight = Math.max(240, printerNames.length * 52);
         utilizationStackedChartEl.style.height = `${chartHeight}px`;
         utilizationStackedChart = echarts.init(utilizationStackedChartEl);
@@ -496,7 +517,7 @@
             }
           },
           legend: {
-            data: ['Printing', 'Idle', 'Repair'],
+            data: ['Successful', 'Failed', 'Idle'],
             textStyle: { color: textColor },
             top: 0
           },
@@ -514,10 +535,39 @@
             axisLabel: { color: textColor }
           },
           series: [
-            { name: 'Printing', type: 'bar', stack: 'total', data: printingData, itemStyle: { color: '#3b82f6' } },
-            { name: 'Idle',     type: 'bar', stack: 'total', data: idleData,     itemStyle: { color: '#3f3f46' } },
-            { name: 'Repair',   type: 'bar', stack: 'total', data: repairData,   itemStyle: { color: '#ef4444' } }
+            { name: 'Successful', type: 'bar', stack: 'total', data: successData, itemStyle: { color: '#22c55e' } },
+            { name: 'Failed',     type: 'bar', stack: 'total', data: failedData,  itemStyle: { color: '#ef4444' } },
+            { name: 'Idle',       type: 'bar', stack: 'total', data: idleData,    itemStyle: { color: '#3f3f46' } }
           ]
+        });
+      }
+    }
+
+    // Farm Utilization Pie Chart (Successful / Failed / Idle)
+    if (data.stats.utilizationScores && utilizationPieChartEl) {
+      const util = (data.stats.utilizationScores as any)[selectedTimeRange];
+      if (util) {
+        utilizationPieChart = echarts.init(utilizationPieChartEl);
+        utilizationPieChart.setOption({
+          tooltip: {
+            trigger: 'item',
+            backgroundColor: tooltipBg,
+            borderColor: tooltipBorder,
+            textStyle: { color: tooltipText },
+            formatter: '{b}: {c}h ({d}%)'
+          },
+          series: [{
+            type: 'pie',
+            radius: ['55%', '80%'],
+            avoidLabelOverlap: false,
+            label: { show: false },
+            labelLine: { show: false },
+            data: [
+              { value: util.totalSuccessHrs, name: 'Successful', itemStyle: { color: '#22c55e' } },
+              { value: util.totalFailedHrs,  name: 'Failed',     itemStyle: { color: '#ef4444' } },
+              { value: util.totalIdleHrs,    name: 'Idle',       itemStyle: { color: '#3f3f46' } }
+            ]
+          }]
         });
       }
     }
@@ -710,6 +760,7 @@
         xAxis: { ...axisUpdate, ...splitLineUpdate },
         yAxis: axisUpdate
       });
+      utilizationPieChart?.setOption({ tooltip: tooltipUpdate });
     };
 
     colorSchemeQuery.addEventListener('change', handleColorSchemeChange);
@@ -723,6 +774,7 @@
       failureChart?.resize();
       utilizationChart.resize();
       utilizationStackedChart?.resize();
+      utilizationPieChart?.resize();
       stockFlowChartInstance?.resize();
       shopifyChartInstance?.resize();
     };
@@ -740,6 +792,7 @@
       failureChart?.dispose();
       utilizationChart.dispose();
       utilizationStackedChart?.dispose();
+      utilizationPieChart?.dispose();
       stockFlowChartInstance?.dispose();
       shopifyChartInstance?.dispose();
     };
@@ -1198,29 +1251,32 @@
                 {/each}
               </div>
             </div>
-            <div class="flex items-end gap-1 mb-1">
-              <p class="text-5xl font-light tabular-nums text-zinc-900 dark:text-zinc-50 leading-none">
-                {currentUtil.farmUtilizationPct.toFixed(1)}
-              </p>
-              <span class="text-xl text-zinc-400 dark:text-zinc-600 mb-0.5">%</span>
-            </div>
-            <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-5">of available time used for printing</p>
-            <!-- Hours breakdown -->
-            <div class="flex gap-6 border-t border-zinc-200 dark:border-[#262626] pt-4 mt-auto">
+            <div class="flex items-center gap-6 mb-1">
               <div>
-                <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Printing</p>
-                <p class="text-lg font-light text-blue-500 tabular-nums">{currentUtil.totalPrintingHrs}h</p>
+                <div class="flex items-end gap-1">
+                  <p class="text-5xl font-light tabular-nums text-zinc-900 dark:text-zinc-50 leading-none">
+                    {currentUtil.farmUtilizationPct.toFixed(1)}
+                  </p>
+                  <span class="text-xl text-zinc-400 dark:text-zinc-600 mb-0.5">%</span>
+                </div>
+                <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-1">of available time used for printing</p>
+              </div>
+              <div bind:this={utilizationPieChartEl} class="ml-auto" style="width: 120px; height: 120px;"></div>
+            </div>
+            <!-- Hours breakdown -->
+            <div class="flex gap-6 border-t border-zinc-200 dark:border-[#262626] pt-4 mt-5">
+              <div>
+                <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Successful</p>
+                <p class="text-lg font-light text-emerald-500 tabular-nums">{currentUtil.totalSuccessHrs}h</p>
+              </div>
+              <div>
+                <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Failed</p>
+                <p class="text-lg font-light text-red-400 tabular-nums">{currentUtil.totalFailedHrs}h</p>
               </div>
               <div>
                 <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Idle</p>
                 <p class="text-lg font-light text-zinc-400 tabular-nums">{currentUtil.totalIdleHrs}h</p>
               </div>
-              {#if currentUtil.totalRepairHrs > 0}
-                <div>
-                  <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Repair</p>
-                  <p class="text-lg font-light text-red-400 tabular-nums">{currentUtil.totalRepairHrs}h</p>
-                </div>
-              {/if}
               <div class="ml-auto text-right">
                 {#if currentUtil.growthPotential.additionalPrintsPerDay > 0}
                   <p class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-0.5">Growth Potential</p>
