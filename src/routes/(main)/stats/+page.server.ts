@@ -1,6 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
 import { getAllInventoryItems } from '$lib/inventory_handler';
+import { buildSpoolUsage } from '$lib/utils/statsCompute';
 
 export const load: PageServerLoad = async ({ platform }) => {
   const database = platform?.env?.DB;
@@ -24,9 +25,10 @@ export const load: PageServerLoad = async ({ platform }) => {
         failureReasons: [],
         topModules: [],
         printerUtilization: [],
-        moduleBreakdown: { last30Days: {}, thisMonth: {}, last90Days: {} },
+        moduleBreakdown: { last30Days: {}, thisMonth: {}, last90Days: {}, thisWeek: {}, last7Days: {} },
         utilizationScores: null,
-        failureAnalysis: null
+        failureAnalysis: null,
+        spoolUsage: { last30Days: [], thisMonth: [], last90Days: [], thisWeek: [], last7Days: [] }
       },
       inventoryStats: null,
       shopifyStats: null
@@ -214,13 +216,25 @@ export const load: PageServerLoad = async ({ platform }) => {
   const thisMonthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getTime();
   const thisMonthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59).getTime();
 
-  // ✅ ADD THIS: Filter jobs by time periods (only successful prints)
- // ✅ UPDATED: Include BOTH successful AND failed prints for cost tracking
-const allCompletedJobs = printJobs.filter(j => j.status === 'success' || j.status === 'failed');
+  // This week: Monday 00:00:00 to now
+  const thisWeekStart = (() => {
+    const d = new Date(now);
+    const dayOfWeek = d.getDay(); // 0=Sun, 1=Mon, …
+    d.setDate(d.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  })();
 
-const last30DaysJobs = allCompletedJobs.filter(j => j.start_time >= thirtyDaysAgo);
-const thisMonthJobs = allCompletedJobs.filter(j => j.start_time >= thisMonthStart && j.start_time <= thisMonthEnd);
-const last90DaysJobs = allCompletedJobs.filter(j => j.start_time >= ninetyDaysAgo);
+  // Last 7 days: rolling 7-day window
+  const last7DaysStart = now - 7 * 24 * 60 * 60 * 1000;
+
+  const allCompletedJobs = printJobs.filter(j => j.status === 'success' || j.status === 'failed');
+
+  const last30DaysJobs = allCompletedJobs.filter(j => j.start_time >= thirtyDaysAgo);
+  const thisMonthJobs  = allCompletedJobs.filter(j => j.start_time >= thisMonthStart && j.start_time <= thisMonthEnd);
+  const last90DaysJobs = allCompletedJobs.filter(j => j.start_time >= ninetyDaysAgo);
+  const thisWeekJobs   = allCompletedJobs.filter((j: any) => j.start_time >= thisWeekStart);
+  const last7DaysJobs  = allCompletedJobs.filter((j: any) => j.start_time >= last7DaysStart);
   // ✅ UPDATED: Helper to determine module category and subcategory
   function getModuleCategory(moduleName: string, imagePath: string | null): { category: string, subcategory: string | null } {
     const lowerName = moduleName.toLowerCase();
@@ -579,21 +593,27 @@ function buildModuleBreakdown(jobs: any[]) {
   // In the load function, after buildModuleBreakdown:
   const moduleBreakdown = {
     last30Days: buildModuleBreakdown(last30DaysJobs),
-    thisMonth: buildModuleBreakdown(thisMonthJobs),
-    last90Days: buildModuleBreakdown(last90DaysJobs)
+    thisMonth:  buildModuleBreakdown(thisMonthJobs),
+    last90Days: buildModuleBreakdown(last90DaysJobs),
+    thisWeek:   buildModuleBreakdown(thisWeekJobs),
+    last7Days:  buildModuleBreakdown(last7DaysJobs)
   };
 
-  // ✅ NEW: Calculate set costs for each time period
+  // Calculate set costs for each time period
   const setCosts = {
     last30Days: calculateSetCosts(last30DaysJobs, moduleBreakdown.last30Days),
-    thisMonth: calculateSetCosts(thisMonthJobs, moduleBreakdown.thisMonth),
-    last90Days: calculateSetCosts(last90DaysJobs, moduleBreakdown.last90Days)
+    thisMonth:  calculateSetCosts(thisMonthJobs,  moduleBreakdown.thisMonth),
+    last90Days: calculateSetCosts(last90DaysJobs, moduleBreakdown.last90Days),
+    thisWeek:   calculateSetCosts(thisWeekJobs,   moduleBreakdown.thisWeek),
+    last7Days:  calculateSetCosts(last7DaysJobs,  moduleBreakdown.last7Days)
   };
 
   const utilizationScores = {
-    last30Days: computeUtilization(printers, printJobs, thirtyDaysAgo, now),
-    thisMonth:  computeUtilization(printers, printJobs, thisMonthStart, now),
-    last90Days: computeUtilization(printers, printJobs, ninetyDaysAgo, now)
+    last30Days: computeUtilization(printers, printJobs, thirtyDaysAgo,    now),
+    thisMonth:  computeUtilization(printers, printJobs, thisMonthStart,    now),
+    last90Days: computeUtilization(printers, printJobs, ninetyDaysAgo,     now),
+    thisWeek:   computeUtilization(printers, printJobs, thisWeekStart,     now),
+    last7Days:  computeUtilization(printers, printJobs, last7DaysStart,    now)
   };
 
   // ── Failure Analysis (per time period) ──────────────────────────────────────
@@ -693,7 +713,17 @@ function buildModuleBreakdown(jobs: any[]) {
   const failureAnalysis = {
     last30Days: buildFailureAnalysis(last30DaysJobs),
     thisMonth:  buildFailureAnalysis(thisMonthJobs),
-    last90Days: buildFailureAnalysis(last90DaysJobs)
+    last90Days: buildFailureAnalysis(last90DaysJobs),
+    thisWeek:   buildFailureAnalysis(thisWeekJobs),
+    last7Days:  buildFailureAnalysis(last7DaysJobs)
+  };
+
+  const spoolUsage = {
+    last30Days: buildSpoolUsage(last30DaysJobs),
+    thisMonth:  buildSpoolUsage(thisMonthJobs),
+    last90Days: buildSpoolUsage(last90DaysJobs),
+    thisWeek:   buildSpoolUsage(thisWeekJobs),
+    last7Days:  buildSpoolUsage(last7DaysJobs)
   };
 
   const stats = {
@@ -712,7 +742,8 @@ function buildModuleBreakdown(jobs: any[]) {
     moduleBreakdown,
     setCosts,
     utilizationScores,
-    failureAnalysis
+    failureAnalysis,
+    spoolUsage
   };
 
   // Inventory & Shopify stats

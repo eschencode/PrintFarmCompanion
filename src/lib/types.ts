@@ -123,8 +123,12 @@ export interface SpoolPreset {
 export interface PrintJobExtended extends PrintJob {
   printer_name?: string;
   module_name?: string;
+  module_image_path?: string | null;
   expected_weight?: number;
   expected_time?: number;
+  /** Live progress percentage (0–100) reported by the Pi/MQTT bridge. */
+  progress?: number;
+  printer_serial?: string | null;
   printer_loaded_spool_id?: number | null;
   // Spool information
   spool_brand?: string;
@@ -268,6 +272,25 @@ export interface NewPrinter {
   name: string;
   model?: string | null;
   printer_model_id?: number | null;
+}
+
+/**
+ * Live status snapshot for one printer, received via Pi polling or Tauri MQTT events.
+ * Keyed by printer_serial in the dashboard's piStatusBySerial map.
+ */
+export interface PiStatus {
+  gcode_state: string;
+  progress: number;
+  layer_num: number;
+  total_layer_num: number;
+  /** Human-readable label derived from gcode_state and progress. */
+  label: string;
+  remaining_time?: number | null;
+  nozzle_temp?: number | null;
+  bed_temp?: number | null;
+  chamber_temp?: number | null;
+  subtask_name?: string | null;
+  gcode_file?: string | null;
 }
 
 /**
