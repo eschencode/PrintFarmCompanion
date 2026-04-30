@@ -4,11 +4,14 @@
   import { goto } from '$app/navigation';
   import { enhance } from '$app/forms';
   import * as echarts from 'echarts';
+  import ModuleBreakdown from '$lib/components/stats/ModuleBreakdown.svelte';
+  import TimeRangeSelector from '$lib/components/stats/TimeRangeSelector.svelte';
+  import { selectedTimeRange, customFrom, customTo } from '$lib/stores/timeRange';
+  import type { TimeRangeKey } from '$lib/stores/timeRange';
 
   export let data: PageData;
 
   // Type definitions for breakdown data structures
-  type TimeRange = 'last30Days' | 'thisMonth' | 'last90Days';
 
   interface ColorData {
     count: number;
@@ -63,26 +66,70 @@
   // Chart element references
   let printHistoryChart: HTMLDivElement;
   let materialUsageChart: HTMLDivElement;
-  let successRateChart: HTMLDivElement;
-  let topModulesChart: HTMLDivElement;
-  let failureReasonsChart: HTMLDivElement;
-  let printerUtilizationChart: HTMLDivElement;
   let utilizationStackedChartEl: HTMLDivElement;
   let utilizationPieChartEl!: HTMLDivElement;
   let utilizationStackedChart: echarts.ECharts | undefined;
   let utilizationPieChart: echarts.ECharts | undefined;
   let stockFlowChart: HTMLDivElement;
   let shopifyOrdersChart: HTMLDivElement;
+  let spoolUsageChart: HTMLDivElement;
+  let spoolUsageChartInstance: echarts.ECharts | undefined;
+
+  /** Converts a filament color name to a CSS color for chart bars. */
+  function spoolColorToCSS(name: string): string {
+    const map: Record<string, string> = {
+      black: '#27272a', schwarz: '#27272a',
+      white: '#e4e4e7', weiss: '#e4e4e7', 'weiß': '#e4e4e7',
+      red: '#ef4444', rot: '#ef4444',
+      blue: '#3b82f6', blau: '#3b82f6',
+      green: '#22c55e', grün: '#22c55e',
+      yellow: '#eab308', gelb: '#eab308',
+      orange: '#f97316',
+      purple: '#a855f7', lila: '#a855f7', violett: '#a855f7',
+      grey: '#71717a', gray: '#71717a', grau: '#71717a',
+      brown: '#92400e', braun: '#92400e',
+      pink: '#ec4899', rosa: '#ec4899',
+    };
+    return map[name.toLowerCase().trim()] ?? '#71717a';
+  }
+
+  function updateSpoolChart() {
+    if (!spoolUsageChartInstance) return;
+    const entries = currentSpoolUsage as any[];
+    if (!entries || entries.length === 0) {
+      spoolUsageChartInstance.setOption({ series: [{ data: [] }] });
+      return;
+    }
+    const labels = entries.map((e: any) => `${e.color} ${e.material}`).reverse();
+    const weights = entries.map((e: any) => e.weightUsed).reverse();
+    const colors = entries.map((e: any) => spoolColorToCSS(e.color)).reverse();
+    const isDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const tc = isDark ? '#a1a1aa' : '#737373';
+    spoolUsageChartInstance.setOption({
+      tooltip: {
+        trigger: 'axis', axisPointer: { type: 'shadow' },
+        formatter: (params: any[]) => {
+          const p = params[0];
+          const entry = entries[entries.length - 1 - p.dataIndex];
+          return `<b>${p.name}</b><br/>${p.value}g &nbsp;·&nbsp; ${entry?.printCount ?? ''} prints`;
+        }
+      },
+      grid: { left: 12, right: 24, top: 8, bottom: 8, containLabel: true },
+      xAxis: { type: 'value', axisLabel: { color: tc, formatter: (v: number) => `${v}g` }, splitLine: { lineStyle: { color: isDark ? '#262626' : '#f4f4f5' } } },
+      yAxis: { type: 'category', data: labels, axisLabel: { color: tc } },
+      series: [{
+        type: 'bar', data: weights,
+        itemStyle: { color: (params: any) => colors[params.dataIndex] },
+        barMaxWidth: 32
+      }]
+    }, true);
+  }
+
+  $: if (currentSpoolUsage) updateSpoolChart();
 
   // Toggle states
   let showSpools = false;
   let showPrintHistory = false;
-  let selectedTimeRange: TimeRange = 'last30Days';
-
-  // Expansion state - simple objects with direct updates (no async/debounce)
-  let expandedCategories: Record<string, boolean> = {};
-  let expandedSubcategories: Record<string, boolean> = {};
-  let expandedModules: Record<string, boolean> = {};
 
   // Edit spool state
   let editingSpoolId: number | null = null;
@@ -94,9 +141,35 @@
     cost: 0
   };
 
+  // Custom range: fetched from API when both dates are set
+  let customStats: any = null;
+  let customLoading = false;
+
+  async function fetchCustomStats(fromMs: number, toMs: number) {
+    customLoading = true;
+    try {
+      const res = await fetch(`/api/stats?from=${fromMs}&to=${toMs}`);
+      if (res.ok) customStats = await res.json();
+    } catch (e) {
+      console.error('Custom stats fetch failed:', e);
+    } finally {
+      customLoading = false;
+    }
+  }
+
+  // Trigger fetch when custom range dates are both set
+  $: if ($selectedTimeRange === 'custom' && $customFrom && $customTo) {
+    fetchCustomStats(new Date($customFrom).getTime(), new Date($customTo + 'T23:59:59').getTime());
+  }
+
+  // Active stats source: custom API result or pre-computed server data
+  $: activeStats = $selectedTimeRange === 'custom' ? customStats : null;
+
   // Reactive statements with proper typing
   $: sortedSpools = [...(data.spools || [])].sort((a, b) => b.id - a.id);
-  $: currentUtil = (data.stats.utilizationScores as any)?.[selectedTimeRange] ?? null;
+  $: currentUtil = $selectedTimeRange === 'custom'
+    ? (activeStats?.utilizationScores ?? null)
+    : (data.stats.utilizationScores as any)?.[$selectedTimeRange] ?? null;
   $: if (currentUtil) {
     utilizationStackedChart?.setOption({
       yAxis: { data: currentUtil.perPrinter.map((p: any) => p.name) },
@@ -116,83 +189,27 @@
       }]
     });
   }
-  $: currentFailures = (data.stats as any).failureAnalysis?.[selectedTimeRange] ?? null;
-  $: currentBreakdown = (data.stats.moduleBreakdown?.[selectedTimeRange] || {}) as Record<string, CategoryData>;
-  $: currentSets = data.stats.setCosts?.[selectedTimeRange] || {};
+  $: currentFailures = $selectedTimeRange === 'custom'
+    ? (activeStats?.failureAnalysis ?? null)
+    : (data.stats as any).failureAnalysis?.[$selectedTimeRange] ?? null;
+  $: currentBreakdown = ($selectedTimeRange === 'custom'
+    ? (activeStats?.moduleBreakdown ?? {})
+    : (data.stats.moduleBreakdown?.[$selectedTimeRange] || {})) as Record<string, CategoryData>;
+  $: currentSpoolUsage = $selectedTimeRange === 'custom'
+    ? (activeStats?.spoolUsage ?? [])
+    : (data.stats as any).spoolUsage?.[$selectedTimeRange] ?? [];
+  $: currentSets = data.stats.setCosts?.[$selectedTimeRange] || {};
   $: totalPrintsInRange = Object.values(currentBreakdown).reduce((sum, cat) => sum + (cat?.total || 0), 0);
   $: totalObjectsInRange = Object.values(currentBreakdown).reduce((sum, cat) => sum + (cat?.totalObjects || 0), 0);
 
-  function getTimeRangeLabel(range: TimeRange): string {
+  function getTimeRangeLabel(range: TimeRangeKey): string {
     switch(range) {
+      case 'thisWeek':   return 'This Week';
+      case 'last7Days':  return 'Last 7 Days';
+      case 'thisMonth':  return 'This Month';
       case 'last30Days': return 'Last 30 Days';
-      case 'thisMonth': return 'This Month';
       case 'last90Days': return 'Last 90 Days';
-    }
-  }
-
-  // ✅ SIMPLIFIED: Direct synchronous toggle - no async, no flags, no race conditions
-  function toggleCategory(categoryName: string) {
-    if (expandedCategories[categoryName]) {
-      // Collapse: remove this category and all its children
-      const newExpanded = { ...expandedCategories };
-      delete newExpanded[categoryName];
-      expandedCategories = newExpanded;
-
-      // Clean up children (subcategories and modules under this category)
-      const newSubcategories = { ...expandedSubcategories };
-      const newModules = { ...expandedModules };
-
-      Object.keys(newSubcategories).forEach(key => {
-        if (key.startsWith(`${categoryName}:`)) {
-          delete newSubcategories[key];
-        }
-      });
-      Object.keys(newModules).forEach(key => {
-        if (key.startsWith(`${categoryName}:`)) {
-          delete newModules[key];
-        }
-      });
-
-      expandedSubcategories = newSubcategories;
-      expandedModules = newModules;
-    } else {
-      // Expand this category
-      expandedCategories = { ...expandedCategories, [categoryName]: true };
-    }
-  }
-
-  function toggleSubcategory(categoryName: string, subcategoryName: string) {
-    const key = `${categoryName}:${subcategoryName}`;
-
-    if (expandedSubcategories[key]) {
-      // Collapse: remove this subcategory and its module children
-      const newSubcategories = { ...expandedSubcategories };
-      delete newSubcategories[key];
-      expandedSubcategories = newSubcategories;
-
-      // Clean up modules under this subcategory
-      const newModules = { ...expandedModules };
-      Object.keys(newModules).forEach(moduleKey => {
-        if (moduleKey.startsWith(`${key}:`)) {
-          delete newModules[moduleKey];
-        }
-      });
-      expandedModules = newModules;
-    } else {
-      // Expand this subcategory
-      expandedSubcategories = { ...expandedSubcategories, [key]: true };
-    }
-  }
-
-  function toggleModule(parentKey: string, moduleName: string) {
-    const key = `${parentKey}:${moduleName}`;
-
-    if (expandedModules[key]) {
-      const newModules = { ...expandedModules };
-      delete newModules[key];
-      expandedModules = newModules;
-    } else {
-      expandedModules = { ...expandedModules, [key]: true };
+      case 'custom':     return 'Custom';
     }
   }
 
@@ -338,164 +355,9 @@
       }]
     });
 
-    // Success Rate Pie Chart
-    const successChart = echarts.init(successRateChart);
-    successChart.setOption({
-      title: {
-        text: 'Print Success Rate',
-        textStyle: { color: textColor }
-      },
-      tooltip: {
-        trigger: 'item',
-        backgroundColor: tooltipBg,
-        borderColor: tooltipBorder,
-        textStyle: { color: tooltipText },
-        formatter: '{b}: {c} ({d}%)'
-      },
-      legend: {
-        orient: 'vertical',
-        right: '10%',
-        top: 'center',
-        textStyle: { color: textColor }
-      },
-      series: [{
-        type: 'pie',
-        radius: ['40%', '70%'],
-        center: ['35%', '50%'],
-        data: [
-          { value: data.stats.successfulPrints, name: 'Successful', itemStyle: { color: '#22c55e' } },
-          { value: data.stats.failedPrints, name: 'Failed', itemStyle: { color: '#ef4444' } }
-        ],
-        label: {
-          show: true,
-          formatter: '{b}: {d}%',
-          color: labelColor
-        }
-      }]
-    });
-
-    // Top Modules Bar Chart
-    const modulesChart = echarts.init(topModulesChart);
-    modulesChart.setOption({
-      title: {
-        text: 'Top 10 Printed Modules',
-        textStyle: { color: textColor }
-      },
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: tooltipBg,
-        borderColor: tooltipBorder,
-        textStyle: { color: tooltipText },
-        axisPointer: { type: 'shadow' }
-      },
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        containLabel: true
-      },
-      xAxis: {
-        type: 'value',
-        axisLine: { lineStyle: { color: axisColor } },
-        axisLabel: { color: textColor },
-        splitLine: { lineStyle: { color: gridColor } }
-      },
-      yAxis: {
-        type: 'category',
-        data: data.stats.topModules.map(m => m.name).reverse(),
-        axisLine: { lineStyle: { color: axisColor } },
-        axisLabel: { color: textColor }
-      },
-      series: [{
-        type: 'bar',
-        data: data.stats.topModules.map(m => m.value).reverse(),
-        itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#f59e0b' },
-            { offset: 1, color: '#fb923c' }
-          ])
-        }
-      }]
-    });
-
-    // Failure Reasons Pie Chart
-    let failureChart: echarts.ECharts | undefined;
-    if (data.stats.failureReasons.length > 0) {
-      failureChart = echarts.init(failureReasonsChart);
-      failureChart.setOption({
-        title: {
-          text: 'Failure Reasons',
-          textStyle: { color: textColor }
-        },
-        tooltip: {
-          trigger: 'item',
-          backgroundColor: tooltipBg,
-          borderColor: tooltipBorder,
-          textStyle: { color: tooltipText },
-          formatter: '{b}: {c} ({d}%)'
-        },
-        series: [{
-          type: 'pie',
-          radius: '60%',
-          data: data.stats.failureReasons,
-          label: {
-            show: true,
-            formatter: '{b}: {d}%',
-            color: labelColor
-          },
-          emphasis: {
-            itemStyle: {
-              shadowBlur: 10,
-              shadowOffsetX: 0,
-              shadowColor: 'rgba(0, 0, 0, 0.5)'
-            }
-          }
-        }]
-      });
-    }
-
-    // Printer Utilization Chart
-    const utilizationChart = echarts.init(printerUtilizationChart);
-    utilizationChart.setOption({
-      title: {
-        text: 'Printer Utilization (Total Hours)',
-        textStyle: { color: textColor }
-      },
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: tooltipBg,
-        borderColor: tooltipBorder,
-        textStyle: { color: tooltipText },
-        formatter: '{b}: {c}h'
-      },
-      grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        containLabel: true
-      },
-      xAxis: {
-        type: 'category',
-        data: data.stats.printerUtilization.map(p => p.name),
-        axisLine: { lineStyle: { color: axisColor } },
-        axisLabel: { color: textColor, rotate: 45 }
-      },
-      yAxis: {
-        type: 'value',
-        axisLine: { lineStyle: { color: axisColor } },
-        axisLabel: { color: textColor, formatter: '{value}h' },
-        splitLine: { lineStyle: { color: gridColor } }
-      },
-      series: [{
-        type: 'bar',
-        data: data.stats.printerUtilization.map(p => p.value),
-        itemStyle: { color: '#06b6d4' }
-      }]
-    });
-
     // Farm Utilization Stacked Bar Chart
     if (data.stats.utilizationScores && utilizationStackedChartEl) {
-      const util = (data.stats.utilizationScores as any)[selectedTimeRange];
+      const util = (data.stats.utilizationScores as any)[$selectedTimeRange];
       if (util?.perPrinter?.length) {
         const printerNames = util.perPrinter.map((p: any) => p.name);
         const successData = util.perPrinter.map((p: any) => p.successHrs);
@@ -525,7 +387,7 @@
           xAxis: {
             type: 'value',
             axisLine: { lineStyle: { color: axisColor } },
-            axisLabel: { color: textColor, formatter: '{value}h' },
+            axisLabel: { color: newTextColor, formatter: '{value}h' },
             splitLine: { lineStyle: { color: gridColor } }
           },
           yAxis: {
@@ -545,7 +407,7 @@
 
     // Farm Utilization Pie Chart (Successful / Failed / Idle)
     if (data.stats.utilizationScores && utilizationPieChartEl) {
-      const util = (data.stats.utilizationScores as any)[selectedTimeRange];
+      const util = (data.stats.utilizationScores as any)[$selectedTimeRange];
       if (util) {
         utilizationPieChart = echarts.init(utilizationPieChartEl);
         utilizationPieChart.setOption({
@@ -696,6 +558,12 @@
       });
     }
 
+    // Spool Usage Bar Chart (initialized after onMount; updated reactively)
+    if (spoolUsageChart) {
+      spoolUsageChartInstance = echarts.init(spoolUsageChart);
+      updateSpoolChart();
+    }
+
     // Update charts when color scheme changes
     const colorSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleColorSchemeChange = (e: MediaQueryListEvent) => {
@@ -731,29 +599,6 @@
         xAxis: axisUpdate,
         yAxis: { ...axisUpdate, ...splitLineUpdate }
       });
-      successChart.setOption({
-        title: { textStyle: { color: newTextColor } },
-        tooltip: tooltipUpdate,
-        legend: { textStyle: { color: newTextColor } },
-        series: [{ label: { color: newLabelColor } }]
-      });
-      modulesChart.setOption({
-        title: { textStyle: { color: newTextColor } },
-        tooltip: tooltipUpdate,
-        xAxis: { ...axisUpdate, ...splitLineUpdate },
-        yAxis: axisUpdate
-      });
-      failureChart?.setOption({
-        title: { textStyle: { color: newTextColor } },
-        tooltip: tooltipUpdate,
-        series: [{ label: { color: newLabelColor } }]
-      });
-      utilizationChart.setOption({
-        title: { textStyle: { color: newTextColor } },
-        tooltip: tooltipUpdate,
-        xAxis: axisUpdate,
-        yAxis: { ...axisUpdate, ...splitLineUpdate }
-      });
       utilizationStackedChart?.setOption({
         tooltip: tooltipUpdate,
         legend: { textStyle: { color: newTextColor } },
@@ -769,10 +614,6 @@
     const handleResize = () => {
       historyChart.resize();
       materialChart.resize();
-      successChart.resize();
-      modulesChart.resize();
-      failureChart?.resize();
-      utilizationChart.resize();
       utilizationStackedChart?.resize();
       utilizationPieChart?.resize();
       stockFlowChartInstance?.resize();
@@ -787,10 +628,7 @@
       colorSchemeQuery.removeEventListener('change', handleColorSchemeChange);
       historyChart.dispose();
       materialChart.dispose();
-      successChart.dispose();
-      modulesChart.dispose();
-      failureChart?.dispose();
-      utilizationChart.dispose();
+      spoolUsageChartInstance?.dispose();
       utilizationStackedChart?.dispose();
       utilizationPieChart?.dispose();
       stockFlowChartInstance?.dispose();
@@ -811,6 +649,9 @@
         ← Back to Dashboard
       </button>
     </div>
+
+    <!-- Global Time Range Selector -->
+    <TimeRangeSelector />
 
     <!-- Key Metrics Cards -->
     <div class="grid grid-cols-5 gap-4 mb-8">
@@ -836,6 +677,27 @@
         <p class="text-zinc-500 text-sm mb-1">Active Printers</p>
         <p class="text-3xl font-medium text-cyan-400">{data.printers.length}</p>
       </div>
+    </div>
+
+    <!-- Spool Usage Bar Chart -->
+    <div class="bg-white dark:bg-[#111] border border-zinc-100 dark:border-[#1e1e1e] rounded-xl p-6 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-lg font-medium text-zinc-900 dark:text-zinc-50">Filament Usage</h2>
+          <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">Weight consumed by color · material this period</p>
+        </div>
+        {#if customLoading}
+          <svg class="w-4 h-4 text-zinc-400 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+        {/if}
+      </div>
+      {#if currentSpoolUsage && currentSpoolUsage.length > 0}
+        <div bind:this={spoolUsageChart} style="width:100%; height:{Math.max(140, (currentSpoolUsage as any[]).length * 40)}px"></div>
+      {:else}
+        <p class="text-sm text-zinc-400 dark:text-zinc-600 text-center py-6">No filament data for this period.</p>
+      {/if}
     </div>
 
     <!-- Toggle Buttons Row -->
@@ -1236,20 +1098,6 @@
           <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6 flex flex-col">
             <div class="flex items-center justify-between mb-5">
               <p class="text-xs font-medium text-zinc-400 dark:text-zinc-600 tracking-wide uppercase">Farm Utilization</p>
-              <!-- Time Range Selector -->
-              <div class="flex gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5">
-                {#each ['last30Days', 'thisMonth', 'last90Days'] as range}
-                  <button
-                    on:click|stopPropagation={() => selectedTimeRange = range as TimeRange}
-                    class="px-3 py-1.5 rounded-md text-xs font-medium transition-all
-                           {selectedTimeRange === range
-                             ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                             : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50'}"
-                  >
-                    {getTimeRangeLabel(range as TimeRange)}
-                  </button>
-                {/each}
-              </div>
             </div>
             <div class="flex items-center gap-6 mb-1">
               <div>
@@ -1434,358 +1282,11 @@
       </div>
     {/if}
 
-    <!-- ✅ UPDATED: Module Production Breakdown Section -->
-    <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden">
-      <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-xl font-medium">Module Production Breakdown</h2>
-            <p class="text-sm text-zinc-500 mt-1">Detailed cost and production analysis by category</p>
-          </div>
-
-          <!-- Time Range Selector -->
-          <div class="flex gap-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
-            {#each ['last30Days', 'thisMonth', 'last90Days'] as range}
-              <button
-                on:click|stopPropagation={() => selectedTimeRange = range as TimeRange}
-                class="px-4 py-2 rounded-md text-sm font-medium transition-all
-                       {selectedTimeRange === range
-                         ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                         : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-50'}"
-              >
-                {getTimeRangeLabel(range as TimeRange)}
-              </button>
-            {/each}
-          </div>
-        </div>
-      </div>
-
-      <div class="p-6">
-        <!-- Total Count Header -->
-        <div class="mb-6 grid grid-cols-4 gap-4">
-          <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
-            <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Prints</p>
-            <p class="text-3xl font-medium text-zinc-900 dark:text-zinc-50">{totalPrintsInRange}</p>
-          </div>
-          <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
-            <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Objects</p>
-            <p class="text-3xl font-medium text-purple-400">{totalObjectsInRange}</p>
-          </div>
-          <!-- ✅ NEW: Total Weight -->
-          <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
-            <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Weight</p>
-            <p class="text-3xl font-medium text-blue-600 dark:text-blue-400">
-              {(Object.values(currentBreakdown).reduce((sum: number, cat: any) => sum + (cat.totalWeight || 0), 0) / 1000).toFixed(2)}kg
-            </p>
-          </div>
-          <!-- ✅ NEW: Total Cost -->
-          <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-200 dark:border-[#262626]">
-            <p class="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Cost</p>
-            <p class="text-3xl font-medium text-green-600 dark:text-green-400">
-              ${Object.values(currentBreakdown).reduce((sum: number, cat: any) => sum + (cat.totalCost || 0), 0).toFixed(2)}
-            </p>
-          </div>
-        </div>
-
-        <!-- Category Drill-Down List -->
-        {#if Object.keys(currentBreakdown).length > 0}
-          <div class="space-y-3">
-            {#each Object.entries(currentBreakdown).sort(([,a], [,b]) => b.total - a.total) as [categoryName, categoryData]}
-              {@const isCategoryExpanded = !!expandedCategories[categoryName]}
-              {@const categoryPercentage = ((categoryData.total / totalPrintsInRange) * 100).toFixed(1)}
-              {@const hasSubcategories = Object.keys(categoryData.subcategories || {}).length > 0}
-
-              <!-- Level 1: Category -->
-              <div class="border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
-                <button
-                  on:click|stopPropagation={() => toggleCategory(categoryName)}
-                  class="w-full px-5 py-4 flex items-center justify-between bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
-                >
-                  <div class="flex items-center gap-4">
-                    <div class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-950 flex items-center justify-center">
-                      <svg
-                        class="w-5 h-5 text-blue-600 dark:text-blue-400 transition-transform duration-200 {isCategoryExpanded ? 'rotate-90' : ''}"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                      </svg>
-                    </div>
-                    <div class="text-left">
-                      <h3 class="text-lg font-medium text-zinc-900 dark:text-zinc-50">{categoryName}</h3>
-                      <p class="text-xs text-zinc-500 mt-0.5">{categoryData.total} prints • {categoryData.totalObjects} objects</p>
-                    </div>
-                  </div>
-
-                  <div class="flex items-center gap-6">
-                    <!-- Progress Bar -->
-                    <div class="flex items-center gap-3">
-                      <div class="w-24 h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
-                        <div
-                          class="h-full bg-blue-500 transition-all duration-500"
-                          style="width: {categoryPercentage}%"
-                        ></div>
-                      </div>
-                      <span class="text-sm font-medium text-zinc-500 w-12 text-right">{categoryPercentage}%</span>
-                    </div>
-
-                    <!-- ✅ UPDATED: Weight + Cost Info (Weight more dominant) -->
-                    <div class="text-right min-w-40">
-                      <p class="text-2xl font-medium text-blue-600 dark:text-blue-400">
-                        {(categoryData.totalWeight / 1000).toFixed(2)}kg
-                      </p>
-                      <p class="text-sm text-green-600 dark:text-green-400 mt-0.5">
-                        ${categoryData.totalCost.toFixed(2)}
-                      </p>
-                      {#if categoryData.wastedCost > 0}
-                        <p class="text-xs text-red-600 dark:text-red-400 mt-0.5">
-                          -{(categoryData.wastedWeight / 1000).toFixed(2)}kg waste
-                        </p>
-                      {/if}
-                    </div>
-                  </div>
-                </button>
-
-                {#if isCategoryExpanded}
-                  <div class="bg-white dark:bg-[#111111] border-t border-zinc-200 dark:border-[#262626]">
-
-                    <!-- ✅ Level 2: Subcategories -->
-                    {#if hasSubcategories}
-                      <div class="p-4 space-y-2">
-                        {#each Object.entries(categoryData.subcategories).sort(([,a], [,b]) => b.total - a.total) as [subcategoryName, subcategoryData]}
-                          {@const subcategoryKey = `${categoryName}:${subcategoryName}`}
-                          {@const isSubcategoryExpanded = !!expandedSubcategories[subcategoryKey]}
-                          {@const subcategoryPercentage = ((subcategoryData.total / categoryData.total) * 100).toFixed(1)}
-
-                          <div class="border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden">
-                            <button
-                              on:click|stopPropagation={() => toggleSubcategory(categoryName, subcategoryName)}
-                              class="w-full px-4 py-3 flex items-center justify-between bg-zinc-50 dark:bg-[#111111] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                            >
-                              <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 rounded-md bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center">
-                                  <svg
-                                    class="w-4 h-4 text-indigo-400 transition-transform duration-200 {isSubcategoryExpanded ? 'rotate-90' : ''}"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                  </svg>
-                                </div>
-                                <div class="text-left">
-                                  <h4 class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{subcategoryName}</h4>
-                                  <p class="text-xs text-zinc-500">{subcategoryData.total} prints • {subcategoryData.totalObjects} objects</p>
-                                </div>
-                              </div>
-
-                              <!-- ✅ UPDATED: Weight + Cost for subcategory -->
-                              <div class="flex items-center gap-4">
-                                <div class="w-16 h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
-                                  <div
-                                    class="h-full bg-indigo-400 transition-all duration-500"
-                                    style="width: {subcategoryPercentage}%"
-                                  ></div>
-                                </div>
-                                <span class="text-xs font-medium text-zinc-500 w-10 text-right">{subcategoryPercentage}%</span>
-                                <div class="text-right min-w-25">
-                                  <span class="text-base font-medium text-blue-600 dark:text-blue-400">{(subcategoryData.totalWeight / 1000).toFixed(2)}kg</span>
-                                  <p class="text-xs text-green-600 dark:text-green-400">${subcategoryData.totalCost.toFixed(2)}</p>
-                                </div>
-                              </div>
-                            </button>
-
-                            <!-- Level 3: Modules under Subcategory -->
-                            {#if isSubcategoryExpanded}
-                              <div class="bg-white dark:bg-[#111111] border-t border-zinc-200 dark:border-[#262626] p-3 space-y-1.5">
-                                {#each Object.entries(subcategoryData.modules).sort(([,a], [,b]) => b.total - a.total) as [moduleName, moduleData]}
-                                  {@const moduleKey = `${subcategoryKey}:${moduleName}`}
-                                  {@const isModuleExpanded = !!expandedModules[moduleKey]}
-                                  {@const modulePercentage = ((moduleData.total / subcategoryData.total) * 100).toFixed(1)}
-
-                                  <div class="border border-zinc-200 dark:border-[#262626] rounded-md overflow-hidden">
-                                    <button
-                                      on:click|stopPropagation={() => toggleModule(subcategoryKey, moduleName)}
-                                      class="w-full px-3 py-2.5 flex items-center justify-between bg-zinc-50 dark:bg-[#111111] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                                    >
-                                      <div class="flex items-center gap-2">
-                                        <svg
-                                          class="w-3 h-3 text-zinc-500 transition-transform duration-200 {isModuleExpanded ? 'rotate-90' : ''}"
-                                          fill="none"
-                                          stroke="currentColor"
-                                          viewBox="0 0 24 24"
-                                        >
-                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                        </svg>
-                                        <div class="text-left">
-                                          <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{moduleName}</p>
-                                          <div class="flex items-center gap-2 mt-0.5">
-                                            <span class="text-xs text-zinc-500">{moduleData.total} prints</span>
-                                            <span class="text-xs text-zinc-500">•</span>
-                                            <span class="text-xs text-zinc-500">{moduleData.totalObjects} obj</span>
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      <!-- ✅ UPDATED: Weight + Cost for module -->
-                                      <div class="flex items-center gap-3">
-                                        <div class="text-right">
-                                          <p class="text-xs font-medium text-blue-600 dark:text-blue-400">{(moduleData.totalWeight / 1000).toFixed(3)}kg</p>
-                                          <p class="text-xs text-zinc-500">{moduleData.avgWeightPerPrint.toFixed(0)}g/print</p>
-                                          <p class="text-xs text-green-600 dark:text-green-400 mt-0.5">${moduleData.avgCostPerPrint.toFixed(3)}/print</p>
-                                          <p class="text-xs text-green-600 dark:text-green-400">${moduleData.costPerObject.toFixed(4)}/obj</p>
-                                        </div>
-                                        <div class="w-12 h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
-                                          <div
-                                            class="h-full bg-purple-400 transition-all duration-500"
-                                            style="width: {modulePercentage}%"
-                                          ></div>
-                                        </div>
-                                      </div>
-                                    </button>
-
-                                    <!-- Level 4: Colors -->
-                                    {#if isModuleExpanded}
-                                      <div class="bg-white dark:bg-[#111111] border-t border-zinc-200 dark:border-[#262626] p-2 space-y-1">
-                                        {#each Object.entries(moduleData.colors).sort(([,a], [,b]) => b.count - a.count) as [color, colorData]}
-                                          {@const colorPercentage = ((colorData.count / moduleData.total) * 100).toFixed(1)}
-
-                                          <div class="px-3 py-2 bg-zinc-50 dark:bg-[#111111] rounded-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-                                            <div class="flex items-center justify-between">
-                                              <div class="flex items-center gap-2">
-                                                <div
-                                                  class="w-3 h-3 rounded-full border-2 border-zinc-300 dark:border-zinc-700"
-                                                  style="background-color: {color.toLowerCase()}"
-                                                ></div>
-                                                <span class="text-xs font-medium text-zinc-500">{color}</span>
-                                              </div>
-                                              <!-- ✅ UPDATED: Weight + objects + cost for color -->
-                                              <div class="flex items-center gap-3">
-                                                <span class="text-xs font-medium text-blue-600 dark:text-blue-400">{(colorData.weight / 1000).toFixed(3)}kg</span>
-                                                <span class="text-xs text-zinc-500">{colorData.objects} obj</span>
-                                                <div class="w-12 h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
-                                                  <div
-                                                    class="h-full bg-green-500 transition-all duration-500"
-                                                    style="width: {colorPercentage}%"
-                                                  ></div>
-                                                </div>
-                                                <span class="text-xs font-medium text-green-600 dark:text-green-400 min-w-10 text-right">{colorData.count}</span>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        {/each}
-                                      </div>
-                                    {/if}
-                                  </div>
-                                {/each}
-                              </div>
-                            {/if}
-                          </div>
-                        {/each}
-                      </div>
-
-                    {:else}
-                      <!-- No subcategories - show modules directly -->
-                      <div class="p-4 space-y-2">
-                        {#each Object.entries(categoryData.modules).sort(([,a], [,b]) => b.total - a.total) as [moduleName, moduleData]}
-                          {@const moduleKey = `${categoryName}:${moduleName}`}
-                          {@const isModuleExpanded = !!expandedModules[moduleKey]}
-                          {@const modulePercentage = ((moduleData.total / categoryData.total) * 100).toFixed(1)}
-
-                          <div class="border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden">
-                            <button
-                              on:click|stopPropagation={() => toggleModule(categoryName, moduleName)}
-                              class="w-full px-4 py-3 flex items-center justify-between bg-zinc-50 dark:bg-[#111111] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                            >
-                              <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 rounded-md bg-purple-50 dark:bg-purple-950 flex items-center justify-center">
-                                  <svg
-                                    class="w-4 h-4 text-purple-400 transition-transform duration-200 {isModuleExpanded ? 'rotate-90' : ''}"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                  </svg>
-                                </div>
-                                <div class="text-left">
-                                  <h4 class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{moduleName}</h4>
-                                  <p class="text-xs text-zinc-500">{moduleData.total} prints • {moduleData.totalObjects} objects</p>
-                                </div>
-                              </div>
-
-                              <!-- ✅ UPDATED: Weight + Cost for module (no subcategory) -->
-                              <div class="flex items-center gap-4">
-                                <div class="text-right">
-                                  <p class="text-sm font-medium text-blue-600 dark:text-blue-400">{(moduleData.totalWeight / 1000).toFixed(3)}kg</p>
-                                  <p class="text-xs text-zinc-500">{(moduleData.avgWeightPerPrint || 0).toFixed(0)}g/print</p>
-                                  <p class="text-xs text-green-600 dark:text-green-400 mt-0.5">${moduleData.avgCostPerPrint.toFixed(3)}/print</p>
-                                  <p class="text-xs text-green-600 dark:text-green-400">${moduleData.costPerObject.toFixed(4)}/obj</p>
-                                </div>
-                                <div class="w-16 h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
-                                  <div
-                                    class="h-full bg-purple-400 transition-all duration-500"
-                                    style="width: {modulePercentage}%"
-                                  ></div>
-                                </div>
-                                <span class="text-xs font-medium text-zinc-500 w-10 text-right">{modulePercentage}%</span>
-                              </div>
-                            </button>
-
-                            <!-- Level 3: Colors -->
-                            {#if isModuleExpanded}
-                              <div class="bg-white dark:bg-[#111111] border-t border-zinc-200 dark:border-[#262626] p-3 space-y-1.5">
-                                {#each Object.entries(moduleData.colors).sort(([,a], [,b]) => b.count - a.count) as [color, colorData]}
-                                  {@const colorPercentage = ((colorData.count / moduleData.total) * 100).toFixed(1)}
-
-                                  <div class="px-3 py-2 bg-zinc-50 dark:bg-[#111111] rounded-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-                                    <div class="flex items-center justify-between">
-                                      <div class="flex items-center gap-2">
-                                        <div
-                                          class="w-3 h-3 rounded-full border-2 border-zinc-300 dark:border-zinc-700"
-                                          style="background-color: {color.toLowerCase()}"
-                                        ></div>
-                                        <span class="text-xs font-medium text-zinc-500">{color}</span>
-                                      </div>
-                                      <!-- ✅ UPDATED: Weight + objects + cost for color -->
-                                      <div class="flex items-center gap-3">
-                                        <span class="text-xs font-medium text-blue-600 dark:text-blue-400">{(colorData.weight / 1000).toFixed(3)}kg</span>
-                                        <span class="text-xs text-zinc-500">{colorData.objects} obj</span>
-                                        <div class="w-12 h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
-                                          <div
-                                            class="h-full bg-green-500 transition-all duration-500"
-                                            style="width: {colorPercentage}%"
-                                          ></div>
-                                        </div>
-                                        <span class="text-xs font-medium text-green-600 dark:text-green-400 min-w-10 text-right">{colorData.count}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                {/each}
-                              </div>
-                            {/if}
-                          </div>
-                        {/each}
-                      </div>
-                    {/if}
-                  </div>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="text-center py-12">
-            <svg class="w-16 h-16 mx-auto text-zinc-200 dark:text-zinc-700 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-            </svg>
-            <p class="text-zinc-500 text-lg font-medium">No prints found</p>
-            <p class="text-zinc-500 text-sm mt-1">{getTimeRangeLabel(selectedTimeRange)}</p>
-          </div>
-        {/if}
-      </div>
-    </div>
-
+    <ModuleBreakdown
+      breakdown={currentBreakdown}
+      totalPrints={totalPrintsInRange}
+      totalObjects={totalObjectsInRange}
+    />
     <!-- Charts Grid -->
     <div class="grid grid-cols-2 gap-6 mb-6">
       <!-- Print History Line Chart -->
@@ -1798,37 +1299,7 @@
         <div bind:this={materialUsageChart} style="width: 100%; height: 400px;"></div>
       </div>
 
-      <!-- Success Rate Pie Chart -->
-      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
-        <div bind:this={successRateChart} style="width: 100%; height: 400px;"></div>
-      </div>
-
-      <!-- Top Modules Bar Chart -->
-      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
-        <div bind:this={topModulesChart} style="width: 100%; height: 400px;"></div>
-      </div>
-
-      <!-- Failure Reasons (if any failures exist) -->
-      {#if data.stats.failureReasons.length > 0}
-        <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
-          <div bind:this={failureReasonsChart} style="width: 100%; height: 400px;"></div>
-        </div>
-      {/if}
-
-      <!-- Per-Printer Utilization Stacked Bar Chart -->
-      {#if currentUtil}
-        <div class="col-span-2 bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
-          <p class="text-xs font-medium text-zinc-400 dark:text-zinc-600 uppercase tracking-wider mb-4">Per-Printer Utilization Breakdown</p>
-          <div bind:this={utilizationStackedChartEl} style="width: 100%; height: 240px;"></div>
-        </div>
-      {/if}
-
-      <!-- Printer Utilization -->
-      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6">
-        <div bind:this={printerUtilizationChart} style="width: 100%; height: 400px;"></div>
-      </div>
-    </div>
-
+	</div>
     <!-- Inventory & Sales Section -->
     {#if data.inventoryStats || data.shopifyStats}
       <!-- Inventory Health Overview -->
@@ -1925,72 +1396,7 @@
       {/if}
     {/if}
 
-    <!-- Product Sets Cost Analysis -->
-    <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg mb-8 overflow-hidden">
-      <div class="p-6 border-b border-zinc-200 dark:border-[#262626]">
-        <h2 class="text-xl font-medium">Product Sets Cost Analysis</h2>
-        <p class="text-sm text-zinc-500 mt-1">Cost breakdown for complete product sets</p>
-      </div>
-
-      <div class="p-6">
-        {#if data.stats.setCosts && data.stats.setCosts[selectedTimeRange]}
-          {@const currentSets = data.stats.setCosts[selectedTimeRange]}
-
-          <div class="grid grid-cols-2 gap-6">
-            {#each Object.entries(currentSets) as [setName, setData]}
-              <div class="bg-zinc-100 dark:bg-zinc-800 rounded-lg p-6">
-                <!-- Set Header -->
-                <div class="flex items-center justify-between mb-4">
-                  <div class="flex items-center gap-3">
-                    <span class="text-3xl">{setData.emoji}</span>
-                    <div>
-                      <h3 class="text-lg font-medium text-zinc-900 dark:text-zinc-50">{setName}</h3>
-                      <p class="text-xs text-zinc-500">
-                        {setData.possibleSets === Infinity ? 0 : setData.possibleSets} complete sets produced
-                      </p>
-                    </div>
-                  </div>
-                  <div class="text-right">
-                    <p class="text-sm text-zinc-500">Cost per Set</p>
-                    <p class="text-2xl font-medium text-green-600 dark:text-green-400">
-                      ${setData.possibleSets > 0 ? setData.costPerSet.toFixed(2) : '0.00'}
-                    </p>
-                  </div>
-                </div>
-
-                <!-- Components Breakdown -->
-                <div class="space-y-3 border-t border-zinc-200 dark:border-[#262626] pt-4">
-                  {#each Object.entries(setData.components) as [componentName, componentData]}
-                    <div class="bg-zinc-200 dark:bg-zinc-700 rounded-lg p-3">
-                      <div class="flex items-center justify-between mb-2">
-                        <span class="text-sm font-medium text-zinc-700 dark:text-zinc-300 capitalize">
-                          {componentData.quantity}x {componentName}
-                        </span>
-                        <span class="text-sm text-green-600 dark:text-green-400">
-                          ${(componentData.costPerObject * componentData.quantity).toFixed(2)}
-                        </span>
-                      </div>
-                      <div class="flex items-center justify-between text-xs text-zinc-500">
-                        <span>${componentData.costPerObject.toFixed(3)}/object</span>
-                        <span>{componentData.objectsProduced} objects produced</span>
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-
-                <!-- Total Cost -->
-                <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-[#262626] flex items-center justify-between">
-                  <span class="text-sm text-zinc-500">Total Material Cost</span>
-                  <span class="text-lg font-medium text-zinc-900 dark:text-zinc-50">${setData.totalCost.toFixed(2)}</span>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <p class="text-center text-zinc-500">No set data available</p>
-        {/if}
-      </div>
-    </div>
+    
   </div>
 </div>
 

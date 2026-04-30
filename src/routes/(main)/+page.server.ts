@@ -78,33 +78,6 @@ export const actions: Actions = {
     return result;
   },
 
-  forceLoadSpool: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    
-    if (!database) {
-      return { success: false, error: 'Database not available' };
-    }
-
-    const formData = await request.formData();
-    const printerId = Number(formData.get('printerId'));
-
-    const result = await db.loadSpool(database, {
-      printerId: printerId,
-      spoolData: {
-        preset_id: Number(formData.get('presetId')) || null,
-        brand: formData.get('brand') as string,
-        material: formData.get('material') as string,
-        color: (formData.get('color') as string) || null,
-        initial_weight: Number(formData.get('initialWeight')),
-        remaining_weight: Number(formData.get('remainingWeight')),
-        cost: Number(formData.get('cost')) || null,
-      },
-      forceUnload: true
-    });
-
-    return result;
-  },
-
   unloadSpool: async ({ platform, request }) => {
     const database = platform?.env?.DB;
     
