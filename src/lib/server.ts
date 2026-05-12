@@ -23,7 +23,7 @@ import { addStockBySlug } from './inventory_handler';
 // Printer Models
 export async function getAllPrinterModels(db: D1Database): Promise<PrinterModel[]> {
   const result = await db.prepare('SELECT * FROM printer_models ORDER BY name').all();
-  return (result.results || []) as PrinterModel[];
+  return (result.results || []) as unknown as PrinterModel[];
 }
 
 export async function createPrinterModel(db: D1Database, model: {
@@ -93,12 +93,12 @@ export async function deletePrinterModel(db: D1Database, id: number): Promise<Se
 }
 
 // Printers
-export async function getAllPrinters(db: D1Database) {
+export async function getAllPrinters(db: D1Database): Promise<Printer[]> {
   const result = await db.prepare(`
     SELECT p.*, pm.name as printer_model_name
     FROM printers p
     LEFT JOIN printer_models pm ON p.printer_model_id = pm.id
-  `).all();
+  `).all<Printer>();
   return result.results || [];
 }
 
@@ -297,8 +297,8 @@ export async function deletePrinter(db: D1Database, id: number): Promise<ServerR
 }
 
 // Spools
-export async function getAllSpools(db: D1Database) {
-  const result = await db.prepare('SELECT * FROM spools').all();
+export async function getAllSpools(db: D1Database): Promise<Spool[]> {
+  const result = await db.prepare('SELECT * FROM spools').all<Spool>();
   return result.results || [];
 }
 
@@ -516,6 +516,8 @@ export async function startPrintJob(db: D1Database, params: {
     };
   }
 
+  await closeOpenPrintJobsForPrinter(db, printerId, moduleId);
+
   // Create the print job with status = 'printing'
   const jobName = name || `${module.name} - ${new Date().toLocaleString()}`;
   
@@ -550,6 +552,44 @@ export async function startPrintJob(db: D1Database, params: {
     expectedWeight: typeof module.expected_weight === 'number' ? module.expected_weight : undefined,
     lowMaterial: spool.remaining_weight < (typeof module.expected_weight === 'number' ? module.expected_weight : 0)
   };
+}
+
+// Close any in-progress jobs on a printer before starting a new one.
+// Same module → restart (no material deduction). Different module → new job (deduct planned weight).
+export async function closeOpenPrintJobsForPrinter(
+  db: D1Database,
+  printerId: number,
+  newModuleId: number | null
+): Promise<void> {
+  const open = await db
+    .prepare(
+      `SELECT pj.id, pj.module_id, pj.planned_weight,
+              COALESCE(pj.spool_id, p.loaded_spool_id) AS resolved_spool_id
+       FROM print_jobs pj
+       LEFT JOIN printers p ON pj.printer_id = p.id
+       WHERE pj.printer_id = ? AND pj.status = 'printing'`
+    )
+    .bind(printerId)
+    .all();
+
+  const now = Date.now();
+  for (const row of (open.results ?? []) as { id: number; module_id: number | null; planned_weight: number | null; resolved_spool_id: number | null }[]) {
+    const isRestart = newModuleId !== null && row.module_id === newModuleId;
+    const reason = isRestart ? 'manualy restarted new job on printer' : 'manualy started new job on printer';
+    const actualWeight = isRestart ? 0 : (row.planned_weight ?? 0);
+
+    await db
+      .prepare(`UPDATE print_jobs SET status = 'failed', end_time = ?, actual_weight = ?, failure_reason = ? WHERE id = ?`)
+      .bind(now, actualWeight, reason, row.id)
+      .run();
+
+    if (!isRestart && actualWeight > 0 && row.resolved_spool_id) {
+      const spool = await getSpoolById(db, row.resolved_spool_id);
+      if (spool) {
+        await updateSpoolWeight(db, row.resolved_spool_id, spool.remaining_weight - actualWeight);
+      }
+    }
+  }
 }
 
 // Complete/finish a print job
@@ -964,7 +1004,7 @@ export async function getActivePrintJobs(db: D1Database) {
   return result.results || [];
 }
 
-export async function getAllPrintJobs(db: D1Database) {
+export async function getAllPrintJobs(db: D1Database): Promise<PrintJobExtended[]> {
   const result = await db.prepare(`
     SELECT
       pj.*,
@@ -973,7 +1013,7 @@ export async function getAllPrintJobs(db: D1Database) {
     FROM print_jobs pj
     LEFT JOIN print_modules pm ON pj.module_id = pm.id
     ORDER BY pj.start_time DESC
-  `).all();
+  `).all<PrintJobExtended>();
 
   return result.results || [];
 }

@@ -5,8 +5,8 @@
 
   const dispatch = createEventDispatcher<{ done: void }>();
 
-  export let spoolPresets: any[] = [];
-  export let printerModels: any[] = [];
+  export const spoolPresets: any[] = [];
+  export const printerModels: any[] = [];
 
   let isDragging = false;
   let fileInput: HTMLInputElement;

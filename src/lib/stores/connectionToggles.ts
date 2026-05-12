@@ -4,6 +4,7 @@ import { browser } from '$app/environment';
 const KEY_FILE_HANDLER = 'printfarm_file_handler_enabled';
 const KEY_DIRECT_PRINTER = 'printfarm_direct_printer_enabled';
 const KEY_PRINTER_PI = 'printfarm_printer_pi_enabled';
+const KEY_MANUAL_MODE = 'printfarm_manual_mode_enabled';
 
 function createBoolStore(key: string, defaultValue = true) {
   const initial = browser
@@ -35,3 +36,6 @@ export const directPrinterEnabled = createBoolStore(KEY_DIRECT_PRINTER);
 
 /** Enable/disable Raspberry Pi bridge polling */
 export const printerPiEnabled = createBoolStore(KEY_PRINTER_PI);
+
+/** Enable manual mode — tracks prints without connecting to any printer */
+export const manualModeEnabled = createBoolStore(KEY_MANUAL_MODE, false);

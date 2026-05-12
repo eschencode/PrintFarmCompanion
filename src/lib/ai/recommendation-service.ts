@@ -210,7 +210,7 @@ export async function getSuggestedPrintQueue(
 
   const getSimulatedItem = (inventory: PrioritizedInventory, slug: string) => {
     for (const items of Object.values(inventory)) {
-      const found = items.find(i => i.slug === slug);
+      const found = (items as PrioritizedInventoryItem[]).find(i => i.slug === slug);
       if (found) return found;
     }
     return undefined;

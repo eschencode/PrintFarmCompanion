@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { closeOpenPrintJobsForPrinter } from '$lib/server';
 
 /**
  * GET /api/pi/status?serial=SERIALNUMBER
@@ -79,6 +80,8 @@ export const GET: RequestHandler = async ({ url, platform }) => {
                 .bind(`%${normalized}%`, `%${normalized}%`, `%${normalized}%`)
                 .first();
             }
+
+            await closeOpenPrintJobsForPrinter(db, printer.id, matchedModule?.id ?? null);
 
             const now = Date.now();
             const jobName = matchedModule

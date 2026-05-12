@@ -3,7 +3,8 @@ import type {
   InventoryWithVelocity,
   Printer,
   ModuleContext,
-  AIRecommendationContext
+  AIRecommendationContext,
+  SuggestedPrintQueueItem
 } from '../types';
 import {
   StockoutForecast,
@@ -126,8 +127,9 @@ export class AIContextBuilder {
  * Get all printers with their suggested queue (queued jobs)
  */
 async getAllPrintersWithQueuedJobs(): Promise<Printer[]> {
+  type PrinterRow = Printer & { module_id: number | null; module_name: string | null; job_status: string | null };
   const result = await this.db.prepare(`
-    SELECT 
+    SELECT
       p.*,
       pj.module_id,
       pm.name as module_name,
@@ -136,7 +138,7 @@ async getAllPrintersWithQueuedJobs(): Promise<Printer[]> {
     LEFT JOIN print_jobs pj ON pj.printer_id = p.id AND pj.status IN ('queued', 'printing')
     LEFT JOIN print_modules pm ON pj.module_id = pm.id
     ORDER BY p.id, pj.id
-  `).all();
+  `).all<PrinterRow>();
 
   // Group jobs by printer
   const printersMap = new Map<number, Printer>();
@@ -149,16 +151,20 @@ async getAllPrintersWithQueuedJobs(): Promise<Printer[]> {
         status: row.status,
         loaded_spool_id: row.loaded_spool_id,
         total_hours: row.total_hours,
+        printer_model_id: null,
+        printer_ip: null,
+        printer_serial: null,
+        printer_access_code: null,
+        transport: 'auto',
         suggested_queue: []
       });
     }
     if (row.module_id) {
       printersMap.get(row.id)!.suggested_queue!.push({
         module_id: row.module_id,
-        module_name: row.module_name,
-        status: row.job_status,
-        fillament_left: row.filament_left
-      });
+        module_name: row.module_name ?? '',
+        status: row.job_status ?? ''
+      } as unknown as SuggestedPrintQueueItem);
     }
   }
   return Array.from(printersMap.values());

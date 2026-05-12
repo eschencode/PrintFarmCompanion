@@ -1,5 +1,6 @@
 """
-Bambu Lab P1S client — FTPS file upload + MQTT print command + status monitoring.
+Bambu Lab printer client — FTPS file upload + MQTT print command + status monitoring.
+Supports P1S, X1C, H2S, A1 and other models with automatic path fallback.
 
 Credentials are passed per-call (stored in D1 per printer, sent by CF Workers).
 This module is stateless with respect to printer config so one Pi can serve many printers.
@@ -7,9 +8,11 @@ This module is stateless with respect to printer config so one Pi can serve many
 
 import ftplib
 import json
+import re
 import ssl
 import threading
 import time
+import unicodedata
 import uuid
 import zipfile
 from dataclasses import dataclass, field
@@ -91,17 +94,61 @@ class ImplicitFTP_TLS(ftplib.FTP_TLS):
         return self.welcome
 
 
-def upload_file_ftps(credentials: PrinterCredentials, local_path: str, remote_filename: str) -> str:
+def _sanitize_remote_filename(filename: str) -> str:
+    """
+    Make a filename safe for FTP upload to all Bambu printer models.
+    Some models (e.g. H2S with USB storage) run FAT32 and reject non-ASCII names.
+    Transliterates German umlauts first, then strips remaining non-ASCII characters.
+    """
+    umlaut_map = {'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue', 'ß': 'ss'}
+    for char, replacement in umlaut_map.items():
+        filename = filename.replace(char, replacement)
+    filename = unicodedata.normalize('NFKD', filename)
+    filename = filename.encode('ascii', 'ignore').decode('ascii')
+    filename = re.sub(r'\s+', '_', filename)
+    return filename
+
+
+_H2_PATH_CANDIDATES = [
+    "sdcard", "usbdisk", "usb", "udisk", "external",
+    "storage", "internal", "cache", "model", "",
+]
+_DEFAULT_PATH_CANDIDATES = ["cache", "model", ""]
+
+
+def _path_candidates(printer_model: str) -> list[str]:
+    """
+    Pick FTP STOR subdirectories to try based on printer model.
+    H2S/H2D use USB storage with an unknown directory name — try a wide set
+    and log the winning path so we can narrow this list once confirmed.
+    """
+    m = (printer_model or "").upper()
+    if "H2" in m:
+        return _H2_PATH_CANDIDATES
+    return _DEFAULT_PATH_CANDIDATES
+
+
+def upload_file_ftps(
+    credentials: PrinterCredentials,
+    local_path: str,
+    remote_filename: str,
+    printer_model: str = "",
+) -> str:
     """
     Upload a .gcode.3mf file to the printer via FTPS (implicit TLS, port 990).
     Returns the remote path on the printer's virtual SD card.
     """
+    remote_filename = _sanitize_remote_filename(remote_filename)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE  # Bambu uses self-signed cert
 
     file_size = Path(local_path).stat().st_size
-    log("info", "FTPS", f"Connecting to {credentials.ip}:990 ... file size: {file_size} bytes ({file_size/1024/1024:.1f} MB)",
+    candidates = _path_candidates(printer_model)
+    log("info", "FTPS",
+        f"Connecting to {credentials.ip}:990 ... model={printer_model or 'unknown'} "
+        f"file size: {file_size} bytes ({file_size/1024/1024:.1f} MB) "
+        f"will try paths: {candidates}",
         printer_serial=credentials.serial, printer_name=credentials.name)
 
     with ImplicitFTP_TLS(context=context) as ftp:
@@ -111,9 +158,7 @@ def upload_file_ftps(credentials: PrinterCredentials, local_path: str, remote_fi
         ftp.login(user="bblp", passwd=credentials.access_code)
         ftp.prot_p()  # switch to encrypted data channel
 
-        # Try upload directories in order — different Bambu models use different paths
-        # P1S/X1C use cache/, A1/H2S may use model/ or root
-        for subdir in ["cache", "model", ""]:
+        for subdir in candidates:
             stor_cmd = f"STOR {subdir}/{remote_filename}" if subdir else f"STOR {remote_filename}"
             remote_path = f"/{subdir}/{remote_filename}" if subdir else f"/{remote_filename}"
             log("info", "FTPS", f"Trying {stor_cmd} ...",
@@ -121,7 +166,9 @@ def upload_file_ftps(credentials: PrinterCredentials, local_path: str, remote_fi
             try:
                 with open(local_path, "rb") as f:
                     ftp.storbinary(stor_cmd, f)
-                log("info", "FTPS", f"Upload complete → {remote_path}",
+                # Loud success marker so the working path is easy to grep from logs
+                log("info", "FTPS",
+                    f"H2-PATH-FOUND={subdir or 'root'} model={printer_model or 'unknown'} → upload complete → {remote_path}",
                     printer_serial=credentials.serial, printer_name=credentials.name)
                 return remote_path
             except ftplib.error_perm as e:
