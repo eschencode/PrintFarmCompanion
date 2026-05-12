@@ -1,7 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 
 import * as db from '$lib/server';
-import generateAndSaveSuggestedQueue from '$lib/ai';
+import { generateAndSaveSuggestedQueue } from '$lib/ai';
 import { getSuggestedQueueByPrinterId, markSuggestedQueueItemDone } from '$lib/server'; // Make sure this is imported
 
 export const load: PageServerLoad = async ({ platform }) => {
@@ -16,7 +16,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 
   // Fetch and assign the suggested queue for each printer
   for (const printer of printers) {
-    printer.suggested_queue = await getSuggestedQueueByPrinterId(database, printer.id);
+    printer.suggested_queue = await getSuggestedQueueByPrinterId(database, printer.id) ?? undefined;
   }
 
   const spools = await db.getAllSpools(database);
@@ -220,7 +220,7 @@ export const actions: Actions = {
     const formData = await request.formData();
     const printerId = Number(formData.get('printerId'));
     // Call your generateAndSaveSuggestedQueue function
-    const queue = await db.generateAndSaveSuggestedQueue(database, printerId);
+    const queue = await generateAndSaveSuggestedQueue(database, printerId);
     return { success: true, queue };
   },
 

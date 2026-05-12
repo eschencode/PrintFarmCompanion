@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fileHandlerStore } from '$lib/stores/fileHandler';
-  import { fileHandlerEnabled, directPrinterEnabled, printerPiEnabled } from '$lib/stores/connectionToggles';
+  import { fileHandlerEnabled, directPrinterEnabled, printerPiEnabled, manualModeEnabled } from '$lib/stores/connectionToggles';
   import { isDesktop } from '$lib/stores/desktop';
   import type { Printer } from '$lib/types';
 
@@ -14,6 +14,7 @@
   $: fhEnabled = $fileHandlerEnabled;
   $: dpEnabled = $directPrinterEnabled;
   $: piEnabled = $printerPiEnabled;
+  $: manualEnabled = $manualModeEnabled;
   $: desktop = $isDesktop;
 
   let fileHandlerToken = '';
@@ -86,6 +87,7 @@
           class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {fhEnabled ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'}"
           role="switch"
           aria-checked={fhEnabled}
+          aria-label="Toggle File Handler"
         >
           <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform {fhEnabled ? 'translate-x-6' : 'translate-x-1'}"></span>
         </button>
@@ -153,6 +155,7 @@
           class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {!desktop ? 'opacity-40 cursor-not-allowed' : ''} {dpEnabled && desktop ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'}"
           role="switch"
           aria-checked={dpEnabled && desktop}
+          aria-label="Toggle Direct Printer"
         >
           <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform {dpEnabled && desktop ? 'translate-x-6' : 'translate-x-1'}"></span>
         </button>
@@ -184,6 +187,30 @@
       </div>
     </div>
 
+    <!-- ── Manual ── -->
+    <div class="rounded-lg border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden">
+      <div class="px-4 py-3 bg-zinc-50 dark:bg-[#161616] flex items-center justify-between gap-4">
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Manual</p>
+        </div>
+        <button
+          type="button"
+          onclick={() => manualModeEnabled.toggle()}
+          class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {manualEnabled ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'}"
+          role="switch"
+          aria-checked={manualEnabled}
+          aria-label="Toggle Manual Mode"
+        >
+          <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform {manualEnabled ? 'translate-x-6' : 'translate-x-1'}"></span>
+        </button>
+      </div>
+      <div class="px-4 py-3">
+        <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+          Tracks prints without connecting to any printer. Starting a print registers the job using the module's estimated time and weight — progress is time-based. Confirm or fail prints manually when done. Overrides all other connection modes while enabled.
+        </p>
+      </div>
+    </div>
+
     <!-- ── Printer Pi ── -->
     <div class="rounded-lg border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden">
       <div class="px-4 py-3 bg-zinc-50 dark:bg-[#161616] flex items-center justify-between gap-4">
@@ -196,6 +223,7 @@
           class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {piEnabled ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'}"
           role="switch"
           aria-checked={piEnabled}
+          aria-label="Toggle Printer Pi"
         >
           <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform {piEnabled ? 'translate-x-6' : 'translate-x-1'}"></span>
         </button>

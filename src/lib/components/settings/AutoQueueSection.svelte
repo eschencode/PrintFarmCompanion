@@ -28,6 +28,7 @@
         class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {qsMode ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'}"
         role="switch"
         aria-checked={qsMode}
+        aria-label="Toggle Quick Start Mode"
       >
         <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform {qsMode ? 'translate-x-6' : 'translate-x-1'}"></span>
       </button>
@@ -44,6 +45,7 @@
         class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {asMode ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'}"
         role="switch"
         aria-checked={asMode}
+        aria-label="Toggle Auto Start"
       >
         <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform {asMode ? 'translate-x-6' : 'translate-x-1'}"></span>
       </button>

@@ -1,15 +1,17 @@
 import { ShopifyClient, ShopifySyncService } from '$lib/shopify';
 import { error, json } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
 
-export const GET = async ({ request, platform }) => {
+export const GET: RequestHandler = async ({ request, platform }) => {
   // 1. Check platform and env
   if (!platform?.env) {
     throw error(500, 'Platform environment not available');
   }
 
   // 2. Security Check: Only allow requests with a specific Secret Header
+  const env = platform.env as typeof platform.env & { CRON_SECRET?: string };
   const authHeader = request.headers.get('Authorization');
-  if (authHeader !== `Bearer ${platform.env.CRON_SECRET}`) {
+  if (authHeader !== `Bearer ${env.CRON_SECRET}`) {
     throw error(401, 'Unauthorized');
   }
 

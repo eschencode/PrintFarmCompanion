@@ -144,6 +144,7 @@ class PrintRequest(BaseModel):
     printer_serial: str
     printer_access_code: str
     printer_name: Optional[str] = None  # friendly name from D1
+    printer_model: Optional[str] = None  # e.g. "P1S", "H2S" — selects FTP path
     options: Optional[dict] = None
 
 
@@ -173,7 +174,7 @@ def trigger_print(req: PrintRequest):
 
     # 1. Upload file synchronously — must succeed before we return
     try:
-        remote_path = upload_file_ftps(credentials, str(path), path.name)
+        remote_path = upload_file_ftps(credentials, str(path), path.name, printer_model=req.printer_model or "")
         log("info", "Bambu", f"Uploaded to {remote_path}",
             printer_serial=req.printer_serial, printer_name=req.printer_name or "")
     except Exception as e:

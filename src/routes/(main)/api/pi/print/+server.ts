@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { closeOpenPrintJobsForPrinter } from '$lib/server';
 
 /**
  * POST /api/pi/print
@@ -62,6 +63,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         printer_serial: printer.printer_serial,
         printer_access_code: printer.printer_access_code,
         printer_name: printer.name,
+        printer_model: printer.model ?? null,
         options: options ?? {},
       }),
     });
@@ -73,6 +75,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   if (!piResult.success) {
     return json({ success: false, error: piResult.error ?? 'Pi print failed' }, { status: 502 });
   }
+
+  // Close any in-progress jobs before creating the new one
+  await closeOpenPrintJobsForPrinter(db, printer_id, module_id);
 
   // Create print_jobs record and set printer status to printing
   const now = Date.now();

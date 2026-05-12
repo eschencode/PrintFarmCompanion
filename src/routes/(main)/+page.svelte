@@ -20,7 +20,7 @@
   import { writable, get } from 'svelte/store';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
   import { quickStartMode, autoStartMode } from '$lib/stores/autoQueueStore';
-  import { fileHandlerEnabled, directPrinterEnabled, printerPiEnabled } from '$lib/stores/connectionToggles';
+  import { fileHandlerEnabled, directPrinterEnabled, printerPiEnabled, manualModeEnabled } from '$lib/stores/connectionToggles';
   import { isDesktop } from '$lib/stores/desktop';
   import type { TransportMode } from '$lib/types';
 
@@ -160,7 +160,8 @@
    * Precedence: explicit 'direct' > explicit 'pi' > auto-prefer-direct > fallback-pi.
    * 'auto' picks direct only when the desktop app is running and all Bambu credentials are present.
    */
-  function effectiveTransport(printer: any): 'direct' | 'pi' {
+  function effectiveTransport(printer: any): 'direct' | 'pi' | 'manual' {
+    if (get(manualModeEnabled)) return 'manual';
     const t: TransportMode = printer.transport ?? 'auto';
     const directEnabled = get(directPrinterEnabled);
     const canDirect = directEnabled && $isDesktop && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
@@ -353,7 +354,15 @@
     const transport = effectiveTransport(printer);
     const hasDirect = transport === 'direct' && directConnected.has(printer.printer_serial ?? '');
     try {
-      if (hasPi) {
+      if (transport === 'manual') {
+        // Manual mode: register the job in DB only — no printer connection.
+        // Progress is time-based; user confirms or fails the print manually.
+        const formData = new FormData();
+        formData.append('printerId', String(printer.id));
+        formData.append('moduleId', String(module.id));
+        await fetch('?/startPrint', { method: 'POST', body: formData });
+        setTimeout(advanceStartQueue, 3_000);
+      } else if (hasPi) {
         // Pi path: Pi handles file upload and print start.
         // In direct mode, MQTT events (not Pi polling) deliver live status.
         const res = await fetch('/api/pi/print', {
@@ -417,6 +426,7 @@
     try {
       const printer = (data.printers as any[]).find((p: any) => Number(p.id) === printerId);
       const transport = printer ? effectiveTransport(printer) : 'pi';
+      if (transport === 'manual') return; // no printer connected in manual mode
       const isDirect = transport === 'direct' && printer?.printer_serial && directConnected.has(printer.printer_serial);
 
       if (isDirect) {

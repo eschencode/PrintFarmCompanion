@@ -110,7 +110,7 @@
   <div class="border-b border-zinc-200 dark:border-[#1a1a1a] bg-white dark:bg-[#0c0c0f] sticky top-0 z-10">
     <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
       <div class="flex items-center gap-3">
-        <a href="/" class="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
+        <a href="/" aria-label="Back to dashboard" class="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
           </svg>
@@ -166,18 +166,18 @@
         <form method="POST" action="?/saveItem" use:enhance={() => { saving = true; return async ({ update }) => { saving = false; await update(); }; }}>
           <div class="grid grid-cols-2 gap-4 mb-4">
             <div>
-              <label class="text-xs text-zinc-400 block mb-1">Name *</label>
-              <input bind:value={editName} oninput={handleNameInput} name="name" required
+              <label for="new-name" class="text-xs text-zinc-400 block mb-1">Name *</label>
+              <input id="new-name" bind:value={editName} oninput={handleNameInput} name="name" required
                 class="w-full h-9 px-3 text-sm bg-zinc-50 dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-lg text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors" />
             </div>
             <div>
-              <label class="text-xs text-zinc-400 block mb-1">Slug * <span class="text-zinc-500">(unique, lowercase-hyphens)</span></label>
-              <input bind:value={editSlug} name="slug" required pattern="[a-z0-9-]+"
+              <label for="new-slug" class="text-xs text-zinc-400 block mb-1">Slug * <span class="text-zinc-500">(unique, lowercase-hyphens)</span></label>
+              <input id="new-slug" bind:value={editSlug} name="slug" required pattern="[a-z0-9-]+"
                 class="w-full h-9 px-3 text-sm font-mono bg-zinc-50 dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-lg text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors" />
             </div>
             <div>
-              <label class="text-xs text-zinc-400 block mb-1">Category</label>
-              <input bind:value={editCategory} name="category" list="category-suggestions"
+              <label for="new-category" class="text-xs text-zinc-400 block mb-1">Category</label>
+              <input id="new-category" bind:value={editCategory} name="category" list="category-suggestions"
                 placeholder="e.g. Haken Kleben"
                 class="w-full h-9 px-3 text-sm bg-zinc-50 dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-lg text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors" />
               <datalist id="category-suggestions">
@@ -185,18 +185,18 @@
               </datalist>
             </div>
             <div>
-              <label class="text-xs text-zinc-400 block mb-1">Shopify SKU <span class="text-zinc-500">(optional)</span></label>
-              <input bind:value={editSku} name="sku"
+              <label for="new-sku" class="text-xs text-zinc-400 block mb-1">Shopify SKU <span class="text-zinc-500">(optional)</span></label>
+              <input id="new-sku" bind:value={editSku} name="sku"
                 class="w-full h-9 px-3 text-sm font-mono bg-zinc-50 dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-lg text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors" />
             </div>
             <div>
-              <label class="text-xs text-zinc-400 block mb-1">Min. Stock Threshold</label>
-              <input type="number" bind:value={editMinThreshold} name="min_threshold" min="0"
+              <label for="new-min-threshold" class="text-xs text-zinc-400 block mb-1">Min. Stock Threshold</label>
+              <input id="new-min-threshold" type="number" bind:value={editMinThreshold} name="min_threshold" min="0"
                 class="w-full h-9 px-3 text-sm bg-zinc-50 dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-lg text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors" />
             </div>
             <div>
-              <label class="text-xs text-zinc-400 block mb-1">Description</label>
-              <input bind:value={editDescription} name="description"
+              <label for="new-description" class="text-xs text-zinc-400 block mb-1">Description</label>
+              <input id="new-description" bind:value={editDescription} name="description"
                 class="w-full h-9 px-3 text-sm bg-zinc-50 dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-lg text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors" />
             </div>
           </div>
@@ -241,21 +241,21 @@
               <input type="hidden" name="id" value={product.id} />
               <div class="grid grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label class="text-xs text-zinc-400 block mb-1">Name *</label>
-                  <input bind:value={editName} name="name" required
+                  <label for="edit-name" class="text-xs text-zinc-400 block mb-1">Name *</label>
+                  <input id="edit-name" bind:value={editName} name="name" required
                     class="w-full h-9 px-3 text-sm bg-zinc-50 dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-lg text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors" />
                 </div>
                 <div>
-                  <label class="text-xs text-zinc-400 block mb-1">
+                  <label for="edit-slug" class="text-xs text-zinc-400 block mb-1">
                     Slug
                     {#if hasLinks}<span class="text-amber-500"> — linked, cannot change</span>{/if}
                   </label>
-                  <input value={product.slug} name="slug" readonly={hasLinks}
+                  <input id="edit-slug" value={product.slug} name="slug" readonly={hasLinks}
                     class="w-full h-9 px-3 text-sm font-mono bg-zinc-50 dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-lg text-zinc-900 dark:text-zinc-50 focus:outline-none transition-colors {hasLinks ? 'opacity-50 cursor-not-allowed' : 'focus:border-zinc-400'}" />
                 </div>
                 <div>
-                  <label class="text-xs text-zinc-400 block mb-1">Category</label>
-                  <input bind:value={editCategory} name="category" list="category-suggestions-edit"
+                  <label for="edit-category" class="text-xs text-zinc-400 block mb-1">Category</label>
+                  <input id="edit-category" bind:value={editCategory} name="category" list="category-suggestions-edit"
                     placeholder="e.g. Haken Kleben"
                     class="w-full h-9 px-3 text-sm bg-zinc-50 dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-lg text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors" />
                   <datalist id="category-suggestions-edit">
@@ -263,18 +263,18 @@
                   </datalist>
                 </div>
                 <div>
-                  <label class="text-xs text-zinc-400 block mb-1">Shopify SKU</label>
-                  <input bind:value={editSku} name="sku"
+                  <label for="edit-sku" class="text-xs text-zinc-400 block mb-1">Shopify SKU</label>
+                  <input id="edit-sku" bind:value={editSku} name="sku"
                     class="w-full h-9 px-3 text-sm font-mono bg-zinc-50 dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-lg text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors" />
                 </div>
                 <div>
-                  <label class="text-xs text-zinc-400 block mb-1">Min. Stock Threshold</label>
-                  <input type="number" bind:value={editMinThreshold} name="min_threshold" min="0"
+                  <label for="edit-min-threshold" class="text-xs text-zinc-400 block mb-1">Min. Stock Threshold</label>
+                  <input id="edit-min-threshold" type="number" bind:value={editMinThreshold} name="min_threshold" min="0"
                     class="w-full h-9 px-3 text-sm bg-zinc-50 dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-lg text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors" />
                 </div>
                 <div>
-                  <label class="text-xs text-zinc-400 block mb-1">Description</label>
-                  <input bind:value={editDescription} name="description"
+                  <label for="edit-description" class="text-xs text-zinc-400 block mb-1">Description</label>
+                  <input id="edit-description" bind:value={editDescription} name="description"
                     class="w-full h-9 px-3 text-sm bg-zinc-50 dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-lg text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors" />
                 </div>
               </div>
