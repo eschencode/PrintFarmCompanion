@@ -3,35 +3,35 @@ import { sqliteTable, integer, text } from "drizzle-orm/sqlite-core";
 // PRINTER PRESETS
 export const printerPresets = sqliteTable("printer_presets", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  model: text("model"),
-  brand: text("brand"),
+  model: text("model").notNull(),
+  brand: text("brand").notNull(),
   dimensionX: integer("dimension_x"),
   dimensionY: integer("dimension_y"),
   dimensionZ: integer("dimension_z"),
-  devicefilepath: text("devicefilepath"),
+  devicefilepath: text("devicefilepath").notNull(),
 });
 
 // PLATE PRESETS
 export const platePresets = sqliteTable("plate_presets", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  name: text("name"), // e.g., "engineering plate"
+  name: text("name").notNull(), // e.g., "engineering plate"
 });
 
 // SPOOL PRESETS
 export const spoolPresets = sqliteTable("spool_presets", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  color: text("color"),
-  brand: text("brand"),
-  defaultWeight: integer("default_weight"),
-  cost: integer("cost"), // currency smallest unit (e.g. cents)
-  inStorage: integer("in_storage"),
+  color: text("color").notNull(),
+  brand: text("brand").notNull(),
+  defaultWeight: integer("default_weight").notNull(),
+  cost: integer("cost").default(0).notNull(), // currency smallest unit (e.g. cents)
+  inStorage: integer("in_storage").default(0).notNull(),
 });
 
 // SPOOLS
 export const spools = sqliteTable("spools", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   presetId: integer("preset_id").references(() => spoolPresets.id),
-  remainingWeight: integer("remaining_weight"),
+  remainingWeight: integer("remaining_weight").notNull(),
 });
 
 // PRINTERS
@@ -57,10 +57,10 @@ export const printerSecrets = sqliteTable("printer_secrets", {
 // PRINT MODULES
 export const printModules = sqliteTable("print_modules", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  name: text("name"),
-  weight: integer("weight"),
-  time: integer("time"), // print time (seconds/minutes)
-  objectsPerPrint: integer("objects_per_print"),
+  name: text("name").notNull(),
+  weight: integer("weight").notNull(),
+  time: integer("time").notNull(), // print time (seconds/minutes)
+  objectsPerPrint: integer("objects_per_print").notNull(),
   defaultSpoolPresetId: integer("default_spool_preset_id").references(
     () => spoolPresets.id,
   ),
@@ -70,8 +70,8 @@ export const printModules = sqliteTable("print_modules", {
   ),
   objectId: integer("object_id").references(() => objects.id),
   nozzleDiameter: text("nozzle_diameter"),
-  filename: text("filename"),
-  filePath: text("file_path"),
+  filename: text("filename").notNull(),
+  filePath: text("file_path").notNull(),
   thumbnail: text("thumbnail"),
 });
 
