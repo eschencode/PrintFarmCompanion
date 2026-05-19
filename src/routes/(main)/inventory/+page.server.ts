@@ -11,6 +11,8 @@ import {
   performManualCountBySlug
 } from '$lib/inventory_handler';
 import { AIContextBuilder } from '$lib/ai/context-builder';
+import { sql } from 'drizzle-orm';
+import { getDb } from '$lib/db';
 
 // Types for set definitions and unit weights
 interface SetComponent {
@@ -32,18 +34,19 @@ interface UnitWeight {
 
 // Get unique set definitions from shopify_sku_mapping (bundles with multiple components)
 async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
-  const result = await db.prepare(`
+  const drizzleDb = getDb(db);
+  const rows = await drizzleDb.all(sql`
     SELECT sm.shopify_sku, sm.inventory_slug, sm.quantity, i.name as item_name
     FROM shopify_sku_mapping sm
     JOIN inventory i ON sm.inventory_slug = i.slug
     ORDER BY sm.shopify_sku, i.name
-  `).all();
+  `);
   
-  const rows = (result.results || []) as { shopify_sku: string; inventory_slug: string; quantity: number; item_name: string }[];
+  const typedRows = (rows || []) as { shopify_sku: string; inventory_slug: string; quantity: number; item_name: string }[];
   
   // Group by SKU
   const skuGroups: Record<string, { inventory_slug: string; quantity: number; item_name: string }[]> = {};
-  for (const row of rows) {
+  for (const row of typedRows) {
     if (!skuGroups[row.shopify_sku]) skuGroups[row.shopify_sku] = [];
     skuGroups[row.shopify_sku].push(row);
   }
@@ -77,7 +80,8 @@ function buildSetLabel(sku: string, components: { inventory_slug: string; quanti
 
 // Get unit weights from print_modules (weight per batch / objects per print)
 async function getUnitWeights(db: any): Promise<UnitWeight[]> {
-  const result = await db.prepare(`
+  const drizzleDb = getDb(db);
+  const rows = await drizzleDb.all(sql`
     SELECT 
       pm.inventory_slug,
       i.name,
@@ -86,11 +90,11 @@ async function getUnitWeights(db: any): Promise<UnitWeight[]> {
     JOIN inventory i ON pm.inventory_slug = i.slug
     WHERE pm.inventory_slug IS NOT NULL
     GROUP BY pm.inventory_slug
-  `).all();
+  `);
   
-  const rows = (result.results || []) as { inventory_slug: string; name: string; weight_per_unit: number }[];
+  const typedRows = (rows || []) as { inventory_slug: string; name: string; weight_per_unit: number }[];
   
-  return rows.map(r => ({
+  return typedRows.map(r => ({
     slug: r.inventory_slug,
     name: r.name,
     weight_per_unit: r.weight_per_unit
@@ -183,6 +187,7 @@ export const actions: Actions = {
   addSets: async ({ request, platform }) => {
     const db = platform?.env?.DB;
     if (!db) return { success: false, error: 'Database not available' };
+    const drizzleDb = getDb(db);
 
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
@@ -197,13 +202,13 @@ export const actions: Actions = {
         if (entry.count <= 0) continue;
         
         // Look up the set components from shopify_sku_mapping
-        const components = await db.prepare(`
+        const components = await drizzleDb.all(sql`
           SELECT inventory_slug, quantity 
           FROM shopify_sku_mapping 
-          WHERE shopify_sku = ?
-        `).bind(entry.sku).all();
+          WHERE shopify_sku = ${entry.sku}
+        `);
         
-        const rows = (components.results || []) as { inventory_slug: string; quantity: number }[];
+        const rows = (components || []) as { inventory_slug: string; quantity: number }[];
         
         for (const comp of rows) {
           const totalQty = comp.quantity * entry.count;
@@ -250,6 +255,7 @@ export const actions: Actions = {
   b2bSellSets: async ({ request, platform }) => {
     const db = platform?.env?.DB;
     if (!db) return { success: false, error: 'Database not available' };
+    const drizzleDb = getDb(db);
 
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
@@ -263,13 +269,13 @@ export const actions: Actions = {
       for (const entry of entries) {
         if (entry.count <= 0) continue;
 
-        const components = await db.prepare(`
+        const components = await drizzleDb.all(sql`
           SELECT inventory_slug, quantity
           FROM shopify_sku_mapping
-          WHERE shopify_sku = ?
-        `).bind(entry.sku).all();
+          WHERE shopify_sku = ${entry.sku}
+        `);
 
-        const rows = (components.results || []) as { inventory_slug: string; quantity: number }[];
+        const rows = (components || []) as { inventory_slug: string; quantity: number }[];
 
         for (const comp of rows) {
           const totalQty = comp.quantity * entry.count;

@@ -1,6 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { closeOpenPrintJobsForPrinter } from '$lib/server';
+import { sql } from 'drizzle-orm';
+import { getDb } from '$lib/db';
 
 /**
  * GET /api/pi/status?serial=SERIALNUMBER
@@ -26,10 +28,10 @@ export const GET: RequestHandler = async ({ url, platform }) => {
   let printerCode = '';
   let printerName = '';
   if (db) {
-    const printer = await db
-      .prepare('SELECT printer_ip, printer_access_code, name FROM printers WHERE printer_serial = ?')
-      .bind(serial)
-      .first() as { printer_ip?: string; printer_access_code?: string; name?: string } | null;
+    const drizzleDb = getDb(db);
+    const printer = await drizzleDb.get<{ printer_ip?: string; printer_access_code?: string; name?: string }>(
+      sql`SELECT printer_ip, printer_access_code, name FROM printers WHERE printer_serial = ${serial}`
+    );
     printerIp = printer?.printer_ip ?? '';
     printerCode = printer?.printer_access_code ?? '';
     printerName = printer?.name ?? '';
@@ -51,16 +53,15 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     const status = data.status;
     if (db && status && status.task_id && ['RUNNING', 'PREPARE', 'PAUSE'].includes(status.gcode_state)) {
       try {
-        const existing = await db
-          .prepare('SELECT id FROM print_jobs WHERE pi_task_id = ? LIMIT 1')
-          .bind(status.task_id)
-          .first();
+        const drizzleDb = getDb(db);
+        const existing = await drizzleDb.get(
+          sql`SELECT id FROM print_jobs WHERE pi_task_id = ${status.task_id} LIMIT 1`
+        );
 
         if (!existing) {
-          const printer = await db
-            .prepare('SELECT id FROM printers WHERE printer_serial = ?')
-            .bind(serial)
-            .first() as { id: number } | null;
+          const printer = await drizzleDb.get<{ id: number }>(
+            sql`SELECT id FROM printers WHERE printer_serial = ${serial}`
+          );
 
           if (printer) {
             const filename = (status.gcode_file ?? status.subtask_name ?? '').toString();
@@ -68,17 +69,14 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
             let matchedModule: any = null;
             if (normalized) {
-              matchedModule = await db
-                .prepare(
-                  `SELECT id, name, expected_weight, expected_time
-                   FROM print_modules
-                   WHERE LOWER(pi_file_path) LIKE ?
-                      OR LOWER(file_name) LIKE ?
-                      OR LOWER(name) LIKE ?
-                   LIMIT 1`
-                )
-                .bind(`%${normalized}%`, `%${normalized}%`, `%${normalized}%`)
-                .first();
+              matchedModule = await drizzleDb.get(sql`
+                SELECT id, name, expected_weight, expected_time
+                FROM print_modules
+                WHERE LOWER(pi_file_path) LIKE ${`%${normalized}%`}
+                   OR LOWER(file_name) LIKE ${`%${normalized}%`}
+                   OR LOWER(name) LIKE ${`%${normalized}%`}
+                LIMIT 1
+              `);
             }
 
             await closeOpenPrintJobsForPrinter(db, printer.id, matchedModule?.id ?? null);
@@ -90,28 +88,12 @@ export const GET: RequestHandler = async ({ url, platform }) => {
             const plannedWeight = matchedModule?.expected_weight ?? 0;
             const moduleId = matchedModule?.id ?? null;
 
-            await db
-              .prepare(
-                `INSERT INTO print_jobs (name, module_id, printer_id, start_time, status, planned_weight, pi_task_id, progress, layer_num, total_layer_num)
-                 VALUES (?, ?, ?, ?, 'printing', ?, ?, ?, ?, ?)`
-              )
-              .bind(
-                jobName,
-                moduleId,
-                printer.id,
-                now,
-                plannedWeight,
-                status.task_id,
-                status.progress ?? 0,
-                status.layer_num ?? 0,
-                status.total_layer_num ?? 0
-              )
-              .run();
+            await drizzleDb.run(sql`
+              INSERT INTO print_jobs (name, module_id, printer_id, start_time, status, planned_weight, pi_task_id, progress, layer_num, total_layer_num)
+              VALUES (${jobName}, ${moduleId}, ${printer.id}, ${now}, 'printing', ${plannedWeight}, ${status.task_id}, ${status.progress ?? 0}, ${status.layer_num ?? 0}, ${status.total_layer_num ?? 0})
+            `);
 
-            await db
-              .prepare('UPDATE printers SET status = ? WHERE id = ?')
-              .bind('printing', printer.id)
-              .run();
+            await drizzleDb.run(sql`UPDATE printers SET status = 'printing' WHERE id = ${printer.id}`);
 
             data.reconciled = {
               module_id: moduleId,

@@ -8,6 +8,8 @@ import {
   updatePrinterHours,
   markSuggestedQueueItemDone,
 } from '$lib/server';
+import { sql } from 'drizzle-orm';
+import { getDb } from '$lib/db';
 
 /**
  * POST /api/pi/webhook
@@ -23,6 +25,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
 
+  const drizzleDb = getDb(db);
   // Validate shared secret — must be configured
   if (!secret) return json({ success: false, error: 'Webhook secret not configured' }, { status: 500 });
   const incoming = request.headers.get('x-webhook-secret');
@@ -56,32 +59,26 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   const safeStatus = validStatuses.includes(status) ? status : 'printing';
 
   // Always store latest progress/layer data
-  await db
-    .prepare(
-      `UPDATE print_jobs SET
-         progress = COALESCE(?, progress),
-         layer_num = COALESCE(?, layer_num),
-         total_layer_num = COALESCE(?, total_layer_num)
-       WHERE pi_task_id = ?`
-    )
-    .bind(progress ?? null, layer_num ?? null, total_layer_num ?? null, task_id)
-    .run();
+  await drizzleDb.run(sql`
+    UPDATE print_jobs SET
+       progress = COALESCE(${progress ?? null}, progress),
+       layer_num = COALESCE(${layer_num ?? null}, layer_num),
+       total_layer_num = COALESCE(${total_layer_num ?? null}, total_layer_num)
+     WHERE pi_task_id = ${task_id}
+  `);
 
   if (safeStatus === 'success' || safeStatus === 'failed') {
     // Look up the full job record by pi_task_id
-    const job = await db
-      .prepare(
-        `SELECT pj.id, pj.printer_id, pj.module_id, pj.planned_weight, pj.start_time,
-                pj.failure_reason,
-                pm.expected_time,
-                p.loaded_spool_id as printer_loaded_spool_id
-         FROM print_jobs pj
-         LEFT JOIN printers p ON pj.printer_id = p.id
-         LEFT JOIN print_modules pm ON pj.module_id = pm.id
-         WHERE pj.pi_task_id = ?`
-      )
-      .bind(task_id)
-      .first() as {
+    const job = await drizzleDb.get(sql`
+      SELECT pj.id, pj.printer_id, pj.module_id, pj.planned_weight, pj.start_time,
+             pj.failure_reason,
+             pm.expected_time,
+             p.loaded_spool_id as printer_loaded_spool_id
+      FROM print_jobs pj
+      LEFT JOIN printers p ON pj.printer_id = p.id
+      LEFT JOIN print_modules pm ON pj.module_id = pm.id
+      WHERE pj.pi_task_id = ${task_id}
+    `) as {
         id: number;
         printer_id: number;
         module_id: number;

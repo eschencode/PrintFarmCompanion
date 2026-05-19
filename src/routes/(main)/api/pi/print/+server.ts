@@ -1,6 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { closeOpenPrintJobsForPrinter } from '$lib/server';
+import { sql } from 'drizzle-orm';
+import { getDb } from '$lib/db';
 
 /**
  * POST /api/pi/print
@@ -19,6 +21,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
   if (!piUrl) return json({ success: false, error: 'Pi not configured (PI_TUNNEL_URL missing)' }, { status: 503 });
 
+  const drizzleDb = getDb(db);
   let body: { module_id: number; printer_id: number; options?: Record<string, unknown> };
   try {
     body = await request.json();
@@ -32,19 +35,17 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   }
 
   // Fetch module
-  const module = await db
-    .prepare('SELECT * FROM print_modules WHERE id = ?')
-    .bind(module_id)
-    .first() as Record<string, unknown> | null;
+  const module = await drizzleDb.get(
+    sql`SELECT * FROM print_modules WHERE id = ${module_id}`
+  ) as Record<string, unknown> | null;
 
   if (!module) return json({ success: false, error: 'Module not found' }, { status: 404 });
   if (!module.pi_file_path) return json({ success: false, error: 'Module not stored on Pi' }, { status: 400 });
 
   // Fetch printer with Pi credentials
-  const printer = await db
-    .prepare('SELECT * FROM printers WHERE id = ?')
-    .bind(printer_id)
-    .first() as Record<string, unknown> | null;
+  const printer = await drizzleDb.get(
+    sql`SELECT * FROM printers WHERE id = ${printer_id}`
+  ) as Record<string, unknown> | null;
 
   if (!printer) return json({ success: false, error: 'Printer not found' }, { status: 404 });
   if (!printer.printer_ip || !printer.printer_serial || !printer.printer_access_code) {
@@ -82,17 +83,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   // Create print_jobs record and set printer status to printing
   const now = Date.now();
   const jobName = `${module.name} — ${printer.name}`;
-  const result = await db
-    .prepare(
-      `INSERT INTO print_jobs (name, module_id, printer_id, start_time, status, planned_weight, pi_task_id)
-       VALUES (?, ?, ?, ?, 'printing', ?, ?)`
-    )
-    .bind(jobName, module_id, printer_id, now, module.expected_weight ?? 0, piResult.task_id ?? null)
-    .run();
+  const result = await drizzleDb.run(sql`
+    INSERT INTO print_jobs (name, module_id, printer_id, start_time, status, planned_weight, pi_task_id)
+    VALUES (${jobName}, ${module_id}, ${printer_id}, ${now}, 'printing', ${module.expected_weight ?? 0}, ${piResult.task_id ?? null})
+  `);
 
-  await db.prepare('UPDATE printers SET status = ? WHERE id = ?')
-    .bind('printing', printer_id)
-    .run();
+  await drizzleDb.run(sql`UPDATE printers SET status = 'printing' WHERE id = ${printer_id}`);
 
   return json({
     success: true,

@@ -6,6 +6,8 @@ import type {
   AIRecommendationContext,
   SuggestedPrintQueueItem
 } from '../types';
+import { sql } from 'drizzle-orm';
+import { getDb } from '../db';
 import {
   StockoutForecast,
   FORECAST_LOOKBACK_DAYS,
@@ -37,12 +39,13 @@ export class AIContextBuilder {
    * with replacement in JS to estimate P(demand >= stock).
    */
   async getInventoryWithVelocity(): Promise<InventoryWithVelocity[]> {
-    const inventoryResult = await this.db.prepare(`
+    const drizzleDb = getDb(this.db);
+    const inventoryRows = await drizzleDb.all<{ id: number; slug: string; name: string; stock_count: number; min_threshold: number }>(sql`
       SELECT id, slug, name, stock_count, min_threshold
       FROM inventory
-    `).all<{ id: number; slug: string; name: string; stock_count: number; min_threshold: number }>();
+    `);
 
-    const dailyResult = await this.db.prepare(`
+    const dailyRows = await drizzleDb.all<{ inventory_id: number; day_bucket: number; daily_sold: number }>(sql`
       SELECT
         l.inventory_id,
         CAST(l.created_at / ${MS_PER_DAY} AS INTEGER) as day_bucket,
@@ -51,13 +54,13 @@ export class AIContextBuilder {
       WHERE l.change_type IN ('sold_b2c', 'sold_b2b')
         AND l.created_at > strftime('%s', 'now', '-${FORECAST_LOOKBACK_DAYS} days') * 1000
       GROUP BY l.inventory_id, day_bucket
-    `).all<{ inventory_id: number; day_bucket: number; daily_sold: number }>();
+    `);
 
     const todayBucket = Math.floor(Date.now() / MS_PER_DAY);
     const startBucket = todayBucket - (FORECAST_LOOKBACK_DAYS - 1);
 
     const salesByInventory = new Map<number, number[]>();
-    for (const row of dailyResult.results) {
+    for (const row of (dailyRows ?? [])) {
       const idx = row.day_bucket - startBucket;
       if (idx < 0 || idx >= FORECAST_LOOKBACK_DAYS) continue;
       let arr = salesByInventory.get(row.inventory_id);
@@ -68,7 +71,7 @@ export class AIContextBuilder {
       arr[idx] = row.daily_sold;
     }
 
-    return inventoryResult.results.map(item => {
+    return (inventoryRows ?? []).map(item => {
       const dailySales = salesByInventory.get(item.id) ?? new Array(FORECAST_LOOKBACK_DAYS).fill(0);
 
       this.forecast.fit(item.slug, dailySales);
@@ -102,7 +105,8 @@ export class AIContextBuilder {
    * Get all print modules with their context
    */
   async getModulesContext(): Promise<ModuleContext[]> {
-    const result = await this.db.prepare(`
+    const drizzleDb = getDb(this.db);
+    const rows = await drizzleDb.all<ModuleContext>(sql`
       SELECT
         pm.id,
         pm.name,
@@ -117,18 +121,19 @@ export class AIContextBuilder {
       FROM print_modules pm
       LEFT JOIN spool_presets sp ON pm.default_spool_preset_id = sp.id
       WHERE pm.active = 1
-    `).all<ModuleContext>();
+    `);
 
-    return result.results;
+    return rows ?? [];
   }
 
 
 /**
  * Get all printers with their suggested queue (queued jobs)
  */
-async getAllPrintersWithQueuedJobs(): Promise<Printer[]> {
+ async getAllPrintersWithQueuedJobs(): Promise<Printer[]> {
   type PrinterRow = Printer & { module_id: number | null; module_name: string | null; job_status: string | null };
-  const result = await this.db.prepare(`
+  const drizzleDb = getDb(this.db);
+  const rows = await drizzleDb.all<PrinterRow>(sql`
     SELECT
       p.*,
       pj.module_id,
@@ -138,11 +143,11 @@ async getAllPrintersWithQueuedJobs(): Promise<Printer[]> {
     LEFT JOIN print_jobs pj ON pj.printer_id = p.id AND pj.status IN ('queued', 'printing')
     LEFT JOIN print_modules pm ON pj.module_id = pm.id
     ORDER BY p.id, pj.id
-  `).all<PrinterRow>();
+  `);
 
   // Group jobs by printer
   const printersMap = new Map<number, Printer>();
-  for (const row of result.results || []) {
+  for (const row of (rows ?? [])) {
     if (!printersMap.has(row.id)) {
       printersMap.set(row.id, {
         id: row.id,

@@ -2,6 +2,8 @@ import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
 import { getAllInventoryItems } from '$lib/inventory_handler';
 import { buildSpoolUsage } from '$lib/utils/statsCompute';
+import { sql } from 'drizzle-orm';
+import { getDb } from '$lib/db';
 
 export const load: PageServerLoad = async ({ platform }) => {
   const database = platform?.env?.DB;
@@ -35,6 +37,7 @@ export const load: PageServerLoad = async ({ platform }) => {
     };
   }
 
+  const drizzleDb = getDb(database);
   const printers = await db.getAllPrinters(database);
   const printJobs = await db.getAllPrintJobs(database);
   const modules = await db.getAllPrintModules(database);
@@ -754,10 +757,10 @@ function buildModuleBreakdown(jobs: any[]) {
     const inventoryItems = await getAllInventoryItems(database);
 
     // Inventory velocity from the view
-    const velocityResult = await database.prepare(
-      'SELECT * FROM inventory_sales_velocity ORDER BY days_until_stockout ASC'
-    ).all();
-    const velocityItems = (velocityResult.results || []) as {
+    const velocityResult = await drizzleDb.all(
+      sql`SELECT * FROM inventory_sales_velocity ORDER BY days_until_stockout ASC`
+    );
+    const velocityItems = (velocityResult || []) as {
       id: number; slug: string; name: string; stock_count: number;
       min_threshold: number; stock_above_min: number;
       sold_7d: number; sold_14d: number; sold_30d: number;
@@ -765,7 +768,7 @@ function buildModuleBreakdown(jobs: any[]) {
     }[];
 
     // Daily stock flow from inventory_log (last 30 days)
-    const stockFlowResult = await database.prepare(`
+    const stockFlowResult = await drizzleDb.all(sql`
       SELECT
         DATE(created_at / 1000, 'unixepoch') as day,
         SUM(CASE WHEN change_type = 'add' THEN quantity ELSE 0 END) as produced,
@@ -773,11 +776,11 @@ function buildModuleBreakdown(jobs: any[]) {
         SUM(CASE WHEN change_type = 'sold_b2b' THEN ABS(quantity) ELSE 0 END) as sold_b2b,
         SUM(CASE WHEN change_type = 'remove' THEN ABS(quantity) ELSE 0 END) as removed
       FROM inventory_log
-      WHERE created_at > ?
+      WHERE created_at > ${thirtyDaysAgo}
       GROUP BY day
       ORDER BY day ASC
-    `).bind(thirtyDaysAgo).all();
-    const stockFlow = (stockFlowResult.results || []) as {
+    `);
+    const stockFlow = (stockFlowResult || []) as {
       day: string; produced: number; sold_b2c: number; sold_b2b: number; removed: number;
     }[];
 
@@ -819,39 +822,39 @@ function buildModuleBreakdown(jobs: any[]) {
 
   try {
     // Shopify orders summary
-    const ordersResult = await database.prepare(`
+    const ordersResult = await drizzleDb.get(sql`
       SELECT
         COUNT(*) as total_orders,
         SUM(total_items) as total_items,
         MIN(processed_at) as first_order,
         MAX(processed_at) as last_order
       FROM shopify_orders
-    `).first<{ total_orders: number; total_items: number; first_order: number; last_order: number }>();
+    `) as { total_orders: number; total_items: number; first_order: number; last_order: number } | undefined;
 
-    const recentOrdersResult = await database.prepare(`
+    const recentOrdersResult = await drizzleDb.all(sql`
       SELECT shopify_order_id, shopify_order_number, processed_at, total_items, status
       FROM shopify_orders
       ORDER BY processed_at DESC
       LIMIT 15
-    `).all();
-    const recentOrders = (recentOrdersResult.results || []) as {
+    `);
+    const recentOrders = (recentOrdersResult || []) as {
       shopify_order_id: string; shopify_order_number: string;
       processed_at: number; total_items: number; status: string;
     }[];
 
     // Orders per day (last 30 days)
-    const dailyOrdersResult = await database.prepare(`
+    const dailyOrdersResult = await drizzleDb.all(sql`
       SELECT
         DATE(processed_at / 1000, 'unixepoch') as day,
         COUNT(*) as order_count,
         SUM(total_items) as items_count
       FROM shopify_orders
-      WHERE processed_at > ?
+      WHERE processed_at > ${thirtyDaysAgo}
       GROUP BY day
       ORDER BY day ASC
-    `).bind(thirtyDaysAgo).all();
+    `);
     const dailyOrdersMap = new Map(
-      ((dailyOrdersResult.results || []) as { day: string; order_count: number; items_count: number }[])
+      ((dailyOrdersResult || []) as { day: string; order_count: number; items_count: number }[])
         .map(r => [r.day, r])
     );
     const dailyOrders = Array.from({ length: 30 }, (_, i) => {
@@ -863,9 +866,9 @@ function buildModuleBreakdown(jobs: any[]) {
     });
 
     // Sync state
-    const syncState = await database.prepare(
-      'SELECT last_sync_at, orders_processed, items_deducted FROM shopify_sync LIMIT 1'
-    ).first<{ last_sync_at: number; orders_processed: number; items_deducted: number }>();
+    const syncState = await drizzleDb.get(
+      sql`SELECT last_sync_at, orders_processed, items_deducted FROM shopify_sync LIMIT 1`
+    ) as { last_sync_at: number; orders_processed: number; items_deducted: number } | undefined;
 
     shopifyStats = {
       totalOrders: ordersResult?.total_orders || 0,
@@ -890,6 +893,7 @@ export const actions: Actions = {
       return { error: 'Database not available' };
     }
 
+    const drizzleDb = getDb(database);
     const formData = await request.formData();
     const spoolId = Number(formData.get('spoolId'));
     const brand = formData.get('brand') as string;
@@ -899,15 +903,15 @@ export const actions: Actions = {
     const cost = Number(formData.get('cost')) || null;
 
     try {
-      await database.prepare(`
+      await drizzleDb.run(sql`
         UPDATE spools 
-        SET brand = ?, 
-            material = ?, 
-            color = ?, 
-            remaining_weight = ?, 
-            cost = ?
-        WHERE id = ?
-      `).bind(brand, material, color, remaining_weight, cost, spoolId).run();
+        SET brand = ${brand}, 
+            material = ${material}, 
+            color = ${color}, 
+            remaining_weight = ${remaining_weight}, 
+            cost = ${cost}
+        WHERE id = ${spoolId}
+      `);
 
       return { success: true, message: 'Spool updated successfully' };
     } catch (error) {
@@ -922,14 +926,15 @@ export const actions: Actions = {
       return { error: 'Database not available' };
     }
 
+    const drizzleDb = getDb(database);
     const formData = await request.formData();
     const spoolId = Number(formData.get('spoolId'));
 
     try {
       // Check if spool is loaded on any printer
-      const loadedPrinter = await database.prepare(`
-        SELECT id, name FROM printers WHERE loaded_spool_id = ?
-      `).bind(spoolId).first();
+      const loadedPrinter = await drizzleDb.get<{ id: number; name: string }>(sql`
+        SELECT id, name FROM printers WHERE loaded_spool_id = ${spoolId}
+      `);
 
       if (loadedPrinter) {
         return { 
@@ -938,7 +943,7 @@ export const actions: Actions = {
       }
 
       // Delete the spool
-      await database.prepare('DELETE FROM spools WHERE id = ?').bind(spoolId).run();
+      await drizzleDb.run(sql`DELETE FROM spools WHERE id = ${spoolId}`);
 
       return { success: true, message: 'Spool deleted successfully' };
     } catch (error) {

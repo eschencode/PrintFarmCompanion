@@ -1,5 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import { fail } from '@sveltejs/kit';
+import { sql } from 'drizzle-orm';
+import { getDb } from '$lib/db';
 
 export interface ProductModule {
   id: number;
@@ -31,28 +33,29 @@ export const load: PageServerLoad = async ({ platform }) => {
   const db = platform?.env?.DB;
   if (!db) return { products: [], categories: [] };
 
+  const drizzleDb = getDb(db);
   // Load all inventory items with their linked modules and SKU mappings in one pass
   const [itemRows, moduleRows, skuRows] = await Promise.all([
-    db.prepare('SELECT * FROM inventory ORDER BY category ASC, name ASC').all(),
-    db.prepare(`
+    drizzleDb.all(sql`SELECT * FROM inventory ORDER BY category ASC, name ASC`),
+    drizzleDb.all(sql`
       SELECT pm.id, pm.name, pm.inventory_slug, pm.expected_weight, pm.objects_per_print,
              pmod.name AS printer_model_name
       FROM print_modules pm
       LEFT JOIN printer_models pmod ON pm.printer_model_id = pmod.id
       WHERE pm.inventory_slug IS NOT NULL
       ORDER BY pm.name ASC
-    `).all(),
-    db.prepare(`
+    `),
+    drizzleDb.all(sql`
       SELECT shopify_sku, inventory_slug, quantity
       FROM shopify_sku_mapping
       WHERE source_type = 'inventory'
       ORDER BY shopify_sku ASC
-    `).all(),
+    `),
   ]);
 
-  const items = (itemRows.results || []) as Record<string, unknown>[];
-  const modules = (moduleRows.results || []) as Record<string, unknown>[];
-  const skus = (skuRows.results || []) as Record<string, unknown>[];
+  const items = (itemRows || []) as Record<string, unknown>[];
+  const modules = (moduleRows || []) as Record<string, unknown>[];
+  const skus = (skuRows || []) as Record<string, unknown>[];
 
   // Index modules and skus by inventory_slug for fast lookup
   const modulesBySlug: Record<string, ProductModule[]> = {};
@@ -102,6 +105,7 @@ export const actions: Actions = {
     const db = platform?.env?.DB;
     if (!db) return fail(500, { error: 'Database not available' });
 
+    const drizzleDb = getDb(db);
     const form = await request.formData();
     const id = form.get('id') ? Number(form.get('id')) : null;
     const name = (form.get('name') as string | null)?.trim();
@@ -115,16 +119,19 @@ export const actions: Actions = {
     if (!/^[a-z0-9-]+$/.test(slug)) return fail(400, { error: 'Slug may only contain lowercase letters, numbers and hyphens' });
 
     if (id) {
-      await db.prepare(
-        'UPDATE inventory SET name=?, sku=?, category=?, min_threshold=?, description=? WHERE id=?'
-      ).bind(name, sku, category, min_threshold, description, id).run();
+      await drizzleDb.run(sql`
+        UPDATE inventory
+        SET name = ${name}, sku = ${sku}, category = ${category}, min_threshold = ${min_threshold}, description = ${description}
+        WHERE id = ${id}
+      `);
     } else {
       // Check slug uniqueness
-      const existing = await db.prepare('SELECT id FROM inventory WHERE slug=?').bind(slug).first();
+      const existing = await drizzleDb.get(sql`SELECT id FROM inventory WHERE slug = ${slug}`);
       if (existing) return fail(409, { error: `Slug "${slug}" is already in use` });
-      await db.prepare(
-        'INSERT INTO inventory (name, slug, sku, category, min_threshold, description, stock_count) VALUES (?,?,?,?,?,?,0)'
-      ).bind(name, slug, sku, category, min_threshold, description).run();
+      await drizzleDb.run(sql`
+        INSERT INTO inventory (name, slug, sku, category, min_threshold, description, stock_count)
+        VALUES (${name}, ${slug}, ${sku}, ${category}, ${min_threshold}, ${description}, 0)
+      `);
     }
 
     return { success: true };
@@ -134,28 +141,29 @@ export const actions: Actions = {
     const db = platform?.env?.DB;
     if (!db) return fail(500, { error: 'Database not available' });
 
+    const drizzleDb = getDb(db);
     const form = await request.formData();
     const id = Number(form.get('id'));
 
     // Block delete if modules or SKU mappings reference this slug
-    const item = await db.prepare('SELECT slug FROM inventory WHERE id=?').bind(id).first() as { slug: string } | null;
+    const item = await drizzleDb.get<{ slug: string }>(sql`SELECT slug FROM inventory WHERE id = ${id}`);
     if (!item) return fail(404, { error: 'Item not found' });
 
-    const linkedModules = await db.prepare(
-      'SELECT COUNT(*) as n FROM print_modules WHERE inventory_slug=?'
-    ).bind(item.slug).first() as { n: number };
+    const linkedModules = await drizzleDb.get<{ n: number }>(
+      sql`SELECT COUNT(*) as n FROM print_modules WHERE inventory_slug = ${item.slug}`
+    );
 
-    const linkedSkus = await db.prepare(
-      'SELECT COUNT(*) as n FROM shopify_sku_mapping WHERE inventory_slug=?'
-    ).bind(item.slug).first() as { n: number };
+    const linkedSkus = await drizzleDb.get<{ n: number }>(
+      sql`SELECT COUNT(*) as n FROM shopify_sku_mapping WHERE inventory_slug = ${item.slug}`
+    );
 
     if ((linkedModules?.n ?? 0) > 0)
       return fail(409, { error: `Cannot delete — ${linkedModules.n} print module(s) still produce this item` });
     if ((linkedSkus?.n ?? 0) > 0)
       return fail(409, { error: `Cannot delete — ${linkedSkus.n} Shopify SKU mapping(s) reference this item` });
 
-    await db.prepare('DELETE FROM inventory_log WHERE inventory_id=?').bind(id).run();
-    await db.prepare('DELETE FROM inventory WHERE id=?').bind(id).run();
+    await drizzleDb.run(sql`DELETE FROM inventory_log WHERE inventory_id = ${id}`);
+    await drizzleDb.run(sql`DELETE FROM inventory WHERE id = ${id}`);
 
     return { success: true };
   },

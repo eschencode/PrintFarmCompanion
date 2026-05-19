@@ -1,5 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import { getAllInventoryItems, recordSaleB2BBySlug } from '$lib/inventory_handler';
+import { sql } from 'drizzle-orm';
+import { getDb } from '$lib/db';
 
 interface SetComponent {
   inventory_slug: string;
@@ -13,17 +15,18 @@ interface SetDefinition {
 }
 
 async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
-  const result = await db.prepare(`
+  const drizzleDb = getDb(db);
+  const rows = await drizzleDb.all(sql`
     SELECT sm.shopify_sku, sm.inventory_slug, sm.quantity, i.name as item_name
     FROM shopify_sku_mapping sm
     JOIN inventory i ON sm.inventory_slug = i.slug
     ORDER BY sm.shopify_sku, i.name
-  `).all();
+  `);
 
-  const rows = (result.results || []) as { shopify_sku: string; inventory_slug: string; quantity: number; item_name: string }[];
+  const typedRows = (rows || []) as { shopify_sku: string; inventory_slug: string; quantity: number; item_name: string }[];
 
   const skuGroups: Record<string, { inventory_slug: string; quantity: number; item_name: string }[]> = {};
-  for (const row of rows) {
+  for (const row of typedRows) {
     if (!skuGroups[row.shopify_sku]) skuGroups[row.shopify_sku] = [];
     skuGroups[row.shopify_sku].push(row);
   }
@@ -74,6 +77,7 @@ export const actions: Actions = {
   b2bSellSets: async ({ request, platform }) => {
     const db = platform?.env?.DB;
     if (!db) return { success: false, error: 'Database not available' };
+    const drizzleDb = getDb(db);
 
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
@@ -85,13 +89,13 @@ export const actions: Actions = {
 
       for (const entry of entries) {
         if (entry.count <= 0) continue;
-        const components = await db.prepare(`
+        const components = await drizzleDb.all(sql`
           SELECT inventory_slug, quantity
           FROM shopify_sku_mapping
-          WHERE shopify_sku = ?
-        `).bind(entry.sku).all();
+          WHERE shopify_sku = ${entry.sku}
+        `);
 
-        const rows = (components.results || []) as { inventory_slug: string; quantity: number }[];
+        const rows = (components || []) as { inventory_slug: string; quantity: number }[];
         for (const comp of rows) {
           const totalQty = comp.quantity * entry.count;
           const result = await recordSaleB2BBySlug(db, comp.inventory_slug, totalQty, `B2B sale: ${entry.count}x ${entry.sku}`);

@@ -7,6 +7,8 @@
 
 import type { D1Database } from '@cloudflare/workers-types';
 import { ShopifyClient, type ShopifyOrder } from './client';
+import { sql } from 'drizzle-orm';
+import { getDb } from '../db';
 
 export interface SkuMapping {
     shopify_sku: string;
@@ -45,9 +47,10 @@ export class ShopifySyncService {
      * Get current sync state from database
      */
     async getSyncState(): Promise<SyncState> {
-        const result = await this.db
-            .prepare('SELECT last_order_id, last_sync_at, orders_processed, items_deducted FROM shopify_sync LIMIT 1')
-            .first<SyncState>();
+        const drizzleDb = getDb(this.db);
+        const result = await drizzleDb.get<SyncState>(
+            sql`SELECT last_order_id, last_sync_at, orders_processed, items_deducted FROM shopify_sync LIMIT 1`
+        );
 
         return result || {
             last_order_id: null,
@@ -61,13 +64,14 @@ export class ShopifySyncService {
      * Get all SKU mappings from database
      */
     async getSkuMappings(): Promise<Map<string, SkuMapping[]>> {
-        const results = await this.db
-            .prepare('SELECT shopify_sku, inventory_slug, quantity, source_type, spool_preset_id FROM shopify_sku_mapping')
-            .all<SkuMapping>();
+        const drizzleDb = getDb(this.db);
+        const rows = await drizzleDb.all<SkuMapping>(
+            sql`SELECT shopify_sku, inventory_slug, quantity, source_type, spool_preset_id FROM shopify_sku_mapping`
+        );
 
         const mappings = new Map<string, SkuMapping[]>();
         
-        for (const row of results.results) {
+        for (const row of rows ?? []) {
             const existing = mappings.get(row.shopify_sku) || [];
             existing.push(row);
             mappings.set(row.shopify_sku, existing);
@@ -80,10 +84,10 @@ export class ShopifySyncService {
      * Check if an order has already been processed
      */
     async isOrderProcessed(orderId: number): Promise<boolean> {
-        const result = await this.db
-            .prepare('SELECT 1 FROM shopify_orders WHERE shopify_order_id = ?')
-            .bind(String(orderId))
-            .first();
+        const drizzleDb = getDb(this.db);
+        const result = await drizzleDb.get(
+            sql`SELECT 1 FROM shopify_orders WHERE shopify_order_id = ${String(orderId)}`
+        );
 
         return result !== null;
     }
@@ -122,42 +126,30 @@ export class ShopifySyncService {
 
                 try {
                     if (mapping.source_type === 'storage' && mapping.spool_preset_id) {
+                        const drizzleDb = getDb(this.db);
                         // Deduct from spool preset storage count
-                        await this.db
-                            .prepare(`
-                                UPDATE spool_presets
-                                SET storage_count = MAX(0, COALESCE(storage_count, 0) - ?)
-                                WHERE id = ?
-                            `)
-                            .bind(deductAmount, mapping.spool_preset_id)
-                            .run();
+                        await drizzleDb.run(sql`
+                            UPDATE spool_presets
+                            SET storage_count = MAX(0, COALESCE(storage_count, 0) - ${deductAmount})
+                            WHERE id = ${mapping.spool_preset_id}
+                        `);
                     } else {
+                        const drizzleDb = getDb(this.db);
                         // Deduct from inventory stock
-                        await this.db
-                            .prepare(`
-                                UPDATE inventory
-                                SET stock_count = stock_count - ?,
-                                    total_sold = total_sold + ?,
-                                    total_sold_b2c = total_sold_b2c + ?
-                                WHERE slug = ?
-                            `)
-                            .bind(deductAmount, deductAmount, deductAmount, mapping.inventory_slug)
-                            .run();
+                        await drizzleDb.run(sql`
+                            UPDATE inventory
+                            SET stock_count = stock_count - ${deductAmount},
+                                total_sold = total_sold + ${deductAmount},
+                                total_sold_b2c = total_sold_b2c + ${deductAmount}
+                            WHERE slug = ${mapping.inventory_slug}
+                        `);
 
                         // Log the deduction
-                        await this.db
-                            .prepare(`
-                                INSERT INTO inventory_log (inventory_id, change_type, quantity, reason, created_at)
-                                SELECT id, 'sold_b2c', ?, ?, ?
-                                FROM inventory WHERE slug = ?
-                            `)
-                            .bind(
-                                -deductAmount,
-                                `Shopify ${order.name} - ${item.sku}`,
-                                Date.now(),
-                                mapping.inventory_slug
-                            )
-                            .run();
+                        await drizzleDb.run(sql`
+                            INSERT INTO inventory_log (inventory_id, change_type, quantity, reason, created_at)
+                            SELECT id, 'sold_b2c', ${-deductAmount}, ${`Shopify ${order.name} - ${item.sku}`}, ${Date.now()}
+                            FROM inventory WHERE slug = ${mapping.inventory_slug}
+                        `);
                     }
 
                     itemsDeducted += deductAmount;
@@ -169,18 +161,11 @@ export class ShopifySyncService {
         }
 
         // Record the processed order
-        await this.db
-            .prepare(`
-                INSERT INTO shopify_orders (shopify_order_id, shopify_order_number, processed_at, total_items, status)
-                VALUES (?, ?, ?, ?, 'processed')
-            `)
-            .bind(
-                String(order.id),
-                String(order.order_number),
-                Date.now(),
-                itemsDeducted
-            )
-            .run();
+        const drizzleDb = getDb(this.db);
+        await drizzleDb.run(sql`
+            INSERT INTO shopify_orders (shopify_order_id, shopify_order_number, processed_at, total_items, status)
+            VALUES (${String(order.id)}, ${String(order.order_number)}, ${Date.now()}, ${itemsDeducted}, 'processed')
+        `);
 
         return { itemsDeducted, errors };
     }
@@ -271,16 +256,14 @@ export class ShopifySyncService {
             cleanOrderId = String(lastOrderId).replace(/\..*$/, '').replace(/[^0-9]/g, '');
         }
         
-        await this.db
-            .prepare(`
-                UPDATE shopify_sync 
-                SET last_order_id = COALESCE(?, last_order_id),
-                    last_sync_at = ?,
-                    orders_processed = orders_processed + ?,
-                    items_deducted = items_deducted + ?
-            `)
-            .bind(cleanOrderId, Date.now(), ordersProcessed, itemsDeducted)
-            .run();
+        const drizzleDb = getDb(this.db);
+        await drizzleDb.run(sql`
+            UPDATE shopify_sync 
+            SET last_order_id = COALESCE(${cleanOrderId}, last_order_id),
+                last_sync_at = ${Date.now()},
+                orders_processed = orders_processed + ${ordersProcessed},
+                items_deducted = items_deducted + ${itemsDeducted}
+        `);
     }
 
     /**
@@ -292,21 +275,19 @@ export class ShopifySyncService {
         processed_at: number;
         total_items: number;
     }[]> {
-        const result = await this.db
-            .prepare(`
-                SELECT shopify_order_id, shopify_order_number, processed_at, total_items
-                FROM shopify_orders
-                ORDER BY processed_at DESC
-                LIMIT ?
-            `)
-            .bind(limit)
-            .all();
-
-        return result.results as {
+        const drizzleDb = getDb(this.db);
+        const rows = await drizzleDb.all<{
             shopify_order_id: string;
             shopify_order_number: string;
             processed_at: number;
             total_items: number;
-        }[];
+        }>(sql`
+            SELECT shopify_order_id, shopify_order_number, processed_at, total_items
+            FROM shopify_orders
+            ORDER BY processed_at DESC
+            LIMIT ${limit}
+        `);
+
+        return rows ?? [];
     }
 }

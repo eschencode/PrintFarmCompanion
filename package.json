@@ -15,9 +15,11 @@
 		"desktop:dev": "cd desktop/src-tauri && cargo tauri dev",
 		"desktop:build": "cd desktop/src-tauri && cargo tauri build",
 		"build:sidecar": "mkdir -p desktop/src-tauri/binaries && TARGET=$(rustc -vV | sed -n 's/host: //p') && (cd local-file-handler && bun install) && bun build --compile local-file-handler/server.js --outfile=desktop/src-tauri/binaries/pfc-file-handler-$TARGET && echo \"✅ Sidecar built for $TARGET\"",
-		"db:reset": "rm -rf .wrangler/state/v3/d1 && npx wrangler d1 execute DB --local --file=schema.sql && npx wrangler d1 execute DB --local --file=seed.sql && echo '✅ Database reset complete!'",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate:local": "wrangler d1 migrations apply DB --local",
+		"db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+		"db:reset": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate:local && npx wrangler d1 execute DB --local --file=seed.sql && echo '✅ Database reset complete!'",
 		"db:delete": "rm -rf .wrangler/state/v3/d1",
-		"db:schema": "npx wrangler d1 execute DB --local --file=schema.sql",
 		"db:seed": "npx wrangler d1 execute DB --local --file=seed.sql",
 		"db:pull": "npx wrangler d1 export DB --remote --output=./remote-backup.sql && python3 -c \"import re,sys; c=open('remote-backup.sql').read(); pm=re.search(r'(CREATE TABLE printer_models[^;]+;(?:\\nINSERT INTO \\\"printer_models\\\"[^;]+;)*)',c,re.DOTALL).group(0); c=c.replace(pm,'',1).replace('CREATE TABLE printers',pm+'\\nCREATE TABLE printers',1); open('/tmp/import_fixed.sql','w').write('PRAGMA foreign_keys=OFF;\\n'+c)\" && rm -rf .wrangler/state/v3/d1 && npx wrangler d1 execute DB --local --file=/tmp/import_fixed.sql && echo '✅ Local DB synced from remote!'"
 	},
@@ -33,6 +35,7 @@
 		"@tsconfig/svelte": "^5.0.6",
 		"@types/jszip": "^3.4.1",
 		"@types/node": "^22",
+		"drizzle-kit": "^0.31.10",
 		"eslint": "^9.39.1",
 		"eslint-plugin-svelte": "^3.13.1",
 		"globals": "^16.5.0",
@@ -46,6 +49,7 @@
 	},
 	"dependencies": {
 		"@tauri-apps/api": "^2.10.1",
+		"drizzle-orm": "^0.45.2",
 		"echarts": "^6.0.0",
 		"jszip": "^3.10.1"
 	},

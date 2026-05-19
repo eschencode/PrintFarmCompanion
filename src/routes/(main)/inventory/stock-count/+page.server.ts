@@ -1,5 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import { getAllInventoryItems, performManualCountBySlug } from '$lib/inventory_handler';
+import { sql } from 'drizzle-orm';
+import { getDb } from '$lib/db';
 
 interface SetComponent {
   inventory_slug: string;
@@ -19,17 +21,18 @@ interface UnitWeight {
 }
 
 async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
-  const result = await db.prepare(`
+  const drizzleDb = getDb(db);
+  const rows = await drizzleDb.all(sql`
     SELECT sm.shopify_sku, sm.inventory_slug, sm.quantity, i.name as item_name
     FROM shopify_sku_mapping sm
     JOIN inventory i ON sm.inventory_slug = i.slug
     ORDER BY sm.shopify_sku, i.name
-  `).all();
+  `);
 
-  const rows = (result.results || []) as { shopify_sku: string; inventory_slug: string; quantity: number; item_name: string }[];
+  const typedRows = (rows || []) as { shopify_sku: string; inventory_slug: string; quantity: number; item_name: string }[];
 
   const skuGroups: Record<string, { inventory_slug: string; quantity: number; item_name: string }[]> = {};
-  for (const row of rows) {
+  for (const row of typedRows) {
     if (!skuGroups[row.shopify_sku]) skuGroups[row.shopify_sku] = [];
     skuGroups[row.shopify_sku].push(row);
   }
@@ -65,7 +68,8 @@ function buildSetLabel(sku: string, components: { inventory_slug: string; quanti
 }
 
 async function getUnitWeights(db: any): Promise<UnitWeight[]> {
-  const result = await db.prepare(`
+  const drizzleDb = getDb(db);
+  const rows = await drizzleDb.all(sql`
     SELECT
       pm.inventory_slug,
       i.name,
@@ -74,10 +78,10 @@ async function getUnitWeights(db: any): Promise<UnitWeight[]> {
     JOIN inventory i ON pm.inventory_slug = i.slug
     WHERE pm.inventory_slug IS NOT NULL
     GROUP BY pm.inventory_slug
-  `).all();
+  `);
 
-  const rows = (result.results || []) as { inventory_slug: string; name: string; weight_per_unit: number }[];
-  return rows.map(r => ({ slug: r.inventory_slug, name: r.name, weight_per_unit: r.weight_per_unit }));
+  const typedRows = (rows || []) as { inventory_slug: string; name: string; weight_per_unit: number }[];
+  return typedRows.map(r => ({ slug: r.inventory_slug, name: r.name, weight_per_unit: r.weight_per_unit }));
 }
 
 export const load: PageServerLoad = async ({ platform }) => {
