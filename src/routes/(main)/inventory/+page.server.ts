@@ -1,16 +1,15 @@
 import type { PageServerLoad, Actions } from './$types';
 import {
-  getAllInventoryItems,
+  getAllObjects,
   getAllRecentLogs,
   addStock,
   removeStock,
   performManualCount,
-  setStock,
-  addStockBySlug,
-  recordSaleB2BBySlug,
-  performManualCountBySlug
+  addStockBySku,
+  recordSaleB2BBySku,
+  performManualCountBySku
 } from '$lib/inventory_handler';
-import { AIContextBuilder } from '$lib/ai/context-builder';
+import { AIContextBuilder } from '$lib/recomendation/context-builder';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
@@ -108,7 +107,7 @@ export const load: PageServerLoad = async ({ platform }) => {
     return { items: [], logs: [], error: 'Database not available', setDefinitions: [], unitWeights: [] };
   }
 
-  const items = await getAllInventoryItems(db);
+  const items = await getAllObjects(db);
   const logs = await getAllRecentLogs(db, 50);
   
   // Load set definitions and unit weights for inventory check tool
@@ -128,7 +127,7 @@ export const load: PageServerLoad = async ({ platform }) => {
     const builder = new AIContextBuilder(db);
     const velocityList = await builder.getInventoryWithVelocity();
     const itemsWithVelocity = items.map(i => {
-      const v = velocityList.find(v => v.slug === i.slug);
+      const v = velocityList.find(v => v.sku === i.sku);
       return {
         ...i,
         daily_velocity: v?.daily_velocity ?? 0,
@@ -154,7 +153,7 @@ export const actions: Actions = {
     const quantity = parseInt(formData.get('quantity') as string) || 1;
     const reason = formData.get('reason') as string || 'Manual add';
 
-    return await addStock(db, id, quantity, reason);
+    return await addStock(db, id, quantity);
   },
 
   // Remove stock manually
@@ -167,7 +166,7 @@ export const actions: Actions = {
     const quantity = parseInt(formData.get('quantity') as string) || 1;
     const reason = formData.get('reason') as string || 'Manual remove';
 
-    return await removeStock(db, id, quantity, reason);
+    return await removeStock(db, id, quantity);
   },
 
   // Set stock to specific value (manual count)
@@ -180,7 +179,7 @@ export const actions: Actions = {
     const count = parseInt(formData.get('count') as string);
     const reason = formData.get('reason') as string || undefined;
 
-    return await performManualCount(db, id, count, reason);
+    return await performManualCount(db, id, count);
   },
 
   // Bulk add from sets – decompose sets into individual items
@@ -212,7 +211,7 @@ export const actions: Actions = {
         
         for (const comp of rows) {
           const totalQty = comp.quantity * entry.count;
-          const result = await addStockBySlug(db, comp.inventory_slug, totalQty, `Set decompose: ${entry.count}x ${entry.sku}`);
+          const result = await addStockBySku(db, comp.inventory_slug, totalQty);
           results.push({ slug: comp.inventory_slug, quantity: totalQty, success: result.success });
         }
       }
@@ -240,7 +239,7 @@ export const actions: Actions = {
       
       for (const entry of entries) {
         if (entry.count <= 0) continue;
-        const result = await addStockBySlug(db, entry.slug, entry.count, `Weight-based count`);
+        const result = await addStockBySku(db, entry.slug, entry.count);
         results.push({ slug: entry.slug, quantity: entry.count, success: result.success });
       }
       
@@ -279,7 +278,7 @@ export const actions: Actions = {
 
         for (const comp of rows) {
           const totalQty = comp.quantity * entry.count;
-          const result = await recordSaleB2BBySlug(db, comp.inventory_slug, totalQty, `B2B sale: ${entry.count}x ${entry.sku}`);
+          const result = await recordSaleB2BBySku(db, comp.inventory_slug, totalQty);
           results.push({ slug: comp.inventory_slug, quantity: totalQty, success: result.success });
         }
       }
@@ -307,7 +306,7 @@ export const actions: Actions = {
 
       for (const entry of entries) {
         if (entry.count <= 0) continue;
-        const result = await recordSaleB2BBySlug(db, entry.slug, entry.count, 'B2B direct sale');
+        const result = await recordSaleB2BBySku(db, entry.slug, entry.count);
         results.push({ slug: entry.slug, quantity: entry.count, success: result.success });
       }
 
@@ -333,7 +332,7 @@ export const actions: Actions = {
       const results: { slug: string; success: boolean; delta?: number }[] = [];
 
       for (const entry of entries) {
-        const result = await performManualCountBySlug(db, entry.slug, entry.count, 'Stock count session');
+        const result = await performManualCountBySku(db, entry.slug, entry.count);
         results.push({ slug: entry.slug, success: result.success, delta: (result.data as any)?.difference });
       }
 
@@ -366,7 +365,7 @@ export const actions: Actions = {
       
       for (const entry of entries) {
         if (entry.count <= 0) continue;
-        const result = await addStockBySlug(db, entry.slug, entry.count, `Bulk inventory add`);
+        const result = await addStockBySku(db, entry.slug, entry.count);
         results.push({ slug: entry.slug, quantity: entry.count, success: result.success });
       }
       

@@ -1,15 +1,16 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { AIRecommendationService, generateAndSaveSuggestedQueue, getSuggestedPrintQueue, prioritizeInventoryFromContext } from '$lib/ai';
+import { AIRecommendationService, generateAndSaveSuggestedQueue, getSuggestedPrintQueue, prioritizeInventoryFromContext } from '$lib/recomendation';
+import { AIContextBuilder } from '$lib/recomendation/context-builder';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
   const db = platform?.env?.DB;
   const ai = platform?.env?.AI;
-  
+
   if (!db) {
     return json({ error: 'Database not available' }, { status: 500 });
   }
-  
+
   if (!ai) {
     return json({ error: 'AI not available - make sure AI binding is configured' }, { status: 500 });
   }
@@ -24,7 +25,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     const suggestion = await aiService.suggestSpoolToLoad(printerId ? Number(printerId) : undefined);
     return json(suggestion);
   }
-    
+
 	 if (type === 'queue') {
       if (!printerId) {
         return json({ error: 'Missing printerId' }, { status: 400 });
@@ -36,16 +37,13 @@ export const GET: RequestHandler = async ({ url, platform }) => {
       if (!printerId) {
         return json({ error: 'Missing printerId' }, { status: 400 });
       }
-      // Build context and prioritized inventory
-      const { AIContextBuilder } = await import('$lib/ai/context-builder');
       const contextBuilder = new AIContextBuilder(db);
       const modules = await contextBuilder.getModulesContext();
       const aiContext = await contextBuilder.getAdjustedInventoryContext(modules);
       const prioritized = prioritizeInventoryFromContext(aiContext);
 
-      // Get the suggested print queue
       const queue = await getSuggestedPrintQueue(db, Number(printerId), prioritized);
-      console.log(queue); // Log to server console
+      console.log(queue);
       return json(queue);
     }
 

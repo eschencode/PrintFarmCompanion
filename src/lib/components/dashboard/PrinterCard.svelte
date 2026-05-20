@@ -3,16 +3,16 @@
   import { getPrinterImage } from '$lib/utils/printerImage';
   import { getActivePrintJob, getLoadedSpool } from '$lib/utils/printerData';
   import { getProgress } from '$lib/utils/time';
-  import type { Printer, Spool, PrintModule, PrintJobExtended, PiStatus } from '$lib/types';
+  import type { DashboardPrinter, PrintModuleFull, PrintJobFull, PiStatus } from '$lib/types';
 
   /** The printer to display. Must be defined — caller guards against undefined. */
-  export let printer: Printer;
+  export let printer: DashboardPrinter;
   /** Live Pi/MQTT status for this printer, if available. */
   export let piLive: PiStatus | undefined;
   export let liveIsStarting: boolean;
-  export let activePrintJobs: PrintJobExtended[];
-  export let spools: Spool[];
-  export let printModules: PrintModule[];
+  export let activePrintJobs: PrintJobFull[];
+  export let spools: unknown[]; // kept for API compat, use printer.loaded_spool directly
+  export let printModules: PrintModuleFull[];
   /** Full start queue — used to compute this printer's queue position. */
   export let startQueue: any[]; // complex queue entry shape not yet in types.ts
   export let startQueueTotal: number;
@@ -36,20 +36,20 @@
       <div class="w-2.5 h-2.5 bg-amber-400 rounded-full animate-pulse"></div>
     {:else if liveIsPrinting || printer.status === 'printing'}
       {@const activePrintForDot = getActivePrintJob(Number(printer.id), activePrintJobs)}
-      {@const progressForDot = activePrintForDot ? getProgress(Number(activePrintForDot.start_time), Number(activePrintForDot.expected_time), now) : 0}
+      {@const progressForDot = activePrintForDot ? getProgress(Number(activePrintForDot.start_time), Number((activePrintForDot as any).expected_time_minutes), now) : 0}
       {#if progressForDot >= 100}
         <div class="w-2.5 h-2.5 bg-violet-500 rounded-full status-glow-violet"></div>
       {:else}
-        {@const spoolForDot = printer.loaded_spool_id ? getLoadedSpool(printer.loaded_spool_id, spools) : null}
-        {@const weightAfterPrint = spoolForDot ? (spoolForDot as any).remaining_weight - (activePrintForDot?.expected_weight || 0) : 0}
-        {@const compatModules = printModules.filter((m: any) => {
-          if (m.printer_model_id && printer.printer_model_id && m.printer_model_id !== printer.printer_model_id) return false;
-          const hasPreset = m.default_spool_preset_id !== null;
-          const presetOk = spoolForDot && (spoolForDot as any).preset_id === m.default_spool_preset_id;
-          return !hasPreset || presetOk;
+        {@const spoolForDot = printer.loaded_spool}
+        {@const weightAfterPrint = spoolForDot ? spoolForDot.remaining_weight - ((activePrintForDot as any)?.module_weight || 0) : 0}
+        {@const compatModules = printModules.filter((m) => {
+          if (m.printer_preset_id !== printer.printer_preset_id) return false;
+          const slot0 = m.filament_slots?.find(s => s.slot_index === 0);
+          if (!slot0) return true; // no requirement — any spool ok
+          return spoolForDot && spoolForDot.preset_id === slot0.spool_preset_id;
         })}
         {@const minWeight = compatModules.length > 0
-          ? Math.min(...compatModules.map((m: any) => m.expected_weight))
+          ? Math.min(...compatModules.map((m) => m.weight))
           : Infinity}
         {@const printsPossible = minWeight > 0 && minWeight !== Infinity
           ? Math.floor(weightAfterPrint / minWeight)
@@ -62,22 +62,22 @@
           <div class="w-2.5 h-2.5 bg-green-500 rounded-full status-glow-green"></div>
         {/if}
       {/if}
-    {:else if printer.status === 'IDLE'}
-      {@const loadedSpoolForDot = printer.loaded_spool_id ? getLoadedSpool(printer.loaded_spool_id, spools) : null}
-      {@const remainingWeight = loadedSpoolForDot ? (loadedSpoolForDot as any).remaining_weight : 0}
-      {@const compatibleModules = printModules.filter((m: any) => {
-        if (m.printer_model_id && printer.printer_model_id && m.printer_model_id !== printer.printer_model_id) return false;
-        const moduleHasPresetPreference = m.default_spool_preset_id !== null;
-        const presetMatches = loadedSpoolForDot && (loadedSpoolForDot as any).preset_id === m.default_spool_preset_id;
-        return !moduleHasPresetPreference || presetMatches;
+    {:else if printer.status === 'idle'}
+      {@const loadedSpool = printer.loaded_spool}
+      {@const remainingWeight = loadedSpool?.remaining_weight ?? 0}
+      {@const compatibleModules = printModules.filter((m) => {
+        if (m.printer_preset_id !== printer.printer_preset_id) return false;
+        const slot0 = m.filament_slots?.find(s => s.slot_index === 0);
+        if (!slot0) return true;
+        return loadedSpool && loadedSpool.preset_id === slot0.spool_preset_id;
       })}
       {@const minModuleWeight = compatibleModules.length > 0
-        ? Math.min(...compatibleModules.map((m: any) => m.expected_weight))
+        ? Math.min(...compatibleModules.map((m) => m.weight))
         : Infinity}
       {@const maxPrintsPossible = minModuleWeight > 0 && minModuleWeight !== Infinity
         ? Math.floor(remainingWeight / minModuleWeight)
         : 0}
-      {#if !loadedSpoolForDot}
+      {#if !loadedSpool}
         <div class="w-2.5 h-2.5 bg-red-500 rounded-full status-glow-red"></div>
       {:else if maxPrintsPossible === 0}
         <div class="w-2.5 h-2.5 bg-red-500 rounded-full status-glow-red"></div>
@@ -86,7 +86,7 @@
       {:else}
         <div class="w-2.5 h-2.5 bg-green-500 rounded-full status-glow-green"></div>
       {/if}
-    {:else if printer.status === 'BROKEN'}
+    {:else if printer.status === 'inactive'}
       <div class="w-2.5 h-2.5 bg-red-500 rounded-full status-glow-red animate-pulse"></div>
     {:else}
       <div class="w-2.5 h-2.5 bg-zinc-400 dark:bg-zinc-600 rounded-full"></div>
@@ -96,7 +96,7 @@
   <!-- Printer Image -->
   <div class="flex-1 flex items-center justify-center min-h-0 w-full group-hover:scale-[1.03] transition-transform duration-500 ease-out">
     <img
-      src={getPrinterImage(printer.model)}
+      src={getPrinterImage(printer.preset?.model)}
       alt="Printer"
       class="max-h-full max-w-full object-contain opacity-80 group-hover:opacity-100 transition-opacity duration-500"
     />
@@ -111,12 +111,13 @@
         <span class="text-amber-500 dark:text-amber-400">
           {qPos === 0 ? 'Starting…' : `Queue ${qPos + 1}/${startQueueTotal}`}
         </span>
+
       {:else if liveIsPrinting || printer.status === 'printing'}
         <span class="text-blue-500 dark:text-blue-400">Printing</span>
-      {:else if printer.status === 'IDLE'}
+      {:else if printer.status === 'idle'}
         <span class="text-emerald-500 dark:text-emerald-400">Idle</span>
-      {:else if printer.status === 'BROKEN'}
-        <span class="text-red-500 dark:text-red-400">Broken</span>
+      {:else if printer.status === 'inactive'}
+        <span class="text-red-500 dark:text-red-400">Inactive</span>
       {:else}
         <span class="text-zinc-400 dark:text-zinc-500">{printer.status}</span>
       {/if}
@@ -136,7 +137,7 @@
     {:else if liveIsPrinting || printer.status === 'printing'}
       {@const activePrint = getActivePrintJob(Number(printer.id), activePrintJobs)}
       {#if activePrint}
-        {@const progress = piLive ? piLive.progress : getProgress(Number(activePrint.start_time), Number(activePrint.expected_time), now)}
+        {@const progress = piLive ? piLive.progress : getProgress(Number(activePrint.start_time), Number((activePrint as any).expected_time_minutes), now)}
         <div class="mt-2 px-1">
           <div class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
             <div

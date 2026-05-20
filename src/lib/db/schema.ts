@@ -255,6 +255,8 @@ export const printerSecrets = sqliteTable(
     serial: text("serial"),
     // Phase 3: replace with accessCodeEncrypted + Worker-secret KEK envelope encryption.
     accessCode: text("access_code"),
+    // How to send commands: 'auto' picks direct (desktop) or Pi fallback, 'direct' forces MQTT, 'pi' forces Pi bridge.
+    transport: text("transport", { enum: ["auto", "direct", "pi"] }).default("auto").notNull(),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
@@ -430,6 +432,8 @@ export const gridPresets = sqliteTable(
       .default(false),
     rows: integer("rows").notNull(),
     cols: integer("cols").notNull(),
+    // JSON-serialized GridCell[] — stores which printer/widget sits in each cell.
+    gridConfig: text("grid_config").notNull().default("[]"),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),

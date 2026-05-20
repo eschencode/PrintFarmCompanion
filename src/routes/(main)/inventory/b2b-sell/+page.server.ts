@@ -1,5 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
-import { getAllInventoryItems, recordSaleB2BBySlug } from '$lib/inventory_handler';
+import { getAllObjects, recordSaleB2BBySku } from '$lib/inventory_handler';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
@@ -66,7 +66,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   if (!db) return { items: [], setDefinitions: [] };
 
   const [items, setDefinitions] = await Promise.all([
-    getAllInventoryItems(db),
+    getAllObjects(db),
     getSetDefinitions(db).catch(() => [])
   ]);
 
@@ -98,7 +98,7 @@ export const actions: Actions = {
         const rows = (components || []) as { inventory_slug: string; quantity: number }[];
         for (const comp of rows) {
           const totalQty = comp.quantity * entry.count;
-          const result = await recordSaleB2BBySlug(db, comp.inventory_slug, totalQty, `B2B sale: ${entry.count}x ${entry.sku}`);
+          const result = await recordSaleB2BBySku(db, comp.inventory_slug, totalQty);
           results.push({ slug: comp.inventory_slug, quantity: totalQty, success: result.success });
         }
       }
@@ -124,7 +124,7 @@ export const actions: Actions = {
 
       for (const entry of entries) {
         if (entry.count <= 0) continue;
-        const result = await recordSaleB2BBySlug(db, entry.slug, entry.count, 'B2B direct sale');
+        const result = await recordSaleB2BBySku(db, entry.slug, entry.count);
         results.push({ slug: entry.slug, quantity: entry.count, success: result.success });
       }
 

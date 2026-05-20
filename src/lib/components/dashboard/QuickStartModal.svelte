@@ -1,15 +1,15 @@
 <script lang="ts">
-  import type { Printer, Spool, PrintModule, SuggestedPrintQueueItem } from '$lib/types';
+  import type { DashboardPrinter, SpoolWithPreset, PrintModuleFull, PrinterQueuedJob } from '$lib/types';
 
   /**
    * Single-tap print start flow. Shows the top recommended print for the loaded spool
    * and lets the user start it with one button. Falls back to a "Manual mode" link
    * when no recommendation is available.
    */
-  export let printer: Printer;
-  export let loadedSpool: Spool | null;
-  export let nextPrint: SuggestedPrintQueueItem | null;
-  export let nextModule: PrintModule | null;
+  export let printer: DashboardPrinter;
+  export let loadedSpool: SpoolWithPreset | null;
+  export let nextPrint: (PrinterQueuedJob & { module_name?: string }) | null;
+  export let nextModule: PrintModuleFull | null;
   export let quickStartLoading: boolean;
   /** Set of serials currently being sent to their printers — used for disabled/loading state. */
   export let startingSerials: Set<string>;
@@ -78,8 +78,8 @@
         <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22] mb-4">
           <p class="text-[10px] uppercase tracking-widest text-zinc-400 mb-2">Loaded Spool</p>
           <div class="flex items-center gap-3">
-            <div class="w-3 h-3 rounded-full shrink-0" style="background-color: {loadedSpool.color ?? '#888'}"></div>
-            <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{loadedSpool.brand} {loadedSpool.material}</span>
+            <div class="w-3 h-3 rounded-full shrink-0" style="background-color: {(loadedSpool as any).color ?? '#888'}"></div>
+            <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{(loadedSpool as any).brand ?? ''} {(loadedSpool as any).material ?? ''}</span>
             <span class="ml-auto text-xs text-zinc-400 tabular-nums">{loadedSpool.remaining_weight}g left</span>
           </div>
         </div>
@@ -88,6 +88,7 @@
         <button
           type="button"
           disabled={startingSerials.has(printer.printer_serial ?? '')}
+
           onclick={() => onEnqueue(nextModule, printer)}
           class="w-full text-left bg-emerald-500/5 border-2 border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/40 rounded-2xl p-6 mb-4 transition-all duration-200 disabled:opacity-50 group"
         >
@@ -101,11 +102,11 @@
               <p class="text-[10px] uppercase tracking-widest text-zinc-400 mb-1">
                 {startingSerials.has(printer.printer_serial ?? '') ? 'Starting…' : 'Start Next Print'}
               </p>
-              <p class="text-lg font-medium text-zinc-900 dark:text-zinc-50 leading-snug truncate">{nextPrint.module_name}</p>
+              <p class="text-lg font-medium text-zinc-900 dark:text-zinc-50 leading-snug truncate">{nextPrint.module_name ?? `Module #${nextPrint.module_id}`}</p>
               <div class="flex items-center gap-2 mt-1.5">
-                <span class="text-xs text-zinc-400 tabular-nums">{nextPrint.weight_of_print}g</span>
-                {#if nextPrint.priority}
-                  <span class="text-xs px-1.5 py-0.5 rounded-full {nextPrint.priority === 'CRITICAL' ? 'bg-red-500/10 text-red-500' : nextPrint.priority === 'HIGH' ? 'bg-orange-500/10 text-orange-500' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'}">{nextPrint.priority}</span>
+                <span class="text-xs text-zinc-400 tabular-nums">{nextModule?.weight ?? '—'}g</span>
+                {#if (nextPrint as any).priority}
+                  <span class="text-xs px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500">{(nextPrint as any).priority}</span>
                 {/if}
               </div>
             </div>

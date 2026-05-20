@@ -1,6 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
-import { getAllInventoryItems, createInventoryItem } from '$lib/inventory_handler';
+import { getAllObjects, createObject } from '$lib/inventory_handler';
 import { ShopifyClient, ShopifySyncService } from '$lib/shopify';
 import { fail } from '@sveltejs/kit';
 import { sql } from 'drizzle-orm';
@@ -31,7 +31,7 @@ export const load: PageServerLoad = async ({ platform }) => {
     sql`SELECT id, shopify_sku, inventory_slug, quantity, source_type, spool_preset_id FROM shopify_sku_mapping ORDER BY shopify_sku, inventory_slug`
   );
   const skuMappings = (skuMappingsRaw || []) as { id: number; shopify_sku: string; inventory_slug: string; quantity: number; source_type: string; spool_preset_id: number | null }[];
-  const inventoryItems = await getAllInventoryItems(database);
+  const inventoryItems = await getAllObjects(database);
   const spoolPresets = await db.getAllSpoolPresets(database);
 
   return { shopifyConfigured, shopifySyncState, shopifyRecentOrders, skuMappings, inventoryItems, spoolPresets };
@@ -103,6 +103,6 @@ export const actions: Actions = {
     const name = (form.get('name') as string).trim();
     const slug = (form.get('slug') as string).trim();
     if (!name || !slug) return fail(400, { error: 'Name and slug are required' });
-    return createInventoryItem(database, { name, slug });
+    return createObject(database, { name, sku: slug });
   },
 };

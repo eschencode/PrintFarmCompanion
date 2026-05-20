@@ -1,5 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
-import { getAllInventoryItems, performManualCountBySlug } from '$lib/inventory_handler';
+import { getAllObjects, performManualCountBySku } from '$lib/inventory_handler';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
@@ -89,7 +89,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   if (!db) return { items: [], setDefinitions: [], unitWeights: [] };
 
   const [items, setDefinitions, unitWeights] = await Promise.all([
-    getAllInventoryItems(db),
+    getAllObjects(db),
     getSetDefinitions(db).catch(() => []),
     getUnitWeights(db).catch(() => [])
   ]);
@@ -111,7 +111,7 @@ export const actions: Actions = {
       const results: { slug: string; success: boolean; delta?: number }[] = [];
 
       for (const entry of entries) {
-        const result = await performManualCountBySlug(db, entry.slug, entry.count, 'Stock count session');
+        const result = await performManualCountBySku(db, entry.slug, entry.count);
         results.push({ slug: entry.slug, success: result.success, delta: (result.data as any)?.difference });
       }
 

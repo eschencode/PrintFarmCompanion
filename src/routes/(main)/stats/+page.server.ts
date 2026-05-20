@@ -1,6 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
-import { getAllInventoryItems } from '$lib/inventory_handler';
+import { getAllObjects } from '$lib/inventory_handler';
 import { buildSpoolUsage } from '$lib/utils/statsCompute';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
@@ -38,10 +38,10 @@ export const load: PageServerLoad = async ({ platform }) => {
   }
 
   const drizzleDb = getDb(database);
-  const printers = await db.getAllPrinters(database);
-  const printJobs = await db.getAllPrintJobs(database);
-  const modules = await db.getAllPrintModules(database);
-  const spools = await db.getAllSpools(database);
+  const printers = (await db.getAllPrinters(database)) as any[];
+  const printJobs = (await db.getAllPrintJobs(database)) as any[];
+  const modules = (await db.getAllPrintModules(database)) as any[];
+  const spools = (await db.getAllSpools(database)) as any[];
   
   // Sort print jobs by start_time descending (newest first)
   const sortedJobs = [...printJobs].sort((a, b) => b.start_time - a.start_time);
@@ -754,7 +754,7 @@ function buildModuleBreakdown(jobs: any[]) {
   let shopifyStats = null;
 
   try {
-    const inventoryItems = await getAllInventoryItems(database);
+    const inventoryItems = await getAllObjects(database);
 
     // Inventory velocity from the view
     const velocityResult = await drizzleDb.all(
@@ -801,7 +801,7 @@ function buildModuleBreakdown(jobs: any[]) {
     });
 
     // Aggregate totals
-    const totalStock = inventoryItems.reduce((s, i) => s + (i.stock_count || 0), 0);
+    const totalStock = inventoryItems.reduce((s, i) => s + (i.in_stock || 0), 0);
     const lowStockItems = velocityItems.filter(i => i.stock_count < i.min_threshold);
     const criticalItems = velocityItems.filter(i => i.days_until_stockout < 7 && i.days_until_stockout !== 999);
     const totalSold30d = velocityItems.reduce((s, i) => s + i.sold_30d, 0);

@@ -5,18 +5,20 @@ import { RISK_THRESHOLDS, type StockoutForecast } from './forecast';
 import type {
   AIRecommendationContext,
   InventoryPriority,
-  InventoryWithVelocity,
+  ObjectWithVelocity,
   PrioritizedInventory,
-  PrioritizedInventoryItem,
+  PrioritizedObjectItem,
   ModuleContext,
   SpoolSuggestion
 } from '../types';
 import {
   getPrinterById,
   getSpoolById,
-  getAllPrintModules,
-  updatePrinter
+  getLoadedSpools,
+  addPrinterQueuedJob,
 } from '../server';
+import { getDb } from '../db';
+import { sql } from 'drizzle-orm';
 
 export class AIRecommendationService {
   private db: D1Database;
@@ -29,9 +31,6 @@ export class AIRecommendationService {
     this.contextBuilder = new AIContextBuilder(db);
   }
 
-  /**
-   * Gets inventory with velocity information.
-   */
   async getInventoryWithVelocity() {
     const modules = await this.contextBuilder.getModulesContext();
     const aiContext = await this.contextBuilder.getAdjustedInventoryContext(modules);
@@ -41,7 +40,6 @@ export class AIRecommendationService {
   /**
    * Returns spool presets ranked by which to load next.
    * Deduped by preset_id — the most urgent inventory item a preset can satisfy wins.
-   * Entries are ordered CRITICAL → VERY_LOW, then by days_until_stockout ascending.
    */
   async suggestSpoolToLoad(printerId?: number): Promise<SpoolSuggestion[]> {
     const modules = await this.contextBuilder.getModulesContext();
@@ -58,11 +56,10 @@ export class AIRecommendationService {
       printer = await getPrinterById(this.db, printerId);
     }
 
-    const isCompatibleModule = (m: ModuleContext, invSlug: string) => {
-      if (m.inventory_slug !== invSlug) return false;
-      if (m.preset_id === null || m.preset_id === undefined) return false;
-      if (printer?.printer_model_id && m.printer_model_id && m.printer_model_id !== printer.printer_model_id) return false;
-      if (!printer?.printer_model_id && printer?.model && m.printer_model && m.printer_model !== printer.model) return false;
+    const isCompatibleModule = (m: ModuleContext, invSku: string) => {
+      if (m.object_sku !== invSku) return false;
+      if (m.spool_preset_id === null || m.spool_preset_id === undefined) return false;
+      if (printer?.printer_preset_id && m.printer_preset_id && m.printer_preset_id !== printer.printer_preset_id) return false;
       return true;
     };
 
@@ -70,25 +67,24 @@ export class AIRecommendationService {
     const suggestions: SpoolSuggestion[] = [];
 
     for (const invItem of orderedItems) {
-      const module = modules.find(m => isCompatibleModule(m, invItem.slug));
-      if (!module || !module.preset_id || !module.preset_name) continue;
+      const module = modules.find(m => isCompatibleModule(m, invItem.sku));
+      if (!module || !module.spool_preset_id) continue;
 
-      const presetId = Number(module.preset_id);
+      const presetId = Number(module.spool_preset_id);
       if (seenPresets.has(presetId)) continue;
       seenPresets.add(presetId);
 
       suggestions.push({
         preset_id: presetId,
-        preset_name: module.preset_name,
         priority: invItem.priority,
-        inventory_slug: invItem.slug,
-        inventory_name: invItem.name,
-        stock_count: invItem.stock_count,
+        object_sku: invItem.sku,
+        object_name: invItem.name,
+        in_stock: invItem.in_stock,
         daily_velocity: invItem.daily_velocity,
         days_until_stockout: invItem.days_until_stockout,
         module_id: module.id,
         module_name: module.name,
-        reason: `Needed for "${module.name}" — stock: ${invItem.stock_count}, velocity: ${invItem.daily_velocity}/day`
+        reason: `Needed for "${module.name}" — stock: ${invItem.in_stock}, velocity: ${invItem.daily_velocity}/day`
       });
     }
 
@@ -96,9 +92,6 @@ export class AIRecommendationService {
   }
 }
 
-/**
- * Assigns a priority to each inventory item and groups them.
- */
 export function prioritizeInventoryFromContext(
   context: AIRecommendationContext
 ): PrioritizedInventory {
@@ -113,7 +106,7 @@ export function prioritizeInventoryFromContext(
   for (const item of context.adjustedInventory) {
     let priority: InventoryPriority;
 
-    if (item.stock_count <= item.min_threshold) {
+    if (item.in_stock <= item.min_threshold) {
       priority = 'CRITICAL';
     } else if (item.stockout_risk >= RISK_THRESHOLDS.CRITICAL) {
       priority = 'CRITICAL';
@@ -128,9 +121,9 @@ export function prioritizeInventoryFromContext(
     }
 
     prioritized[priority].push({
-      slug: item.slug,
+      sku: item.sku,
       name: item.name,
-      stock_count: item.stock_count,
+      in_stock: item.in_stock,
       min_threshold: item.min_threshold,
       daily_velocity: item.daily_velocity,
       days_until_stockout: item.days_until_stockout,
@@ -147,12 +140,12 @@ export function prioritizeInventoryFromContext(
 export interface SuggestedPrintQueueItem {
   module_id: number;
   module_name: string;
-  inventory_slug: string;
+  object_sku: string;
   priority: InventoryPriority;
   weight_of_print: number;
   spool_weight_after_print: number;
 }
-// Define scores to heavily favor priority, but use weight as a tie-breaker
+
 const PRIORITY_SCORES: Record<InventoryPriority, number> = {
   'CRITICAL': 100000,
   'HIGH':     10000,
@@ -169,10 +162,6 @@ type UnrolledItem = {
   stockout_risk: number;
 };
 
-
-
-
-
 export async function getSuggestedPrintQueue(
   db: D1Database,
   printerId: number,
@@ -181,55 +170,53 @@ export async function getSuggestedPrintQueue(
   forecast?: StockoutForecast
 ): Promise<SuggestedPrintQueueItem[]> {
   const printer = await getPrinterById(db, printerId);
-  if (!printer || !printer.loaded_spool_id) return [];
+  if (!printer) return [];
 
-  const loadedSpool = await getSpoolById(db, printer.loaded_spool_id);
+  const loadedSlots = await getLoadedSpools(db, printerId);
+  const slot0 = loadedSlots.find(s => s.slot_index === 0);
+  if (!slot0?.spool_id) return [];
+
+  const loadedSpool = await getSpoolById(db, slot0.spool_id);
   if (!loadedSpool) return [];
 
   if (!modules || !forecast) {
     const contextBuilder = new AIContextBuilder(db);
     if (!modules) modules = await contextBuilder.getModulesContext();
     if (!forecast) {
-      // Need to populate the forecast — getInventoryWithVelocity does the fit.
       await contextBuilder.getInventoryWithVelocity();
       forecast = contextBuilder.getForecast();
     }
   }
 
   const printableModules = modules.filter(m => {
-    if (m.preset_id !== loadedSpool.preset_id) return false;
-    if (!m.inventory_slug) return false;
-    // Use printer_model_id for matching when available, fall back to text
-    if (m.printer_model_id && printer.printer_model_id) return m.printer_model_id === printer.printer_model_id;
-    if (m.printer_model && printer.model) return m.printer_model === printer.model;
-    return true; // No model restriction
+    if (m.spool_preset_id !== loadedSpool.preset_id) return false;
+    if (!m.object_sku) return false;
+    if (m.printer_preset_id && printer.printer_preset_id) return m.printer_preset_id === printer.printer_preset_id;
+    return true;
   });
 
   const remainingWeight = Math.floor(loadedSpool.remaining_weight);
   if (remainingWeight <= 0) return [];
 
-  const getSimulatedItem = (inventory: PrioritizedInventory, slug: string) => {
+  const getSimulatedItem = (inventory: PrioritizedInventory, sku: string) => {
     for (const items of Object.values(inventory)) {
-      const found = (items as PrioritizedInventoryItem[]).find(i => i.slug === slug);
+      const found = (items as PrioritizedObjectItem[]).find(i => i.sku === sku);
       if (found) return found;
     }
     return undefined;
   };
 
-  // --- STEP 1: UNROLL THE PRINTS ---
-  // Calculate score for the 1st, 2nd, 3rd... print of each module, simulating
-  // how inventory priority drops as we plan more of the same item.
   const unrolledItems: UnrolledItem[] = [];
 
   for (const module of printableModules) {
     let simInventory: PrioritizedInventory = JSON.parse(JSON.stringify(prioritized));
-    let accumulatedWeight = module.expected_weight;
+    let accumulatedWeight = module.weight;
 
     while (accumulatedWeight <= remainingWeight) {
       let currentPriority: InventoryPriority = 'VERY_LOW';
       let currentRisk = 0;
       for (const [prio, items] of Object.entries(simInventory)) {
-        const match = (items as PrioritizedInventoryItem[]).find(i => i.slug === module.inventory_slug);
+        const match = (items as PrioritizedObjectItem[]).find(i => i.sku === module.object_sku);
         if (match) {
           currentPriority = prio as InventoryPriority;
           currentRisk = match.stockout_risk;
@@ -238,35 +225,33 @@ export async function getSuggestedPrintQueue(
       }
 
       const baseScore = PRIORITY_SCORES[currentPriority] || 0;
-      // Fill bonus: reward heavier prints (less waste) up to 40% of the priority score.
-      const fillBonus = (module.expected_weight / remainingWeight) * baseScore * 0.40;
+      const fillBonus = (module.weight / remainingWeight) * baseScore * 0.40;
       const score = baseScore + fillBonus;
 
       unrolledItems.push({
         module,
-        weight: Math.round(module.expected_weight),
+        weight: Math.round(module.weight),
         score,
         priority: currentPriority,
         stockout_risk: currentRisk
       });
 
-      const invItem = getSimulatedItem(simInventory, module.inventory_slug!);
+      const invItem = getSimulatedItem(simInventory, module.object_sku!);
       if (invItem) {
-        invItem.stock_count += module.objects_per_print ?? 1;
-        invItem.stockout_risk = forecast.riskAtStock(invItem.slug, invItem.stock_count);
+        invItem.in_stock += module.objects_per_print ?? 1;
+        invItem.stockout_risk = forecast.riskAtStock(invItem.sku, invItem.in_stock);
       }
 
       simInventory = prioritizeInventoryFromContext({
-        adjustedInventory: Object.values(simInventory).flat() as InventoryWithVelocity[],
+        adjustedInventory: Object.values(simInventory).flat() as ObjectWithVelocity[],
         salesVelocity: []
       });
 
-      accumulatedWeight += module.expected_weight;
+      accumulatedWeight += module.weight;
     }
   }
 
-  // --- STEP 2: 0/1 KNAPSACK ALGORITHM ---
-  // Backtrack table instead of copying arrays at every slot — O(n*W) time, O(W) memory.
+  // 0/1 knapsack
   const dp = new Array(remainingWeight + 1).fill(0);
   const from: ({ prevWeight: number; item: UnrolledItem } | null)[] = new Array(remainingWeight + 1).fill(null);
 
@@ -280,13 +265,11 @@ export async function getSuggestedPrintQueue(
     }
   }
 
-  // Find the weight with highest score
   let bestWeight = 0;
   for (let w = 1; w <= remainingWeight; w++) {
     if (dp[w] > dp[bestWeight]) bestWeight = w;
   }
 
-  // Reconstruct selected items via backtrack
   const optimalPrints: UnrolledItem[] = [];
   let w = bestWeight;
   while (from[w] !== null) {
@@ -294,8 +277,6 @@ export async function getSuggestedPrintQueue(
     w = from[w]!.prevWeight;
   }
 
-  // --- STEP 3: FORMAT THE OUTPUT ---
-  // Sort by priority so CRITICAL prints happen first; within a tier, most urgent first.
   optimalPrints.sort((a, b) => {
     const tier = PRIORITY_SCORES[b.priority] - PRIORITY_SCORES[a.priority];
     if (tier !== 0) return tier;
@@ -310,7 +291,7 @@ export async function getSuggestedPrintQueue(
     queue.push({
       module_id: print.module.id,
       module_name: print.module.name,
-      inventory_slug: print.module.inventory_slug!,
+      object_sku: print.module.object_sku!,
       priority: print.priority,
       weight_of_print: print.weight,
       spool_weight_after_print: currentSpoolWeight
@@ -324,20 +305,24 @@ export async function generateAndSaveSuggestedQueue(
   db: D1Database,
   printerId: number
 ): Promise<SuggestedPrintQueueItem[]> {
-  // Build context and prioritized inventory
   const contextBuilder = new AIContextBuilder(db);
   const modules = await contextBuilder.getModulesContext();
   const aiContext = await contextBuilder.getAdjustedInventoryContext(modules);
   const prioritized = prioritizeInventoryFromContext(aiContext);
 
-  // Generate queue — pass modules and the populated forecast so we don't re-fit.
   const queue = await getSuggestedPrintQueue(db, printerId, prioritized, modules, contextBuilder.getForecast());
 
-  // Save queue to printer
-  await updatePrinter(db, printerId, {
-    suggested_queue: JSON.stringify(queue)
-  });
+  // Clear old queued jobs and save new ones
+  const drizzleDb = getDb(db);
+  await drizzleDb.run(sql`DELETE FROM printer_queued_jobs WHERE printer_id = ${printerId} AND is_completed = 0`);
+  for (let i = 0; i < queue.length; i++) {
+    await addPrinterQueuedJob(db, {
+      printerId,
+      moduleId: queue[i].module_id,
+      reason: queue[i].priority,
+      sortOrder: i
+    });
+  }
 
   return queue;
 }
-
