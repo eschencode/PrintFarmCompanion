@@ -23,15 +23,15 @@ interface UnitWeight {
 async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
   const drizzleDb = getDb(db);
   const rows = await drizzleDb.all(sql`
-    SELECT sm.shopify_sku, sm.inventory_slug, sm.quantity, i.name as item_name
+    SELECT sm.shopify_sku, sm.quantity, o.sku as object_sku, o.name as item_name
     FROM shopify_sku_mapping sm
-    JOIN inventory i ON sm.inventory_slug = i.slug
-    ORDER BY sm.shopify_sku, i.name
+    JOIN objects o ON sm.object_id = o.id
+    ORDER BY sm.shopify_sku, o.name
   `);
 
-  const typedRows = (rows || []) as { shopify_sku: string; inventory_slug: string; quantity: number; item_name: string }[];
+  const typedRows = (rows || []) as { shopify_sku: string; object_sku: string; quantity: number; item_name: string }[];
 
-  const skuGroups: Record<string, { inventory_slug: string; quantity: number; item_name: string }[]> = {};
+  const skuGroups: Record<string, { object_sku: string; quantity: number; item_name: string }[]> = {};
   for (const row of typedRows) {
     if (!skuGroups[row.shopify_sku]) skuGroups[row.shopify_sku] = [];
     skuGroups[row.shopify_sku].push(row);
@@ -44,23 +44,23 @@ async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
     sets.push({
       sku,
       label: buildSetLabel(sku, components),
-      components: components.map(c => ({ inventory_slug: c.inventory_slug, quantity: c.quantity }))
+      components: components.map(c => ({ inventory_slug: c.object_sku, quantity: c.quantity }))
     });
   }
   return sets;
 }
 
-function buildSetLabel(sku: string, components: { inventory_slug: string; quantity: number; item_name: string }[]): string {
+function buildSetLabel(sku: string, components: { object_sku: string; quantity: number; item_name: string }[]): string {
   if (sku.startsWith('KLH/')) {
-    const halter = components.find(c => c.inventory_slug.startsWith('klohalter-'));
-    const stab = components.find(c => c.inventory_slug.startsWith('stab-'));
+    const halter = components.find(c => c.object_sku.startsWith('klohalter-'));
+    const stab = components.find(c => c.object_sku.startsWith('stab-'));
     if (halter && stab) {
       return `Klohalter Set: ${halter.item_name.split(' ').pop()} / ${stab.item_name.split(' ').pop()}`;
     }
   }
   if (sku.startsWith('WH/K5/') || sku.startsWith('WH/S5/')) {
     const type = sku.startsWith('WH/K5/') ? 'Kleben' : 'Schrauben';
-    const hooks = components.filter(c => c.inventory_slug.includes('haken-'));
+    const hooks = components.filter(c => c.object_sku.includes('haken-'));
     const colors = hooks.map(c => `${c.quantity}x ${c.item_name.split(' ').pop()}`).join(', ');
     return `5er Pack ${type}: ${colors}`;
   }
@@ -71,17 +71,17 @@ async function getUnitWeights(db: any): Promise<UnitWeight[]> {
   const drizzleDb = getDb(db);
   const rows = await drizzleDb.all(sql`
     SELECT
-      pm.inventory_slug,
-      i.name,
-      ROUND(CAST(pm.expected_weight AS FLOAT) / pm.objects_per_print, 1) as weight_per_unit
+      o.sku,
+      o.name,
+      ROUND(CAST(pm.weight AS FLOAT) / pm.objects_per_print, 1) as weight_per_unit
     FROM print_modules pm
-    JOIN inventory i ON pm.inventory_slug = i.slug
-    WHERE pm.inventory_slug IS NOT NULL
-    GROUP BY pm.inventory_slug
+    JOIN objects o ON pm.object_id = o.id
+    WHERE pm.object_id IS NOT NULL
+    GROUP BY pm.object_id
   `);
 
-  const typedRows = (rows || []) as { inventory_slug: string; name: string; weight_per_unit: number }[];
-  return typedRows.map(r => ({ slug: r.inventory_slug, name: r.name, weight_per_unit: r.weight_per_unit }));
+  const typedRows = (rows || []) as { sku: string; name: string; weight_per_unit: number }[];
+  return typedRows.map(r => ({ slug: r.sku, name: r.name, weight_per_unit: r.weight_per_unit }));
 }
 
 export const load: PageServerLoad = async ({ platform }) => {

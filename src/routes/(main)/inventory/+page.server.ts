@@ -15,7 +15,7 @@ import { getDb } from '$lib/db';
 
 // Types for set definitions and unit weights
 interface SetComponent {
-  inventory_slug: string;
+  object_sku: string;
   quantity: number;
 }
 
@@ -35,66 +35,58 @@ interface UnitWeight {
 async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
   const drizzleDb = getDb(db);
   const rows = await drizzleDb.all(sql`
-    SELECT sm.shopify_sku, sm.inventory_slug, sm.quantity, i.name as item_name
+    SELECT sm.shopify_sku, sm.quantity, o.sku as object_sku, o.name as item_name
     FROM shopify_sku_mapping sm
-    JOIN inventory i ON sm.inventory_slug = i.slug
-    ORDER BY sm.shopify_sku, i.name
+    JOIN objects o ON sm.object_id = o.id
+    ORDER BY sm.shopify_sku, o.name
   `);
-  
-  const typedRows = (rows || []) as { shopify_sku: string; inventory_slug: string; quantity: number; item_name: string }[];
-  
-  // Group by SKU
-  const skuGroups: Record<string, { inventory_slug: string; quantity: number; item_name: string }[]> = {};
+
+  const typedRows = (rows || []) as { shopify_sku: string; object_sku: string; quantity: number; item_name: string }[];
+
+  const skuGroups: Record<string, { object_sku: string; quantity: number; item_name: string }[]> = {};
   for (const row of typedRows) {
     if (!skuGroups[row.shopify_sku]) skuGroups[row.shopify_sku] = [];
     skuGroups[row.shopify_sku].push(row);
   }
-  
-  // Only include SKUs that are true bundles (>1 component OR quantity > 1)
+
   const sets: SetDefinition[] = [];
   for (const [sku, components] of Object.entries(skuGroups)) {
     const isBundle = components.length > 1 || components.some(c => c.quantity > 1);
     if (!isBundle) continue;
-    
-    // Build a readable label
+
     const label = buildSetLabel(sku, components);
-    
     sets.push({
       sku,
       label,
-      components: components.map(c => ({
-        inventory_slug: c.inventory_slug,
-        quantity: c.quantity
-      }))
+      components: components.map(c => ({ object_sku: c.object_sku, quantity: c.quantity }))
     });
   }
-  
+
   return sets;
 }
 
-function buildSetLabel(sku: string, components: { inventory_slug: string; quantity: number; item_name: string }[]): string {
+function buildSetLabel(sku: string, components: { object_sku: string; quantity: number; item_name: string }[]): string {
   const parts = components.map(c => c.quantity > 1 ? `${c.quantity}× ${c.item_name}` : c.item_name).join(' + ');
   return `${sku}: ${parts}`;
 }
 
-// Get unit weights from print_modules (weight per batch / objects per print)
 async function getUnitWeights(db: any): Promise<UnitWeight[]> {
   const drizzleDb = getDb(db);
   const rows = await drizzleDb.all(sql`
-    SELECT 
-      pm.inventory_slug,
-      i.name,
-      ROUND(CAST(pm.expected_weight AS FLOAT) / pm.objects_per_print, 1) as weight_per_unit
+    SELECT
+      o.sku,
+      o.name,
+      ROUND(CAST(pm.weight AS FLOAT) / pm.objects_per_print, 1) as weight_per_unit
     FROM print_modules pm
-    JOIN inventory i ON pm.inventory_slug = i.slug
-    WHERE pm.inventory_slug IS NOT NULL
-    GROUP BY pm.inventory_slug
+    JOIN objects o ON pm.object_id = o.id
+    WHERE pm.object_id IS NOT NULL
+    GROUP BY pm.object_id
   `);
-  
-  const typedRows = (rows || []) as { inventory_slug: string; name: string; weight_per_unit: number }[];
-  
+
+  const typedRows = (rows || []) as { sku: string; name: string; weight_per_unit: number }[];
+
   return typedRows.map(r => ({
-    slug: r.inventory_slug,
+    slug: r.sku,
     name: r.name,
     weight_per_unit: r.weight_per_unit
   }));
@@ -200,19 +192,19 @@ export const actions: Actions = {
       for (const entry of entries) {
         if (entry.count <= 0) continue;
         
-        // Look up the set components from shopify_sku_mapping
         const components = await drizzleDb.all(sql`
-          SELECT inventory_slug, quantity 
-          FROM shopify_sku_mapping 
-          WHERE shopify_sku = ${entry.sku}
+          SELECT o.sku as object_sku, sm.quantity
+          FROM shopify_sku_mapping sm
+          JOIN objects o ON sm.object_id = o.id
+          WHERE sm.shopify_sku = ${entry.sku}
         `);
-        
-        const rows = (components || []) as { inventory_slug: string; quantity: number }[];
-        
+
+        const rows = (components || []) as { object_sku: string; quantity: number }[];
+
         for (const comp of rows) {
           const totalQty = comp.quantity * entry.count;
-          const result = await addStockBySku(db, comp.inventory_slug, totalQty);
-          results.push({ slug: comp.inventory_slug, quantity: totalQty, success: result.success });
+          const result = await addStockBySku(db, comp.object_sku, totalQty);
+          results.push({ slug: comp.object_sku, quantity: totalQty, success: result.success });
         }
       }
       
@@ -269,17 +261,18 @@ export const actions: Actions = {
         if (entry.count <= 0) continue;
 
         const components = await drizzleDb.all(sql`
-          SELECT inventory_slug, quantity
-          FROM shopify_sku_mapping
-          WHERE shopify_sku = ${entry.sku}
+          SELECT o.sku as object_sku, sm.quantity
+          FROM shopify_sku_mapping sm
+          JOIN objects o ON sm.object_id = o.id
+          WHERE sm.shopify_sku = ${entry.sku}
         `);
 
-        const rows = (components || []) as { inventory_slug: string; quantity: number }[];
+        const rows = (components || []) as { object_sku: string; quantity: number }[];
 
         for (const comp of rows) {
           const totalQty = comp.quantity * entry.count;
-          const result = await recordSaleB2BBySku(db, comp.inventory_slug, totalQty);
-          results.push({ slug: comp.inventory_slug, quantity: totalQty, success: result.success });
+          const result = await recordSaleB2BBySku(db, comp.object_sku, totalQty);
+          results.push({ slug: comp.object_sku, quantity: totalQty, success: result.success });
         }
       }
 

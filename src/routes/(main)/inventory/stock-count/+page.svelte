@@ -28,7 +28,7 @@
   // Baseline = current stock from server
   const baseline = $derived(
     Object.fromEntries(
-      (data.items || []).filter(i => i.slug).map(i => [i.slug as string, i.stock_count])
+      (data.items || []).filter(i => i.slug).map(i => [i.slug as string, i.in_stock])
     )
   );
 
@@ -237,7 +237,7 @@
           <div class="space-y-1.5">
             {#each visibleDirectItems as item}
               {@const slug = item.slug || ''}
-              {@const expected = baseline[slug] ?? item.stock_count}
+              {@const expected = baseline[slug] ?? item.in_stock}
               {@const counted = countDirectCounts[slug] || 0}
               <div class="flex items-center gap-3 px-4 py-2.5 border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#111111] hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
                 <div class="flex-1 min-w-0">

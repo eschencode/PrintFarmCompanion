@@ -22,9 +22,9 @@
     return `${(v * 100).toFixed(1)}%`;
   }
 
-  function bucketReason(item: { stock_count: number; min_threshold: number; stockout_risk: number; priority: InventoryPriority }): string {
-    if (item.stock_count <= item.min_threshold) {
-      return `stock ${item.stock_count} ≤ min_threshold ${item.min_threshold} → CRITICAL (floor)`;
+  function bucketReason(item: { in_stock: number; min_threshold: number; stockout_risk: number; priority: InventoryPriority }): string {
+    if (item.in_stock <= item.min_threshold) {
+      return `stock ${item.in_stock} ≤ min_threshold ${item.min_threshold} → CRITICAL (floor)`;
     }
     const t = data.config.thresholds;
     if (item.stockout_risk >= t.CRITICAL) return `risk ${fmtPct(item.stockout_risk)} ≥ ${fmtPct(t.CRITICAL)} → CRITICAL`;
@@ -189,7 +189,7 @@
                   <tr class="border-t border-zinc-200/60 dark:border-[#1a1a22]">
                     <td class="px-4 py-2 tabular-nums text-zinc-500">{i + 1}</td>
                     <td class="px-4 py-2">{q.module_name}</td>
-                    <td class="px-4 py-2 text-zinc-500">{q.inventory_slug}</td>
+                    <td class="px-4 py-2 text-zinc-500">{q.object_sku}</td>
                     <td class="px-4 py-2">
                       <span class="text-xs px-2 py-0.5 rounded border {PRIORITY_COLORS[q.priority]}">{q.priority}</span>
                     </td>
@@ -241,8 +241,8 @@
                   <div class="font-medium">{inv.name}</div>
                   <div class="text-xs text-zinc-500">{inv.slug}</div>
                 </td>
-                <td class="px-4 py-2 text-right tabular-nums {inv.stock_count <= inv.min_threshold ? 'text-red-500 dark:text-red-400' : ''}">
-                  {inv.stock_count}
+                <td class="px-4 py-2 text-right tabular-nums {inv.in_stock <= inv.min_threshold ? 'text-red-500 dark:text-red-400' : ''}">
+                  {inv.in_stock}
                 </td>
                 <td class="px-4 py-2 text-right tabular-nums text-zinc-500">{inv.min_threshold}</td>
                 <td class="px-4 py-2 text-right tabular-nums">{inv.daily_velocity.toFixed(2)}</td>

@@ -10,7 +10,8 @@ export const GET: RequestHandler = async ({ platform }) => {
   try {
     const drizzleDb = getDb(db);
     const rows = await drizzleDb.all(sql`
-      SELECT id, name, description FROM printer_models ORDER BY name
+      SELECT id, brand || ' ' || model as name, brand, model, dimension_x, dimension_y, dimension_z
+      FROM printer_presets ORDER BY brand, model
     `);
 
     return json({ success: true, data: rows ?? [] });

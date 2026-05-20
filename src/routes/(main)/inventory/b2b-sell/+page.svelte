@@ -158,9 +158,9 @@
                 <div class="flex-1 min-w-0">
                   <p class="text-sm text-zinc-900 dark:text-zinc-50 truncate">{item.name}</p>
                   <p class="text-xs text-zinc-400 dark:text-zinc-500">
-                    In stock: {item.stock_count}
+                    In stock: {item.in_stock}
                     {#if (directCounts[slug] || 0) > 0}
-                      → {Math.max(0, item.stock_count - (directCounts[slug] || 0))} after sale
+                      → {Math.max(0, item.in_stock - (directCounts[slug] || 0))} after sale
                     {/if}
                   </p>
                 </div>

@@ -72,7 +72,7 @@
             <div class="w-2 h-2 bg-blue-500 rounded-full status-glow-blue"></div>
             Printing
           </span>
-        {:else if printer.status === 'IDLE'}
+        {:else if printer.status === 'idle'}
           <span class="inline-flex items-center gap-2.5 px-4 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full text-sm font-light tracking-wide">
             <div class="w-2 h-2 bg-emerald-500 rounded-full status-glow-green"></div>
             Idle
@@ -88,7 +88,7 @@
       <!-- Conditional Content Based on Status -->
       {#if printer.status === 'printing' && activePrintJob}
         <!-- PRINTING STATUS MENU -->
-        {@const displayProgress = piLive?.progress ?? ((activePrintJob.progress ?? 0) > 0 ? (activePrintJob.progress ?? 0) : getProgress(activePrintJob.start_time, activePrintJob.expected_time ?? 0, now))}
+        {@const displayProgress = piLive?.progress ?? ((activePrintJob.progress ?? 0) > 0 ? (activePrintJob.progress ?? 0) : getProgress(activePrintJob.start_time, activePrintJob.expected_time_minutes ?? 0, now))}
         <div class="space-y-5">
           <!-- Module Name -->
           <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
@@ -116,7 +116,7 @@
               {#if (piLive?.total_layer_num ?? 0) > 0}
                 <span>Layer {piLive?.layer_num} / {piLive?.total_layer_num}</span>
               {:else}
-                <span>{getRemainingTime(activePrintJob.start_time, activePrintJob.expected_time ?? 0, now)} remaining</span>
+                <span>{getRemainingTime(activePrintJob.start_time, activePrintJob.expected_time_minutes ?? 0, now)} remaining</span>
               {/if}
             </div>
           </div>
@@ -157,11 +157,11 @@
           <div class="grid grid-cols-2 gap-4">
             <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22]">
               <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1.5 tracking-wide uppercase">Total Time</p>
-              <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{formatTime(activePrintJob.expected_time ?? 0)}</p>
+              <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{formatTime(activePrintJob.expected_time_minutes ?? 0)}</p>
             </div>
             <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22]">
               <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1.5 tracking-wide uppercase">Remaining</p>
-              <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{getRemainingTime(activePrintJob.start_time, activePrintJob.expected_time ?? 0, now)}</p>
+              <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{getRemainingTime(activePrintJob.start_time, activePrintJob.expected_time_minutes ?? 0, now)}</p>
             </div>
           </div>
 
@@ -176,13 +176,13 @@
                 </div>
                 <div>
                   <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">Expected After</p>
-                  <p class="text-xl text-blue-500 dark:text-blue-400 font-light tabular-nums">{Math.max(0, loadedSpool.remaining_weight - (activePrintJob.expected_weight ?? 0)).toFixed(1)}g</p>
+                  <p class="text-xl text-blue-500 dark:text-blue-400 font-light tabular-nums">{Math.max(0, loadedSpool.remaining_weight - (activePrintJob.weight ?? 0)).toFixed(1)}g</p>
                 </div>
               </div>
               <div class="mt-4 pt-4 border-t border-zinc-200/60 dark:border-[#1a1a22]">
                 <div class="flex justify-between text-xs">
                   <span class="text-zinc-400 dark:text-zinc-600">Material Usage</span>
-                  <span class="text-amber-500 font-medium tabular-nums">{activePrintJob.expected_weight}g</span>
+                  <span class="text-amber-500 font-medium tabular-nums">{activePrintJob.weight}g</span>
                 </div>
               </div>
             </div>
@@ -238,7 +238,7 @@
             >
               <input type="hidden" name="jobId" value={activePrintJob.id} />
               <input type="hidden" name="success" value="true" />
-              <input type="hidden" name="actualWeight" value={activePrintJob.expected_weight} />
+              <input type="hidden" name="actualWeight" value={activePrintJob.weight} />
 
               <button
                 type="submit"
@@ -250,7 +250,7 @@
           </div>
         </div>
 
-      {:else if printer.status === 'IDLE'}
+      {:else if printer.status === 'idle'}
         <!-- IDLE STATUS MENU -->
         {@const lastPrintJob = getLastPrintJob(printer.id, printJobs)}
         <div class="space-y-5">
@@ -289,7 +289,7 @@
               <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-3 tracking-wide uppercase">Last Printed Module</p>
               <div class="flex justify-between items-center">
                 <span class="text-base text-zinc-900 dark:text-zinc-100 font-medium">{lastPrintJob.module_name || 'Unknown'}</span>
-                {#if lastPrintJob.status == 'success'}
+                {#if lastPrintJob.status == 'successful'}
                   <span class="inline-flex items-center gap-1.5 text-emerald-500 dark:text-emerald-400 text-xs font-medium">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
                     Success
@@ -318,7 +318,7 @@
           <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
             <div class="flex justify-between items-center">
               <span class="text-sm text-zinc-400 dark:text-zinc-600">Total Runtime</span>
-              <span class="text-zinc-900 dark:text-zinc-100 text-sm font-medium tabular-nums">{printer.total_hours.toFixed(1)}h</span>
+              <span class="text-zinc-900 dark:text-zinc-100 text-sm font-medium tabular-nums">{0}h</span>
             </div>
           </div>
 
@@ -329,7 +329,7 @@
     {@const matchingModule = printModules.find((m: any) => m.id === nextPrint.module_id)}
     <button
       type="button"
-      disabled={startingSerials.has(printer.printer_serial ?? '')}
+      disabled={startingSerials.has(printer.secrets?.serial ?? '')}
       onclick={() => matchingModule && onEnqueue(matchingModule, printer)}
       class="w-full text-left bg-emerald-500/5 border border-emerald-500/15 rounded-xl p-5 mt-4 hover:bg-emerald-500/10 hover:border-emerald-500/25 transition-all duration-200 disabled:opacity-50"
     >
@@ -384,7 +384,7 @@
           <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
             <div class="flex justify-between items-center">
               <span class="text-sm text-zinc-400 dark:text-zinc-600">Total Runtime</span>
-              <span class="text-zinc-900 dark:text-zinc-100 text-sm font-medium tabular-nums">{printer.total_hours.toFixed(1)}h</span>
+              <span class="text-zinc-900 dark:text-zinc-100 text-sm font-medium tabular-nums">{0}h</span>
             </div>
           </div>
           <button

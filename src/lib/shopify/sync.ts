@@ -12,10 +12,8 @@ import { getDb } from '../db';
 
 export interface SkuMapping {
     shopify_sku: string;
-    inventory_slug: string;
+    object_id: number;
     quantity: number;
-    source_type: 'inventory' | 'storage';
-    spool_preset_id: number | null;
 }
 
 export interface SyncState {
@@ -66,7 +64,7 @@ export class ShopifySyncService {
     async getSkuMappings(): Promise<Map<string, SkuMapping[]>> {
         const drizzleDb = getDb(this.db);
         const rows = await drizzleDb.all<SkuMapping>(
-            sql`SELECT shopify_sku, inventory_slug, quantity, source_type, spool_preset_id FROM shopify_sku_mapping`
+            sql`SELECT shopify_sku, object_id, quantity FROM shopify_sku_mapping`
         );
 
         const mappings = new Map<string, SkuMapping[]>();
@@ -120,51 +118,35 @@ export class ShopifySyncService {
                 continue;
             }
 
-            // Deduct inventory/storage for each mapping
+            // Deduct inventory for each mapping
             for (const mapping of mappings) {
                 const deductAmount = mapping.quantity * item.quantity;
+                const drizzleDb = getDb(this.db);
 
                 try {
-                    if (mapping.source_type === 'storage' && mapping.spool_preset_id) {
-                        const drizzleDb = getDb(this.db);
-                        // Deduct from spool preset storage count
-                        await drizzleDb.run(sql`
-                            UPDATE spool_presets
-                            SET storage_count = MAX(0, COALESCE(storage_count, 0) - ${deductAmount})
-                            WHERE id = ${mapping.spool_preset_id}
-                        `);
-                    } else {
-                        const drizzleDb = getDb(this.db);
-                        // Deduct from inventory stock
-                        await drizzleDb.run(sql`
-                            UPDATE inventory
-                            SET stock_count = stock_count - ${deductAmount},
-                                total_sold = total_sold + ${deductAmount},
-                                total_sold_b2c = total_sold_b2c + ${deductAmount}
-                            WHERE slug = ${mapping.inventory_slug}
-                        `);
-
-                        // Log the deduction
-                        await drizzleDb.run(sql`
-                            INSERT INTO inventory_log (inventory_id, change_type, quantity, reason, created_at)
-                            SELECT id, 'sold_b2c', ${-deductAmount}, ${`Shopify ${order.name} - ${item.sku}`}, ${Date.now()}
-                            FROM inventory WHERE slug = ${mapping.inventory_slug}
-                        `);
-                    }
-
+                    const now = Math.floor(Date.now() / 1000);
+                    await drizzleDb.run(sql`
+                        UPDATE objects
+                        SET in_stock = MAX(0, in_stock - ${deductAmount}), updated_at = ${now}
+                        WHERE id = ${mapping.object_id}
+                    `);
+                    await drizzleDb.run(sql`
+                        INSERT INTO inventory_log (object_id, change_type, quantity, created_at)
+                        VALUES (${mapping.object_id}, '- sold b2c', ${deductAmount}, ${now})
+                    `);
                     itemsDeducted += deductAmount;
                 } catch (err) {
-                    const label = mapping.source_type === 'storage' ? `preset #${mapping.spool_preset_id}` : mapping.inventory_slug;
-                    errors.push(`Order ${order.name}: Failed to deduct ${label}: ${err}`);
+                    errors.push(`Order ${order.name}: Failed to deduct object #${mapping.object_id}: ${err}`);
                 }
             }
         }
 
         // Record the processed order
         const drizzleDb = getDb(this.db);
+        const now = Math.floor(Date.now() / 1000);
         await drizzleDb.run(sql`
-            INSERT INTO shopify_orders (shopify_order_id, shopify_order_number, processed_at, total_items, status)
-            VALUES (${String(order.id)}, ${String(order.order_number)}, ${Date.now()}, ${itemsDeducted}, 'processed')
+            INSERT OR IGNORE INTO shopify_orders (order_id, order_number, processed_at, total_items, created_at, updated_at)
+            VALUES (${String(order.id)}, ${String(order.order_number)}, ${now}, ${itemsDeducted}, ${now}, ${now})
         `);
 
         return { itemsDeducted, errors };

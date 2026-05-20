@@ -73,8 +73,8 @@
                 <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 3L2 9l10 6 10-6-10-6zM2 17l10 6 10-6M2 13l10 6 10-6"/></svg>
               </div>
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{preset.name}</p>
-                <p class="text-xs text-zinc-400 mt-0.5">{preset.brand} · {preset.material}{preset.color ? ` · ${preset.color}` : ''}</p>
+                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{preset.brand} {preset.material}{preset.color ? ` ${preset.color}` : ''}</p>
+                <p class="text-xs text-zinc-400 mt-0.5">{preset.default_weight}g{preset.cost ? ` · €${preset.cost}` : ''}</p>
               </div>
               <div class="flex items-center gap-4 text-xs text-zinc-400 shrink-0">
                 <span>{preset.default_weight}g</span>
@@ -84,18 +84,18 @@
                 <button
                   onclick={() => openEditPreset(preset)}
                   class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-[#1e1e1e] transition-colors text-xs"
-                  aria-label="Edit {preset.name}"
+                  aria-label="Edit preset"
                 >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                   Edit
                 </button>
-                <form method="POST" action="?/deleteSpoolPreset" use:enhance={() => ({ async update({ result }) { if (result.type === 'failure') alert((result.data as any)?.error ?? 'Failed to delete preset'); } })}>
+                <form method="POST" action="?/deleteSpoolPreset" use:enhance={() => async ({ result, update }) => { if (result.type === 'failure') alert((result.data as any)?.error ?? 'Failed to delete preset'); await update(); }}>
                   <input type="hidden" name="presetId" value={preset.id} />
                   <button
                     type="submit"
                     class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors text-xs"
-                    onclick={(e) => { if (!confirm(`Delete "${preset.name}"?`)) e.preventDefault(); }}
-                    aria-label="Delete {preset.name}"
+                    onclick={(e) => { if (!confirm(`Delete this preset?`)) e.preventDefault(); }}
+                    aria-label="Delete preset"
                   >
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                     Delete
@@ -146,7 +146,7 @@
       <form
         method="POST"
         action={editingPreset ? '?/updateSpoolPreset' : '?/addSpoolPreset'}
-        use:enhance={() => ({ async update({ result }) { if (result.type === 'success') closePresetEditor(); } })}
+        use:enhance={() => async ({ result, update }) => { if (result.type === 'success') closePresetEditor(); await update(); }}
         class="px-6 py-5 space-y-4"
       >
         {#if editingPreset}<input type="hidden" name="presetId" value={editingPreset.id} />{/if}

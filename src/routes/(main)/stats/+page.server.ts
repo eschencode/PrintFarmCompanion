@@ -51,12 +51,12 @@ export const load: PageServerLoad = async ({ platform }) => {
   const pendingJobs = printJobs.filter(j => j.status === 'printing');
   
   const totalPrints = completedJobs.length;
-  const successfulPrints = printJobs.filter(j => j.status === 'success').length;
+  const successfulPrints = printJobs.filter(j => j.status === 'successful').length;
   const failedPrints = printJobs.filter(j => j.status === 'failed').length;
   const pendingPrints = pendingJobs.length;  // ✅ Track pending prints
   
   const totalMaterialUsed = printJobs
-    .filter(j => j.status === 'success' && j.actual_weight)  // ✅ Only count successful prints
+    .filter(j => j.status === 'successful' && j.actual_weight)  // ✅ Only count successful prints
     .reduce((sum, j) => sum + (j.actual_weight || 0), 0);
   
   const totalHours = printers.reduce((sum, p) => sum + (p.total_hours || 0), 0);
@@ -89,7 +89,7 @@ export const load: PageServerLoad = async ({ platform }) => {
       .filter(j => 
         j.start_time >= dayStart && 
         j.start_time < dayEnd && 
-        j.status === 'success'
+        j.status === 'successful'
       )
       .reduce((sum, j) => sum + (j.actual_weight || 0), 0);
   });
@@ -139,12 +139,12 @@ export const load: PageServerLoad = async ({ platform }) => {
     const perPrinterRaw = printersArr.map(p => {
       const printerJobs = jobsArr.filter((j: any) =>
         j.printer_id === p.id &&
-        (j.status === 'success' || j.status === 'failed') &&
+        (j.status === 'successful' || j.status === 'failed') &&
         j.start_time >= periodStart && j.start_time < periodEnd
       );
 
       const successMs = printerJobs
-        .filter((j: any) => j.status === 'success')
+        .filter((j: any) => j.status === 'successful')
         .reduce((sum: number, j: any) => sum + jobDurationMs(j), 0);
       const failedMs = printerJobs
         .filter((j: any) => j.status === 'failed')
@@ -181,7 +181,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 
     // Average job duration for growth potential
     const periodJobs = jobsArr.filter((j: any) =>
-      (j.status === 'success' || j.status === 'failed') &&
+      (j.status === 'successful' || j.status === 'failed') &&
       j.start_time >= periodStart && j.start_time < periodEnd
     );
     const avgJobDurationMs = periodJobs.length > 0
@@ -231,7 +231,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   // Last 7 days: rolling 7-day window
   const last7DaysStart = now - 7 * 24 * 60 * 60 * 1000;
 
-  const allCompletedJobs = printJobs.filter(j => j.status === 'success' || j.status === 'failed');
+  const allCompletedJobs = printJobs.filter(j => j.status === 'successful' || j.status === 'failed');
 
   const last30DaysJobs = allCompletedJobs.filter(j => j.start_time >= thirtyDaysAgo);
   const thisMonthJobs  = allCompletedJobs.filter(j => j.start_time >= thisMonthStart && j.start_time <= thisMonthEnd);
@@ -756,12 +756,25 @@ function buildModuleBreakdown(jobs: any[]) {
   try {
     const inventoryItems = await getAllObjects(database);
 
-    // Inventory velocity from the view
-    const velocityResult = await drizzleDb.all(
-      sql`SELECT * FROM inventory_sales_velocity ORDER BY days_until_stockout ASC`
-    );
-    const velocityItems = (velocityResult || []) as {
-      id: number; slug: string; name: string; stock_count: number;
+    // Inventory velocity derived from objects + inventory_log
+    const velocityResult = await drizzleDb.all(sql`
+      SELECT o.id, o.sku, o.name, o.in_stock, o.min_threshold,
+             o.in_stock - o.min_threshold as stock_above_min,
+             COALESCE(SUM(CASE WHEN il.change_type IN ('- sold b2c','- sold b2b') AND il.created_at > ${Math.floor(Date.now()/1000) - 7*86400} THEN il.quantity ELSE 0 END), 0) as sold_7d,
+             COALESCE(SUM(CASE WHEN il.change_type IN ('- sold b2c','- sold b2b') AND il.created_at > ${Math.floor(Date.now()/1000) - 14*86400} THEN il.quantity ELSE 0 END), 0) as sold_14d,
+             COALESCE(SUM(CASE WHEN il.change_type IN ('- sold b2c','- sold b2b') AND il.created_at > ${Math.floor(Date.now()/1000) - 30*86400} THEN il.quantity ELSE 0 END), 0) as sold_30d
+      FROM objects o
+      LEFT JOIN inventory_log il ON il.object_id = o.id
+      GROUP BY o.id
+    `);
+    const velocityItems = (velocityResult || []).map((r: any) => ({
+      ...r,
+      slug: r.sku,
+      stock_count: r.in_stock,
+      daily_velocity: r.sold_30d > 0 ? Math.round((r.sold_30d / 30) * 100) / 100 : 0,
+      days_until_stockout: r.sold_30d > 0 ? Math.round((r.in_stock / (r.sold_30d / 30)) * 10) / 10 : 999,
+    })) as {
+      id: number; slug: string; sku: string; name: string; in_stock: number; stock_count: number;
       min_threshold: number; stock_above_min: number;
       sold_7d: number; sold_14d: number; sold_30d: number;
       daily_velocity: number; days_until_stockout: number;
@@ -771,10 +784,10 @@ function buildModuleBreakdown(jobs: any[]) {
     const stockFlowResult = await drizzleDb.all(sql`
       SELECT
         DATE(created_at / 1000, 'unixepoch') as day,
-        SUM(CASE WHEN change_type = 'add' THEN quantity ELSE 0 END) as produced,
-        SUM(CASE WHEN change_type = 'sold_b2c' THEN ABS(quantity) ELSE 0 END) as sold_b2c,
-        SUM(CASE WHEN change_type = 'sold_b2b' THEN ABS(quantity) ELSE 0 END) as sold_b2b,
-        SUM(CASE WHEN change_type = 'remove' THEN ABS(quantity) ELSE 0 END) as removed
+        SUM(CASE WHEN change_type = '+ printed' THEN quantity ELSE 0 END) as produced,
+        SUM(CASE WHEN change_type = '- sold b2c' THEN quantity ELSE 0 END) as sold_b2c,
+        SUM(CASE WHEN change_type = '- sold b2b' THEN quantity ELSE 0 END) as sold_b2b,
+        SUM(CASE WHEN change_type = '- stock count' THEN quantity ELSE 0 END) as removed
       FROM inventory_log
       WHERE created_at > ${thirtyDaysAgo}
       GROUP BY day

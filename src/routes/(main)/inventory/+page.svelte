@@ -11,7 +11,7 @@
 
   // Set & weight types from server
   interface SetComponent {
-    inventory_slug: string;
+    object_sku: string;
     quantity: number;
   }
   interface SetDefinition {
@@ -113,7 +113,7 @@
       const count = setCounts[set.sku] || 0;
       if (count <= 0) continue;
       for (const comp of set.components) {
-        summary[comp.inventory_slug] = (summary[comp.inventory_slug] || 0) + comp.quantity * count;
+        summary[comp.object_sku] = (summary[comp.object_sku] || 0) + comp.quantity * count;
       }
     }
     return summary;
@@ -182,7 +182,7 @@
   // Start editing an item's stock
   function startEdit(item: InventoryItem) {
     editingItemId = item.id;
-    editCount = item.stock_count;
+    editCount = item.in_stock;
   }
 
   function cancelEdit() {
@@ -233,7 +233,7 @@
     }
 
     if (showLowStockOnly) {
-      items = items.filter(item => item.stock_count < item.min_threshold);
+      items = items.filter(item => item.in_stock < item.min_threshold);
     }
 
     // Group items
@@ -253,11 +253,11 @@
       }
 
       const groupedItem = { item, color };
-      const isOutOfStock = item.stock_count === 0;
+      const isOutOfStock = item.in_stock === 0;
       // Low stock = below threshold BUT not out of stock
-      const isLowStock = item.stock_count > 0 && item.stock_count < item.min_threshold;
+      const isLowStock = item.in_stock > 0 && item.in_stock < item.min_threshold;
 
-      groups[category].totalStock += item.stock_count;
+      groups[category].totalStock += item.in_stock;
       if (isLowStock) groups[category].lowStockCount++;
       if (isOutOfStock) groups[category].outOfStockCount++;
 
@@ -271,7 +271,7 @@
           };
         }
         groups[category].subcategories[subcategory].items.push(groupedItem);
-        groups[category].subcategories[subcategory].totalStock += item.stock_count;
+        groups[category].subcategories[subcategory].totalStock += item.in_stock;
         if (isLowStock) groups[category].subcategories[subcategory].lowStockCount++;
         if (isOutOfStock) groups[category].subcategories[subcategory].outOfStockCount++;
       } else {
@@ -285,10 +285,10 @@
   const filteredItems = $derived(() => data.items || []);
 
   const totalItems = $derived(filteredItems().length);
-  const totalStock = $derived(filteredItems().reduce((sum, i) => sum + i.stock_count, 0));
+  const totalStock = $derived(filteredItems().reduce((sum, i) => sum + i.in_stock, 0));
   // Low stock = below threshold but NOT zero
-  const lowStockCount = $derived(filteredItems().filter(i => i.stock_count > 0 && i.stock_count < i.min_threshold).length);
-  const outOfStockCount = $derived(filteredItems().filter(i => i.stock_count === 0).length);
+  const lowStockCount = $derived(filteredItems().filter(i => i.in_stock > 0 && i.in_stock < i.min_threshold).length);
+  const outOfStockCount = $derived(filteredItems().filter(i => i.in_stock === 0).length);
 
   // Toggle functions
   function toggleCategory(categoryName: string) {
@@ -324,8 +324,8 @@
 
   // Stock level indicator
   function getStockLevel(item: InventoryItem): 'ok' | 'low' | 'out' {
-    if (item.stock_count === 0) return 'out';
-    if (item.stock_count < item.min_threshold) return 'low';
+    if (item.in_stock === 0) return 'out';
+    if (item.in_stock < item.min_threshold) return 'low';
     return 'ok';
   }
 
@@ -603,7 +603,7 @@
                                       title="Click to edit"
                                       class="min-w-12 h-7 px-3 rounded-md text-xs font-semibold tabular-nums transition-colors {stockLevel === 'out' ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100' : stockLevel === 'low' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 hover:bg-amber-100' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100'}"
                                     >
-                                      {item.stock_count}
+                                      {item.in_stock}
                                     </button>
                                   {/if}
                                 </div>
@@ -631,7 +631,7 @@
                                   <span class="text-[9px] text-zinc-400 block leading-none mb-0.5">days</span>
                                   <span class="text-xs tabular-nums {ui.days_until_stockout != null && ui.days_until_stockout <= 7 ? 'text-red-500' : ui.days_until_stockout != null && ui.days_until_stockout <= 14 ? 'text-amber-500' : 'text-zinc-500'}">{formatDays(ui.days_until_stockout)}</span>
                                 </div>
-                                <span class="min-w-10 h-7 px-2.5 flex items-center justify-center rounded-md text-xs font-semibold tabular-nums {stockLevel === 'out' ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400' : stockLevel === 'low' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'}">{item.stock_count}</span>
+                                <span class="min-w-10 h-7 px-2.5 flex items-center justify-center rounded-md text-xs font-semibold tabular-nums {stockLevel === 'out' ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400' : stockLevel === 'low' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'}">{item.in_stock}</span>
                               </div>
                             </div>
                           {/each}
@@ -729,7 +729,7 @@
                     <div class="flex items-center justify-between gap-3">
                       <div class="flex-1 min-w-0">
                         <p class="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate">{set.label}</p>
-                        <p class="text-[10px] text-zinc-400 mt-0.5 truncate">{set.components.map(c => `${c.quantity}× ${getItemName(c.inventory_slug)}`).join(' + ')}</p>
+                        <p class="text-[10px] text-zinc-400 mt-0.5 truncate">{set.components.map(c => `${c.quantity}× ${getItemName(c.object_sku)}`).join(' + ')}</p>
                       </div>
                       <div class="flex items-center gap-1 shrink-0">
                         <button onclick={() => { setCounts[set.sku] = Math.max(0, (setCounts[set.sku] || 0) - 1); setCounts = { ...setCounts }; }} disabled={(setCounts[set.sku] || 0) === 0}
@@ -814,7 +814,7 @@
             {:else}
               <div class="grid sm:grid-cols-2 gap-2">
                 {#each filteredDirectItems() as item}
-                  {@const currentStock = item.stock_count}
+                  {@const currentStock = item.in_stock}
                   {@const pending = directCounts[item.slug] || 0}
                   <div class="rounded-lg border border-zinc-100 dark:border-[#1e1e1e] bg-zinc-50 dark:bg-[#0d0d0d] px-4 py-3">
                     <div class="flex items-center justify-between gap-3">

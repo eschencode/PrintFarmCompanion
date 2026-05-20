@@ -35,7 +35,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
     const jobs = (rawJobs as any[]).filter(
       (j: any) =>
-        (j.status === 'success' || j.status === 'failed') &&
+        (j.status === 'successful' || j.status === 'failed') &&
         j.start_time >= fromMs &&
         j.start_time <= toMs
     );

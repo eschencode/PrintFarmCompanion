@@ -47,7 +47,7 @@
     editingId = product.id;
     showNewForm = false;
     editName = product.name;
-    editSlug = product.slug;
+    editSlug = product.sku;
     editSku = product.sku ?? '';
     editCategory = product.category;
     editMinThreshold = product.min_threshold;
@@ -85,11 +85,11 @@
   }
 
   function stockBadge(p: Product): { label: string; class: string } {
-    if (p.stock_count === 0)
+    if (p.in_stock === 0)
       return { label: 'Out of stock', class: 'bg-red-500/10 text-red-500 dark:text-red-400' };
-    if (p.stock_count < p.min_threshold)
-      return { label: `Low — ${p.stock_count}`, class: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' };
-    return { label: `${p.stock_count} in stock`, class: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' };
+    if (p.in_stock < p.min_threshold)
+      return { label: `Low — ${p.in_stock}`, class: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' };
+    return { label: `${p.in_stock} in stock`, class: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' };
   }
 
   // After successful form submission, close the form

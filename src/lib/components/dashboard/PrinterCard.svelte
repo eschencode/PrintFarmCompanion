@@ -107,7 +107,7 @@
     <h3 class="text-[clamp(0.55rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-100 truncate px-1 tracking-tight">{printer.name}</h3>
     <p class="text-[clamp(0.4rem,1.5vw,0.7rem)] font-light tracking-wide uppercase mt-0.5">
       {#if liveIsStarting}
-        {@const qPos = startQueue.findIndex((e: any) => e.printer.printer_serial === printer.printer_serial)}
+        {@const qPos = startQueue.findIndex((e: any) => e.printer.secrets?.serial === printer.secrets?.serial)}
         <span class="text-amber-500 dark:text-amber-400">
           {qPos === 0 ? 'Starting…' : `Queue ${qPos + 1}/${startQueueTotal}`}
         </span>
@@ -125,7 +125,7 @@
 
     <!-- Progress Bar for Active Prints -->
     {#if liveIsStarting}
-      {@const qPos = startQueue.findIndex((e: any) => e.printer.printer_serial === printer.printer_serial)}
+      {@const qPos = startQueue.findIndex((e: any) => e.printer.secrets?.serial === printer.secrets?.serial)}
       <div class="mt-2 px-1">
         <div class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden">
           <div class="bg-amber-400 h-full rounded-full progress-shimmer w-full opacity-70"></div>

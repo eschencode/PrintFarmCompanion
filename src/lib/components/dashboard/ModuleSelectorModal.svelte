@@ -138,9 +138,9 @@
                     class="text-left bg-zinc-50 dark:bg-[#111114] border-2 rounded-xl p-4 transition-all duration-200 hover:bg-zinc-100 dark:hover:bg-[#151518] cursor-pointer
                            {selectedModuleId === module.id ? 'border-green-500 bg-zinc-100 dark:bg-zinc-800' : 'border-transparent'}"
                   >
-                    {#if module.image_path}
+                    {#if module.thumbnail}
                       <div class="mb-3 rounded-xl overflow-hidden bg-zinc-100 dark:bg-[#0c0c0f] aspect-square flex items-center justify-center">
-                        <img src={module.image_path} alt={module.name} class="max-w-full max-h-full object-contain" />
+                        <img src={module.thumbnail} alt={module.name} class="max-w-full max-h-full object-contain" />
                       </div>
                     {:else}
                       <div class="mb-3 rounded-xl overflow-hidden bg-zinc-100 dark:bg-[#0c0c0f] aspect-square flex items-center justify-center">
@@ -166,7 +166,7 @@
                       {/if}
                       <div class="flex justify-between items-center">
                         <span class="text-zinc-500">Weight:</span>
-                        <span class="text-zinc-900 dark:text-zinc-50 font-medium">{module.expected_weight}g</span>
+                        <span class="text-zinc-900 dark:text-zinc-50 font-medium">{module.weight}g</span>
                       </div>
                       <div class="flex justify-between items-center">
                         <span class="text-zinc-500">Time:</span>
@@ -175,7 +175,7 @@
                       {#if loadedSpool}
                         <div class="flex justify-between items-center pt-1 border-t border-zinc-200/60 dark:border-[#1a1a22]">
                           <span class="text-zinc-500">After print:</span>
-                          <span class="text-green-600 dark:text-green-400">{loadedSpool.remaining_weight - (module.expected_weight ?? 0)}g</span>
+                          <span class="text-green-600 dark:text-green-400">{loadedSpool.remaining_weight - (module.weight ?? 0)}g</span>
                         </div>
                       {/if}
                     </div>
@@ -197,16 +197,16 @@
               <div class="grid grid-cols-3 gap-3">
                 {#each categorizedModules.compatibleInsufficientMaterial as module}
                   {@const modulePreset = module.default_spool_preset_id ? spoolPresets.find((p: any) => p.id === module.default_spool_preset_id) : null}
-                  {@const shortfall = (module.expected_weight ?? 0) - (loadedSpool?.remaining_weight ?? 0)}
+                  {@const shortfall = (module.weight ?? 0) - (loadedSpool?.remaining_weight ?? 0)}
                   <button
                     type="button"
                     onclick={() => selectedModuleId = module.id}
                     class="text-left bg-zinc-50 dark:bg-[#111114] border-2 rounded-xl p-4 transition-all duration-200 hover:bg-zinc-100 dark:hover:bg-[#151518] cursor-pointer
                            {selectedModuleId === module.id ? 'border-orange-500 bg-zinc-100 dark:bg-zinc-800' : 'border-transparent'}"
                   >
-                    {#if module.image_path}
+                    {#if module.thumbnail}
                       <div class="mb-3 rounded-xl overflow-hidden bg-zinc-100 dark:bg-[#0c0c0f] aspect-square flex items-center justify-center">
-                        <img src={module.image_path} alt={module.name} class="max-w-full max-h-full object-contain opacity-60" />
+                        <img src={module.thumbnail} alt={module.name} class="max-w-full max-h-full object-contain opacity-60" />
                       </div>
                     {:else}
                       <div class="mb-3 rounded-xl overflow-hidden bg-zinc-100 dark:bg-[#0c0c0f] aspect-square flex items-center justify-center">
@@ -232,7 +232,7 @@
                       {/if}
                       <div class="flex justify-between items-center">
                         <span class="text-zinc-500">Needs:</span>
-                        <span class="text-zinc-900 dark:text-zinc-50 font-medium">{module.expected_weight}g</span>
+                        <span class="text-zinc-900 dark:text-zinc-50 font-medium">{module.weight}g</span>
                       </div>
                       <div class="flex justify-between items-center">
                         <span class="text-zinc-500">Short by:</span>
@@ -265,9 +265,9 @@
                     class="text-left bg-zinc-50 dark:bg-[#111114] border-2 rounded-xl p-4 transition-all duration-200 hover:bg-zinc-100 dark:hover:bg-[#151518] cursor-pointer
                            {selectedModuleId === module.id ? 'border-blue-500 bg-zinc-100 dark:bg-zinc-800' : 'border-transparent'}"
                   >
-                    {#if module.image_path}
+                    {#if module.thumbnail}
                       <div class="mb-3 rounded-xl overflow-hidden bg-zinc-100 dark:bg-[#0c0c0f] aspect-square flex items-center justify-center">
-                        <img src={module.image_path} alt={module.name} class="max-w-full max-h-full object-contain" />
+                        <img src={module.thumbnail} alt={module.name} class="max-w-full max-h-full object-contain" />
                       </div>
                     {:else}
                       <div class="mb-3 rounded-xl overflow-hidden bg-zinc-100 dark:bg-[#0c0c0f] aspect-square flex items-center justify-center">
@@ -291,7 +291,7 @@
                       </div>
                       <div class="flex justify-between items-center">
                         <span class="text-zinc-500">Weight:</span>
-                        <span class="text-zinc-900 dark:text-zinc-50 font-medium">{module.expected_weight}g</span>
+                        <span class="text-zinc-900 dark:text-zinc-50 font-medium">{module.weight}g</span>
                       </div>
                       <div class="flex justify-between items-center">
                         <span class="text-zinc-500">Time:</span>
@@ -300,7 +300,7 @@
                       {#if loadedSpool}
                         <div class="flex justify-between items-center pt-1 border-t border-zinc-200/60 dark:border-[#1a1a22]">
                           <span class="text-zinc-500">After print:</span>
-                          <span class="text-green-600 dark:text-green-400">{loadedSpool.remaining_weight - (module.expected_weight ?? 0)}g</span>
+                          <span class="text-green-600 dark:text-green-400">{loadedSpool.remaining_weight - (module.weight ?? 0)}g</span>
                         </div>
                       {/if}
                     </div>
@@ -321,11 +321,11 @@
               </div>
               <div class="grid grid-cols-3 gap-3">
                 {#each categorizedModules.anySpoolInsufficientMaterial as module}
-                  {@const shortfall = (module.expected_weight ?? 0) - (loadedSpool?.remaining_weight ?? 0)}
+                  {@const shortfall = (module.weight ?? 0) - (loadedSpool?.remaining_weight ?? 0)}
                   <div class="text-left bg-zinc-50/50 dark:bg-[#0c0c0f] border border-zinc-200/40 dark:border-[#1a1a22]/60 rounded-xl p-4 opacity-40 cursor-not-allowed">
-                    {#if module.image_path}
+                    {#if module.thumbnail}
                       <div class="mb-3 rounded-xl overflow-hidden bg-zinc-100/50 dark:bg-[#0c0c0f] aspect-square flex items-center justify-center">
-                        <img src={module.image_path} alt={module.name} class="max-w-full max-h-full object-contain opacity-40" />
+                        <img src={module.thumbnail} alt={module.name} class="max-w-full max-h-full object-contain opacity-40" />
                       </div>
                     {:else}
                       <div class="mb-3 rounded-xl overflow-hidden bg-zinc-100/50 dark:bg-[#0c0c0f] aspect-square flex items-center justify-center">
@@ -336,7 +336,7 @@
                     <div class="space-y-0.5 text-xs">
                       <div class="flex justify-between items-center">
                         <span class="text-zinc-500">Needs:</span>
-                        <span class="text-zinc-900 dark:text-zinc-50">{module.expected_weight}g</span>
+                        <span class="text-zinc-900 dark:text-zinc-50">{module.weight}g</span>
                       </div>
                       <div class="flex justify-between items-center">
                         <span class="text-zinc-500">Short by:</span>
@@ -386,11 +386,11 @@
             {@const selectedModule = allModules.find((m: any) => m.id === selectedModuleId)}
             <button
               type="button"
-              disabled={startingSerials.has(printer.printer_serial ?? '')}
+              disabled={startingSerials.has(printer.secrets?.serial ?? '')}
               onclick={() => selectedModule && onEnqueue(selectedModule, printer)}
               class="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium disabled:opacity-50"
             >
-              {#if selectedModule && loadedSpool && (selectedModule.expected_weight ?? 0) > loadedSpool.remaining_weight}
+              {#if selectedModule && loadedSpool && (selectedModule.weight ?? 0) > loadedSpool.remaining_weight}
                 Start Print (Low Material)
               {:else if selectedModule?.file_stored_on_pi && printer?.printer_ip}
                 Start Print (Pi)

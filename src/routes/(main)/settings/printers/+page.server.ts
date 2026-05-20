@@ -5,7 +5,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   const database = platform?.env?.DB;
   if (!database) return { printers: [], printerModels: [] };
   const [printers, printerModels] = await Promise.all([
-    db.getAllPrinters(database),
+    db.getAllPrintersFull(database),
     db.getAllPrinterPresets(database),
   ]);
   return { printers, printerModels };

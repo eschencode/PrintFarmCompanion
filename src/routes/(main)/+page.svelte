@@ -460,7 +460,7 @@
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(broken ? { action: 'broken' } : { action: 'repaired' }),
     });
-    printer.status = broken ? 'BROKEN' : 'IDLE';
+    printer.status = broken ? 'inactive' : 'idle';
     if (selectedPrinter?.id === printer.id) selectedPrinter = { ...printer };
     controlLoading = null;
   }

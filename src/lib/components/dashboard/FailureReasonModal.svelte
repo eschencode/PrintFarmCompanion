@@ -87,7 +87,7 @@
                 {/if}
               </div>
               <p class="text-xs text-zinc-400 dark:text-zinc-600 tabular-nums">
-                Deduct {activePrintJob.expected_weight}g from spool
+                Deduct {activePrintJob.weight}g from spool
               </p>
             </button>
 
@@ -188,7 +188,7 @@
 
             <!-- Determine actual weight based on user choice -->
             {#if selectedFailureReason === 'deduct'}
-              <input type="hidden" name="actualWeight" value={activePrintJob.expected_weight} />
+              <input type="hidden" name="actualWeight" value={activePrintJob.weight} />
             {:else}
               <input type="hidden" name="actualWeight" value="0" />
             {/if}

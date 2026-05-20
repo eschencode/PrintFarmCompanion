@@ -52,7 +52,7 @@
   }
 
   async function testPrinterPi() {
-    const serial = printers.find(p => p.printer_serial)?.printer_serial;
+    const serial = printers.find(p => p.secrets?.serial)?.printer_serial;
     if (!serial) {
       testStatus = { ...testStatus, printerPi: { testing: false, result: 'failed' } };
       return;
@@ -247,7 +247,7 @@
             {:else if testStatus.printerPi.result === 'failed'}
               <span class="inline-flex items-center gap-1 text-[11px] font-medium text-red-600 dark:text-red-400">
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
-                {printers.some(p => p.printer_serial) ? 'Pi unreachable' : 'No printers with serial configured'}
+                {printers.some(p => p.secrets?.serial) ? 'Pi unreachable' : 'No printers with serial configured'}
               </span>
             {/if}
           </div>

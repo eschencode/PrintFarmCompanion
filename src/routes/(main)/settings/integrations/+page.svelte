@@ -7,13 +7,11 @@
 
   // ── SKU set editor ──────────────────────────────────────────────────────────
   type SetItem = {
-    source_type: 'inventory' | 'storage';
-    inventory_slug: string;
-    spool_preset_id: number | null;
+    object_id: number;
     quantity: number;
   };
 
-  let editingSetSku: string | null = null; // null = closed, '' = new, 'SKU' = editing
+  let editingSetSku: string | null = null;
   let editingSetSkuInput = '';
   let editingSetOriginalSku = '';
   let editingSetItems: SetItem[] = [];
@@ -26,16 +24,14 @@
       editingSetOriginalSku = sku;
       const existing = (data.skuMappings as any[] ?? []).filter((m) => m.shopify_sku === sku);
       editingSetItems = existing.map((m) => ({
-        source_type: (m.source_type || 'inventory') as 'inventory' | 'storage',
-        inventory_slug: m.inventory_slug || '',
-        spool_preset_id: m.spool_preset_id ?? null,
+        object_id: m.object_id,
         quantity: m.quantity,
       }));
     } else {
       editingSetSku = '';
       editingSetSkuInput = '';
       editingSetOriginalSku = '';
-      editingSetItems = [{ source_type: 'inventory', inventory_slug: '', spool_preset_id: null, quantity: 1 }];
+      editingSetItems = [{ object_id: 0, quantity: 1 }];
     }
   }
 
@@ -45,7 +41,7 @@
   }
 
   function addSetItem() {
-    editingSetItems = [...editingSetItems, { source_type: 'inventory', inventory_slug: '', spool_preset_id: null, quantity: 1 }];
+    editingSetItems = [...editingSetItems, { object_id: 0, quantity: 1 }];
   }
 
   function removeSetItem(index: number) {
@@ -53,19 +49,14 @@
   }
 
   function getItemLabel(mapping: any): string {
-    if (mapping.source_type === 'storage' && mapping.spool_preset_id) {
-      const preset = (data.spoolPresets as any[] ?? []).find((p) => p.id === mapping.spool_preset_id);
-      return preset ? `${preset.name} (${preset.brand})` : `Preset #${mapping.spool_preset_id}`;
-    }
-    const item = (data.inventoryItems as any[] ?? []).find((i) => i.slug === mapping.inventory_slug);
-    return item ? item.name : mapping.inventory_slug;
+    return mapping.object_name || mapping.object_sku || `Object #${mapping.object_id}`;
   }
 
   $: groupedMappings = (() => {
     const search = skuSearch.toLowerCase();
     const filtered = (data.skuMappings as any[] ?? []).filter((m) =>
       m.shopify_sku.toLowerCase().includes(search) ||
-      (m.inventory_slug || '').toLowerCase().includes(search) ||
+      (m.object_sku || '').toLowerCase().includes(search) ||
       getItemLabel(m).toLowerCase().includes(search)
     );
     const groups: Record<string, typeof filtered> = {};
@@ -156,7 +147,7 @@
 
           <!-- Actions -->
           <div class="flex items-center gap-2 flex-wrap">
-            <form method="POST" action="?/syncShopify" use:enhance={() => ({ async update() {} })}>
+            <form method="POST" action="?/syncShopify" use:enhance={() => async ({ update }) => { await update(); }}>
               <button type="submit" class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 transition-colors" aria-label="Run Shopify sync now">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                 Sync now
@@ -265,7 +256,7 @@
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                     Edit
                   </button>
-                  <form method="POST" action="?/deleteSkuSet" use:enhance={() => ({ async update({ result }) { if (result.type === 'failure') alert((result.data as any)?.error ?? 'Failed to delete'); } })}>
+                  <form method="POST" action="?/deleteSkuSet" use:enhance={() => async ({ result, update }) => { if (result.type === 'failure') alert((result.data as any)?.error ?? 'Failed to delete'); await update(); }}>
                     <input type="hidden" name="shopifySku" value={sku} />
                     <button
                       type="submit"
@@ -310,8 +301,8 @@
               <div class="flex-1 min-w-0">
                 <p class="text-sm text-zinc-800 dark:text-zinc-200">{item.name}</p>
               </div>
-              <code class="text-[11px] font-mono text-zinc-400 bg-zinc-50 dark:bg-[#161616] px-1.5 py-0.5 rounded">{item.slug}</code>
-              <span class="text-xs text-zinc-400 tabular-nums">{item.stock_count} in stock</span>
+              <code class="text-[11px] font-mono text-zinc-400 bg-zinc-50 dark:bg-[#161616] px-1.5 py-0.5 rounded">{item.sku}</code>
+              <span class="text-xs text-zinc-400 tabular-nums">{item.in_stock} in stock</span>
             </div>
           {/each}
         </div>
@@ -394,40 +385,17 @@
             <div class="space-y-2">
               {#each editingSetItems as item, i}
                 <div class="flex items-start gap-2 p-3 bg-zinc-50 dark:bg-[#161616] rounded-lg border border-zinc-100 dark:border-[#1e1e1e]">
-                  <!-- Source type -->
+                  <!-- Object selector -->
                   <select
-                    bind:value={item.source_type}
-                    class="h-8 bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 text-xs text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors shrink-0"
-                    aria-label="Source type for item {i + 1}"
+                    bind:value={item.object_id}
+                    class="flex-1 h-8 bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 text-xs text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors min-w-0"
+                    aria-label="Inventory item for row {i + 1}"
                   >
-                    <option value="inventory">Inventory</option>
-                    <option value="storage">Storage (spool)</option>
+                    <option value={0}>— select item —</option>
+                    {#each (data.inventoryItems as any[] ?? []) as inv}
+                      <option value={inv.id}>{inv.name} ({inv.sku})</option>
+                    {/each}
                   </select>
-
-                  <!-- Slug / preset selector -->
-                  {#if item.source_type === 'inventory'}
-                    <select
-                      bind:value={item.inventory_slug}
-                      class="flex-1 h-8 bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 text-xs text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors min-w-0"
-                      aria-label="Inventory item for row {i + 1}"
-                    >
-                      <option value="">— select item —</option>
-                      {#each (data.inventoryItems as any[] ?? []) as inv}
-                        <option value={inv.slug}>{inv.name}</option>
-                      {/each}
-                    </select>
-                  {:else}
-                    <select
-                      bind:value={item.spool_preset_id}
-                      class="flex-1 h-8 bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 text-xs text-zinc-900 dark:text-zinc-50 focus:outline-none focus:border-zinc-400 transition-colors min-w-0"
-                      aria-label="Spool preset for row {i + 1}"
-                    >
-                      <option value={null}>— select preset —</option>
-                      {#each (data.spoolPresets as any[] ?? []) as preset}
-                        <option value={preset.id}>{preset.name} ({preset.brand})</option>
-                      {/each}
-                    </select>
-                  {/if}
 
                   <!-- Quantity -->
                   <div class="flex items-center gap-1 shrink-0">
@@ -485,7 +453,7 @@
                       formData.set('slug', newInvSlug);
                       return async ({ result, update }) => {
                         if (result.type === 'success') {
-                          (data.inventoryItems as any[]).push({ name: newInvName, slug: newInvSlug, stock_count: 0 });
+                          (data.inventoryItems as any[]).push({ name: newInvName, slug: newInvSlug, in_stock: 0 });
                           data.inventoryItems = [...(data.inventoryItems as any[])];
                           newInvName = '';
                           newInvSlug = '';

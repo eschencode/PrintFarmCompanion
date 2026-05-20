@@ -163,10 +163,10 @@ export function computeUtilization(
   const perPrinterRaw = printersArr.map((p: any) => {
     const printerJobs = jobsArr.filter((j: any) =>
       j.printer_id === p.id &&
-      (j.status === 'success' || j.status === 'failed') &&
+      (j.status === 'successful' || j.status === 'failed') &&
       j.start_time >= periodStart && j.start_time < periodEnd
     );
-    const successMs = printerJobs.filter((j: any) => j.status === 'success').reduce((s: number, j: any) => s + jobDurationMs(j), 0);
+    const successMs = printerJobs.filter((j: any) => j.status === 'successful').reduce((s: number, j: any) => s + jobDurationMs(j), 0);
     const failedMs  = printerJobs.filter((j: any) => j.status === 'failed').reduce((s: number, j: any) => s + jobDurationMs(j), 0);
     const printingMs = successMs + failedMs;
     const idleMs = Math.max(0, periodMs - printingMs);
@@ -192,7 +192,7 @@ export function computeUtilization(
     ? Math.round((farmPrintingMs / farmAvailableMs) * 1000) / 10 : 0;
 
   const periodJobs = jobsArr.filter((j: any) =>
-    (j.status === 'success' || j.status === 'failed') &&
+    (j.status === 'successful' || j.status === 'failed') &&
     j.start_time >= periodStart && j.start_time < periodEnd
   );
   const avgJobDurationMs = periodJobs.length > 0
@@ -315,7 +315,7 @@ export function buildSpoolUsage(jobs: any[]): SpoolUsageEntry[] {
   const map = new Map<string, SpoolUsageEntry>();
 
   jobs
-    .filter((j: any) => j.status === 'success' || j.status === 'failed')
+    .filter((j: any) => j.status === 'successful' || j.status === 'failed')
     .forEach((job: any) => {
       const color    = job.spool_color    || 'Unknown';
       const material = job.spool_material || 'Unknown';

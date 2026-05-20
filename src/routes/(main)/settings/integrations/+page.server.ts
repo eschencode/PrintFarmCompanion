@@ -28,9 +28,12 @@ export const load: PageServerLoad = async ({ platform }) => {
   }
 
   const skuMappingsRaw = await drizzleDb.all(
-    sql`SELECT id, shopify_sku, inventory_slug, quantity, source_type, spool_preset_id FROM shopify_sku_mapping ORDER BY shopify_sku, inventory_slug`
+    sql`SELECT sm.id, sm.shopify_sku, sm.object_id, sm.quantity, o.sku as object_sku, o.name as object_name
+        FROM shopify_sku_mapping sm
+        LEFT JOIN objects o ON sm.object_id = o.id
+        ORDER BY sm.shopify_sku, o.sku`
   );
-  const skuMappings = (skuMappingsRaw || []) as { id: number; shopify_sku: string; inventory_slug: string; quantity: number; source_type: string; spool_preset_id: number | null }[];
+  const skuMappings = (skuMappingsRaw || []) as { id: number; shopify_sku: string; object_id: number; quantity: number; object_sku: string; object_name: string }[];
   const inventoryItems = await getAllObjects(database);
   const spoolPresets = await db.getAllSpoolPresets(database);
 
@@ -68,7 +71,7 @@ export const actions: Actions = {
     const shopifySku = (form.get('shopifySku') as string).trim();
     const originalSku = ((form.get('originalSku') as string) || '').trim();
     if (!shopifySku) return fail(400, { error: 'Shopify SKU is required' });
-    let items: { source_type: string; inventory_slug: string; spool_preset_id: number | null; quantity: number }[];
+    let items: { object_id: number; quantity: number }[];
     try { items = JSON.parse(form.get('items') as string); }
     catch { return fail(400, { error: 'Invalid items data' }); }
     if (items.length === 0) return fail(400, { error: 'At least one item is required' });
@@ -76,8 +79,9 @@ export const actions: Actions = {
       if (originalSku) await drizzleDb.run(sql`DELETE FROM shopify_sku_mapping WHERE shopify_sku = ${originalSku}`);
       for (const item of items) {
         await drizzleDb.run(sql`
-          INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity, source_type, spool_preset_id)
-          VALUES (${shopifySku}, ${item.inventory_slug || ''}, ${item.quantity}, ${item.source_type}, ${item.spool_preset_id})
+          INSERT INTO shopify_sku_mapping (shopify_sku, object_id, quantity)
+          VALUES (${shopifySku}, ${item.object_id}, ${item.quantity})
+          ON CONFLICT (shopify_sku, object_id) DO UPDATE SET quantity = excluded.quantity
         `);
       }
       return { success: true };

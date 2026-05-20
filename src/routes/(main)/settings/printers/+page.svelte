@@ -17,10 +17,10 @@
   function openEditPrinter(printer: any) {
     editingPrinter = printer;
     printerName = printer.name;
-    printerModelId = printer.printer_model_id || '';
-    printerIp = printer.printer_ip || '';
-    printerSerial = printer.printer_serial || '';
-    printerAccessCode = printer.printer_access_code || '';
+    printerModelId = printer.printer_preset_id || '';
+    printerIp = printer.secrets?.printer_ip || '';
+    printerSerial = printer.secrets?.serial || '';
+    printerAccessCode = printer.secrets?.access_code || '';
     showPrinterEditor = true;
   }
 
@@ -45,11 +45,11 @@
 
   function openEditPrinterModel(model: any) {
     editingPrinterModel = model;
-    pmName = model.name;
-    pmDescription = model.description || '';
-    pmBuildX = model.build_volume_x ?? '';
-    pmBuildY = model.build_volume_y ?? '';
-    pmBuildZ = model.build_volume_z ?? '';
+    pmName = model.model;
+    pmDescription = model.brand || '';
+    pmBuildX = model.dimension_x ?? '';
+    pmBuildY = model.dimension_y ?? '';
+    pmBuildZ = model.dimension_z ?? '';
     showPrinterModelEditor = true;
   }
 
@@ -111,15 +111,15 @@
                 <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
               </div>
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{model.name}</p>
-                <p class="text-xs text-zinc-400">{model.description || 'No description'}{model.build_volume_x && model.build_volume_y && model.build_volume_z ? ` · ${model.build_volume_x}×${model.build_volume_y}×${model.build_volume_z}mm` : ''}</p>
+                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{model.brand} {model.model}</p>
+                <p class="text-xs text-zinc-400">{model.dimension_x && model.dimension_y && model.dimension_z ? `${model.dimension_x}×${model.dimension_y}×${model.dimension_z}mm` : 'No dimensions set'}</p>
               </div>
               <div class="flex items-center gap-0.5">
                 <button onclick={() => openEditPrinterModel(model)} class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/10 transition-colors text-xs">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                   Edit
                 </button>
-                <form method="POST" action="?/deletePrinterModel" use:enhance={() => ({ async update({ result }) { if (result.type === 'failure') alert(result.data?.error || 'Failed to delete'); } })}>
+                <form method="POST" action="?/deletePrinterModel" use:enhance={() => async ({ result, update }) => { if (result.type === 'failure') alert((result.data as any)?.error || 'Failed to delete'); await update(); }}>
                   <input type="hidden" name="modelId" value={model.id} />
                   <button type="submit" class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors text-xs" onclick={(e) => { if (!confirm(`Delete model ${model.name}?`)) e.preventDefault(); }}>
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -157,23 +157,21 @@
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
                   {printer.name}
-                  {#if printer.printer_ip && printer.printer_serial && printer.printer_access_code}
+                  {#if printer.secrets?.printer_ip && printer.secrets?.serial && printer.secrets?.access_code}
                     <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">Pi</span>
                   {/if}
                 </p>
-                <p class="text-xs text-zinc-400">{printer.printer_model_name || printer.model || 'No model'} · {printer.total_hours?.toFixed(1) || 0}h total</p>
+                <p class="text-xs text-zinc-400">{printer.preset ? `${printer.preset.brand} ${printer.preset.model}` : 'No model'}</p>
               </div>
               <span class="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md {
-                printer.status === 'printing' ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400' :
-                printer.status === 'IDLE' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400' :
-                'bg-zinc-100 dark:bg-[#1a1a1a] text-zinc-400'
-              }">{printer.status}</span>
+                printer.active ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400' : 'bg-zinc-100 dark:bg-[#1a1a1a] text-zinc-400'
+              }">{printer.active ? 'Active' : 'Inactive'}</span>
               <div class="flex items-center gap-0.5">
                 <button onclick={() => openEditPrinter(printer)} class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/10 transition-colors text-xs">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                   Edit
                 </button>
-                <form method="POST" action="?/deletePrinter" use:enhance={() => ({ async update({ result }) { if (result.type === 'failure') alert(result.data?.error || 'Failed to delete'); } })}>
+                <form method="POST" action="?/deletePrinter" use:enhance={() => async ({ result, update }) => { if (result.type === 'failure') alert((result.data as any)?.error || 'Failed to delete'); await update(); }}>
                   <input type="hidden" name="printerId" value={printer.id} />
                   <button type="submit" class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors text-xs" onclick={(e) => { if (!confirm(`Delete ${printer.name}?`)) e.preventDefault(); }}>
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -209,7 +207,7 @@
         </button>
       </div>
       <form method="POST" action={editingPrinterModel ? '?/updatePrinterModel' : '?/addPrinterModel'} class="p-6 space-y-4"
-        use:enhance={() => ({ async update({ result }) { if (result.type === 'success') closePrinterModelEditor(); } })}>
+        use:enhance={() => async ({ result, update }) => { if (result.type === 'success') closePrinterModelEditor(); await update(); }}>
         {#if editingPrinterModel}<input type="hidden" name="modelId" value={editingPrinterModel.id} />{/if}
         <div>
           <label for="pmName" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Model Name *</label>
@@ -250,7 +248,7 @@
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
-      <form method="POST" action={editingPrinter ? '?/updatePrinter' : '?/addPrinter'} use:enhance={() => ({ async update({ result }) { if (result.type === 'success') closePrinterEditor(); } })}>
+      <form method="POST" action={editingPrinter ? '?/updatePrinter' : '?/addPrinter'} use:enhance={() => async ({ result, update }) => { if (result.type === 'success') closePrinterEditor(); await update(); }}>
         <div class="p-6 space-y-4">
           {#if editingPrinter}<input type="hidden" name="printerId" value={editingPrinter.id} />{/if}
           <div>
@@ -262,7 +260,7 @@
             <select id="printerModelSelect" name="printerModelId" bind:value={printerModelId} class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors">
               <option value="">No model</option>
               {#each data.printerModels || [] as model}
-                <option value={model.id}>{model.name}{model.description ? ` — ${model.description}` : ''}</option>
+                <option value={model.id}>{model.brand} {model.model}</option>
               {/each}
             </select>
           </div>

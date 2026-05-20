@@ -17,29 +17,56 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
   const {
     name, file_name, thumbnail,
-    filament_type, filament_color,
-    estimated_time, plate_type, nozzle_diameter,
+    estimated_time, nozzle_diameter,
     expected_weight, default_spool_preset_id,
-    objects_per_print, inventory_slug, printer_model,
-    local_file_handler_path,
-    pi_file_path, file_stored_on_pi,
+    objects_per_print, inventory_slug, printer_preset_id, printer_model_id,
+    local_file_handler_path, pi_file_path,
+    plate_preset_id,
   } = body;
 
   if (!name || !file_name) {
     return json({ success: false, error: 'name and file_name are required' }, { status: 400 });
   }
 
+  // Resolve object_id from slug/sku if provided
+  let object_id: number | null = null;
+  if (inventory_slug) {
+    const obj = await drizzleDb.get<{ id: number }>(
+      sql`SELECT id FROM objects WHERE sku = ${inventory_slug} LIMIT 1`
+    );
+    object_id = obj?.id ?? null;
+  }
+
+  // Use explicit printer_preset_id if provided, else try to look up by model name
+  const resolvedPresetId = (printer_preset_id as number | null) ?? (printer_model_id as number | null) ?? null;
+
+  const filename = (pi_file_path as string) || (local_file_handler_path as string) || (file_name as string);
+  const now = Math.floor(Date.now() / 1000);
+
   try {
     const result = await drizzleDb.run(sql`
       INSERT INTO print_modules
-        (name, file_name, thumbnail, filament_type, filament_color, expected_time, plate_type,
-         nozzle_diameter, expected_weight, default_spool_preset_id, objects_per_print,
-         inventory_slug, printer_model, local_file_handler_path, pi_file_path, file_stored_on_pi,
-         path)
-      VALUES (${name}, ${file_name}, ${thumbnail ?? null}, ${filament_type ?? null}, ${filament_color ?? null}, ${estimated_time ?? null}, ${plate_type ?? null}, ${nozzle_diameter ?? null}, ${expected_weight ?? 0}, ${default_spool_preset_id ?? null}, ${objects_per_print ?? 1}, ${inventory_slug ?? null}, ${printer_model ?? null}, ${local_file_handler_path ?? null}, ${pi_file_path ?? null}, ${file_stored_on_pi ?? 0}, ${local_file_handler_path ?? ''})
+        (name, filename, thumbnail, weight, expected_time_minutes, objects_per_print,
+         nozzle_diameter, object_id, printer_preset_id, active, created_at, updated_at)
+      VALUES (
+        ${name}, ${filename}, ${thumbnail ?? null},
+        ${expected_weight ?? 0}, ${estimated_time ?? null}, ${objects_per_print ?? 1},
+        ${nozzle_diameter ?? null}, ${object_id}, ${resolvedPresetId},
+        1, ${now}, ${now}
+      )
     `);
 
-    return json({ success: true, data: { id: result.meta.last_row_id, name } });
+    const moduleId = result.meta.last_row_id as number;
+
+    // Save slot 0 spool preset if provided
+    if (default_spool_preset_id && moduleId) {
+      await drizzleDb.run(sql`
+        INSERT OR REPLACE INTO module_filament_slots (module_id, slot_index, spool_preset_id)
+        VALUES (${moduleId}, 0, ${default_spool_preset_id})
+      `);
+    }
+
+    return json({ success: true, data: { id: moduleId, name } });
   } catch (e) {
     console.error('Failed to insert print module:', e);
     return json({ success: false, error: 'Failed to save module' }, { status: 500 });
@@ -51,13 +78,13 @@ export const GET: RequestHandler = async ({ platform, url }) => {
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
 
   const drizzleDb = getDb(db);
-  // Check if this is a request for spool presets
-  const getPresets = url.searchParams.get('presets');
-  
-  if (getPresets === 'true') {
+
+  if (url.searchParams.get('presets') === 'true') {
     try {
       const result = await drizzleDb.all(sql`
-        SELECT * FROM spool_presets ORDER BY name
+        SELECT id, brand, material, color, default_weight, cost, in_storage
+        FROM spool_presets
+        ORDER BY brand, color
       `);
       return json({ success: true, data: result ?? [] });
     } catch (e) {
@@ -68,13 +95,18 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 
   try {
     const result = await drizzleDb.all(sql`
-      SELECT pm.*, pmod.name as printer_model_name, sp.name as spool_preset_name, sp.material as spool_preset_material, sp.color as spool_preset_color, sp.brand as spool_preset_brand
+      SELECT pm.*,
+             pp.brand || ' ' || pp.model as printer_model_name,
+             mfs.spool_preset_id as default_spool_preset_id,
+             sp.material as spool_preset_material, sp.color as spool_preset_color, sp.brand as spool_preset_brand,
+             o.sku as inventory_slug, o.name as object_name
       FROM print_modules pm
-      LEFT JOIN printer_models pmod ON pm.printer_model_id = pmod.id
-      LEFT JOIN spool_presets sp ON pm.default_spool_preset_id = sp.id
-      ORDER BY pm.rowid DESC
+      LEFT JOIN printer_presets pp ON pm.printer_preset_id = pp.id
+      LEFT JOIN module_filament_slots mfs ON pm.id = mfs.module_id AND mfs.slot_index = 0
+      LEFT JOIN spool_presets sp ON mfs.spool_preset_id = sp.id
+      LEFT JOIN objects o ON pm.object_id = o.id
+      ORDER BY pm.id DESC
     `);
-
     return json({ success: true, data: result ?? [] });
   } catch (e) {
     console.error('Failed to fetch print modules:', e);
@@ -97,37 +129,56 @@ export const PATCH: RequestHandler = async ({ url, request, platform }) => {
     return json({ success: false, error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  // Active toggle — lightweight action, doesn't require other fields
   if ('active' in body) {
-    await drizzleDb.run(sql`UPDATE print_modules SET active = ${body.active ? 1 : 0} WHERE id = ${id}`);
+    const now = Math.floor(Date.now() / 1000);
+    await drizzleDb.run(sql`UPDATE print_modules SET active = ${body.active ? 1 : 0}, updated_at = ${now} WHERE id = ${id}`);
     return json({ success: true });
   }
 
   const {
-    name,
-    estimated_time, plate_type, nozzle_diameter,
-    expected_weight, default_spool_preset_id,
-    local_file_handler_path, objects_per_print,
-    inventory_slug, printer_model,
+    name, estimated_time, nozzle_diameter, expected_weight,
+    default_spool_preset_id, objects_per_print, inventory_slug,
+    printer_preset_id, printer_model_id, plate_preset_id,
   } = body;
 
   if (!name) return json({ success: false, error: 'name is required' }, { status: 400 });
+
+  // Resolve object_id
+  let object_id: number | null = null;
+  if (inventory_slug) {
+    const obj = await drizzleDb.get<{ id: number }>(
+      sql`SELECT id FROM objects WHERE sku = ${inventory_slug} LIMIT 1`
+    );
+    object_id = obj?.id ?? null;
+  }
+
+  const resolvedPresetId = (printer_preset_id as number | null) ?? (printer_model_id as number | null) ?? null;
+  const now = Math.floor(Date.now() / 1000);
 
   try {
     await drizzleDb.run(sql`
       UPDATE print_modules SET
         name = ${name},
-        expected_time = ${estimated_time ?? null},
-        plate_type = ${plate_type ?? null},
+        expected_time_minutes = ${estimated_time ?? null},
         nozzle_diameter = ${nozzle_diameter ?? null},
-        expected_weight = ${expected_weight ?? null},
-        default_spool_preset_id = ${default_spool_preset_id ?? null},
-        local_file_handler_path = ${local_file_handler_path ?? null},
+        weight = ${expected_weight ?? null},
         objects_per_print = ${objects_per_print ?? 1},
-        inventory_slug = ${inventory_slug ?? null},
-        printer_model = ${printer_model ?? null}
+        object_id = ${object_id},
+        printer_preset_id = ${resolvedPresetId},
+        updated_at = ${now}
       WHERE id = ${id}
     `);
+
+    if (default_spool_preset_id !== undefined) {
+      if (default_spool_preset_id) {
+        await drizzleDb.run(sql`
+          INSERT OR REPLACE INTO module_filament_slots (module_id, slot_index, spool_preset_id)
+          VALUES (${id}, 0, ${default_spool_preset_id})
+        `);
+      } else {
+        await drizzleDb.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${id} AND slot_index = 0`);
+      }
+    }
 
     return json({ success: true });
   } catch (e) {
@@ -145,20 +196,18 @@ export const DELETE: RequestHandler = async ({ url, platform }) => {
   if (!id) return json({ success: false, error: 'id is required' }, { status: 400 });
 
   try {
-    // Fetch file paths before deleting so we can clean them up
-    const module = await drizzleDb.get<{ pi_file_path: string | null; local_file_handler_path: string | null }>(
-      sql`SELECT pi_file_path, local_file_handler_path FROM print_modules WHERE id = ${id}`
+    const module = await drizzleDb.get<{ filename: string | null }>(
+      sql`SELECT filename FROM print_modules WHERE id = ${id}`
     );
 
-    // Delete file from Pi if it exists — non-fatal if Pi is unreachable
     const piUrl = platform?.env?.PI_TUNNEL_URL;
     const piSecret = (platform?.env?.PI_SECRET as string | undefined) ?? '';
-    if (module?.pi_file_path && piUrl) {
+    if (module?.filename && piUrl) {
       try {
         await fetch(`${piUrl}/file`, {
           method: 'DELETE',
           headers: { 'content-type': 'application/json', 'x-pi-secret': piSecret },
-          body: JSON.stringify({ file_path: module.pi_file_path }),
+          body: JSON.stringify({ file_path: module.filename }),
         });
       } catch (e) {
         console.warn('[pi/delete-file] Pi unreachable, skipping file cleanup:', e);
@@ -166,13 +215,10 @@ export const DELETE: RequestHandler = async ({ url, platform }) => {
     }
 
     await drizzleDb.run(sql`UPDATE print_jobs SET module_id = NULL WHERE module_id = ${id}`);
+    await drizzleDb.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${id}`);
     await drizzleDb.run(sql`DELETE FROM print_modules WHERE id = ${id}`);
 
-    // Return file paths so the client can clean up the local file via the file handler
-    return json({
-      success: true,
-      local_file_handler_path: module?.local_file_handler_path ?? null,
-    });
+    return json({ success: true, local_file_handler_path: module?.filename ?? null });
   } catch (e) {
     console.error('Failed to delete print module:', e);
     return json({ success: false, error: 'Failed to delete module' }, { status: 500 });

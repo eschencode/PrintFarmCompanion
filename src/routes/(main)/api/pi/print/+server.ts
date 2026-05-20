@@ -8,10 +8,10 @@ import { getDb } from '$lib/db';
  * POST /api/pi/print
  * Body: { module_id: number, printer_id: number, options?: object }
  *
- * 1. Fetches module + printer credentials from D1
- * 2. Validates both have Pi data
+ * 1. Fetches module + printer secrets from D1
+ * 2. Validates Pi credentials exist
  * 3. Tells Pi to FTPS-upload + MQTT-command the printer
- * 4. Creates a print_jobs record with pi_task_id
+ * 4. Creates a print_jobs record with external_task_id
  */
 export const POST: RequestHandler = async ({ request, platform }) => {
   const db = platform?.env?.DB;
@@ -34,37 +34,38 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     return json({ success: false, error: 'module_id and printer_id required' }, { status: 400 });
   }
 
-  // Fetch module
   const module = await drizzleDb.get(
     sql`SELECT * FROM print_modules WHERE id = ${module_id}`
   ) as Record<string, unknown> | null;
 
   if (!module) return json({ success: false, error: 'Module not found' }, { status: 404 });
-  if (!module.pi_file_path) return json({ success: false, error: 'Module not stored on Pi' }, { status: 400 });
+  if (!module.filename) return json({ success: false, error: 'Module has no filename stored' }, { status: 400 });
 
-  // Fetch printer with Pi credentials
-  const printer = await drizzleDb.get(
-    sql`SELECT * FROM printers WHERE id = ${printer_id}`
-  ) as Record<string, unknown> | null;
+  // Fetch printer + secrets
+  const printerRow = await drizzleDb.get(sql`
+    SELECT p.id, p.name, p.printer_preset_id,
+           ps.printer_ip, ps.serial, ps.access_code
+    FROM printers p
+    LEFT JOIN printer_secrets ps ON p.id = ps.printer_id
+    WHERE p.id = ${printer_id}
+  `) as Record<string, unknown> | null;
 
-  if (!printer) return json({ success: false, error: 'Printer not found' }, { status: 404 });
-  if (!printer.printer_ip || !printer.printer_serial || !printer.printer_access_code) {
+  if (!printerRow) return json({ success: false, error: 'Printer not found' }, { status: 404 });
+  if (!printerRow.printer_ip || !printerRow.serial || !printerRow.access_code) {
     return json({ success: false, error: 'Printer missing Pi credentials (IP/serial/access code)' }, { status: 400 });
   }
 
-  // Tell Pi to start the print
   let piResult: { success: boolean; task_id?: string; error?: string };
   try {
     const piResp = await fetch(`${piUrl}/print`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-pi-secret': piSecret },
       body: JSON.stringify({
-        file_path: module.pi_file_path,
-        printer_ip: printer.printer_ip,
-        printer_serial: printer.printer_serial,
-        printer_access_code: printer.printer_access_code,
-        printer_name: printer.name,
-        printer_model: printer.model ?? null,
+        file_path: module.filename,
+        printer_ip: printerRow.printer_ip,
+        printer_serial: printerRow.serial,
+        printer_access_code: printerRow.access_code,
+        printer_name: printerRow.name,
         options: options ?? {},
       }),
     });
@@ -77,18 +78,13 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     return json({ success: false, error: piResult.error ?? 'Pi print failed' }, { status: 502 });
   }
 
-  // Close any in-progress jobs before creating the new one
   await closeOpenPrintJobsForPrinter(db, printer_id, module_id);
 
-  // Create print_jobs record and set printer status to printing
-  const now = Date.now();
-  const jobName = `${module.name} — ${printer.name}`;
+  const now = Math.floor(Date.now() / 1000);
   const result = await drizzleDb.run(sql`
-    INSERT INTO print_jobs (name, module_id, printer_id, start_time, status, planned_weight, pi_task_id)
-    VALUES (${jobName}, ${module_id}, ${printer_id}, ${now}, 'printing', ${module.expected_weight ?? 0}, ${piResult.task_id ?? null})
+    INSERT INTO print_jobs (module_id, printer_id, start_time, status, external_task_id, created_at, updated_at)
+    VALUES (${module_id}, ${printer_id}, ${now}, 'printing', ${piResult.task_id ?? null}, ${now}, ${now})
   `);
-
-  await drizzleDb.run(sql`UPDATE printers SET status = 'printing' WHERE id = ${printer_id}`);
 
   return json({
     success: true,

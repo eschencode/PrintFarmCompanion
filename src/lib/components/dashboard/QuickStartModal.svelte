@@ -87,7 +87,7 @@
         <!-- Next print card (big start button) -->
         <button
           type="button"
-          disabled={startingSerials.has(printer.printer_serial ?? '')}
+          disabled={startingSerials.has(printer.secrets?.serial ?? '')}
 
           onclick={() => onEnqueue(nextModule, printer)}
           class="w-full text-left bg-emerald-500/5 border-2 border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/40 rounded-2xl p-6 mb-4 transition-all duration-200 disabled:opacity-50 group"
@@ -100,7 +100,7 @@
             </div>
             <div class="flex-1 min-w-0">
               <p class="text-[10px] uppercase tracking-widest text-zinc-400 mb-1">
-                {startingSerials.has(printer.printer_serial ?? '') ? 'Starting…' : 'Start Next Print'}
+                {startingSerials.has(printer.secrets?.serial ?? '') ? 'Starting…' : 'Start Next Print'}
               </p>
               <p class="text-lg font-medium text-zinc-900 dark:text-zinc-50 leading-snug truncate">{nextPrint.module_name ?? `Module #${nextPrint.module_id}`}</p>
               <div class="flex items-center gap-2 mt-1.5">

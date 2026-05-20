@@ -55,12 +55,12 @@ export const GET: RequestHandler = async ({ url, platform }) => {
       try {
         const drizzleDb = getDb(db);
         const existing = await drizzleDb.get(
-          sql`SELECT id FROM print_jobs WHERE pi_task_id = ${status.task_id} LIMIT 1`
+          sql`SELECT id FROM print_jobs WHERE external_task_id = ${status.task_id} LIMIT 1`
         );
 
         if (!existing) {
           const printer = await drizzleDb.get<{ id: number }>(
-            sql`SELECT id FROM printers WHERE printer_serial = ${serial}`
+            sql`SELECT p.id FROM printers p JOIN printer_secrets ps ON p.id = ps.printer_id WHERE ps.serial = ${serial}`
           );
 
           if (printer) {
@@ -89,8 +89,8 @@ export const GET: RequestHandler = async ({ url, platform }) => {
             const moduleId = matchedModule?.id ?? null;
 
             await drizzleDb.run(sql`
-              INSERT INTO print_jobs (name, module_id, printer_id, start_time, status, planned_weight, pi_task_id, progress, layer_num, total_layer_num)
-              VALUES (${jobName}, ${moduleId}, ${printer.id}, ${now}, 'printing', ${plannedWeight}, ${status.task_id}, ${status.progress ?? 0}, ${status.layer_num ?? 0}, ${status.total_layer_num ?? 0})
+              INSERT INTO print_jobs (module_id, printer_id, start_time, status, external_task_id, created_at, updated_at)
+              VALUES (${moduleId}, ${printer.id}, ${now}, 'printing', ${status.task_id}, ${now}, ${now})
             `);
 
             await drizzleDb.run(sql`UPDATE printers SET status = 'printing' WHERE id = ${printer.id}`);

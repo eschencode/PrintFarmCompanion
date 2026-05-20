@@ -188,7 +188,7 @@
 
               <div class="flex items-center gap-0.5 shrink-0">
                 {#if !preset.is_default}
-                  <form method="POST" action="?/setDefaultGridPreset" use:enhance={() => ({ async update({ result }) { if (result.type === 'failure') alert((result.data as any)?.error ?? 'Failed'); } })}>
+                  <form method="POST" action="?/setDefaultGridPreset" use:enhance={() => async ({ result, update }) => { if (result.type === 'failure') alert((result.data as any)?.error ?? 'Failed'); await update(); }}>
                     <input type="hidden" name="presetId" value={preset.id} />
                     <button type="submit" class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors text-xs">
                       Set default
@@ -199,7 +199,7 @@
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                   Edit
                 </button>
-                <form method="POST" action="?/deleteGridPreset" use:enhance={() => ({ async update({ result }) { if (result.type === 'failure') alert((result.data as any)?.error ?? 'Failed to delete'); } })}>
+                <form method="POST" action="?/deleteGridPreset" use:enhance={() => async ({ result, update }) => { if (result.type === 'failure') alert((result.data as any)?.error ?? 'Failed to delete'); await update(); }}>
                   <input type="hidden" name="presetId" value={preset.id} />
                   <button
                     type="submit"
@@ -260,7 +260,7 @@
       <form
         method="POST"
         action={editingGridId ? '?/updateGridPreset' : '?/addGridPreset'}
-        use:enhance={() => ({ async update({ result }) { if (result.type === 'success') closeGridEditor(); } })}
+        use:enhance={() => async ({ result, update }) => { if (result.type === 'success') closeGridEditor(); await update(); }}
       >
         {#if editingGridId}<input type="hidden" name="presetId" value={editingGridId} />{/if}
         <input type="hidden" name="gridConfig" value={gridConfigJson} />
