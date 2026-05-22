@@ -32,10 +32,11 @@ export class AIContextBuilder {
 
   async getInventoryWithVelocity(): Promise<ObjectWithVelocity[]> {
     const drizzleDb = getDb(this.db);
-    const inventoryRows = await drizzleDb.all<{ id: number; sku: string; name: string; in_stock: number; min_threshold: number }>(sql`
-      SELECT id, sku, name, in_stock, min_threshold FROM objects
+    const inventoryRows = await drizzleDb.all<{ id: number; name: string; in_stock: number; min_threshold: number }>(sql`
+      SELECT id, name, in_stock, min_threshold FROM objects
     `);
 
+    const cutoffMs = Date.now() - FORECAST_LOOKBACK_DAYS * MS_PER_DAY;
     const dailyRows = await drizzleDb.all<{ object_id: number; day_bucket: number; daily_sold: number }>(sql`
       SELECT
         l.object_id,
@@ -43,7 +44,7 @@ export class AIContextBuilder {
         SUM(ABS(l.quantity)) as daily_sold
       FROM inventory_log l
       WHERE l.change_type IN ('- sold b2c', '- sold b2b')
-        AND l.created_at > strftime('%s', 'now', '-${FORECAST_LOOKBACK_DAYS} days') * 1000
+        AND l.created_at > ${cutoffMs}
       GROUP BY l.object_id, day_bucket
     `);
 
@@ -64,9 +65,10 @@ export class AIContextBuilder {
 
     return (inventoryRows ?? []).map(item => {
       const dailySales = salesByObject.get(item.id) ?? new Array(FORECAST_LOOKBACK_DAYS).fill(0);
+      const key = String(item.id);
 
-      this.forecast.fit(item.sku, dailySales);
-      const stockout_risk = this.forecast.riskAtStock(item.sku, item.in_stock);
+      this.forecast.fit(key, dailySales);
+      const stockout_risk = this.forecast.riskAtStock(key, item.in_stock);
 
       let total = 0;
       let daysWithSales = 0;
@@ -79,7 +81,7 @@ export class AIContextBuilder {
       const confidence = confidenceFromDaysWithSales(daysWithSales);
 
       return {
-        sku: item.sku,
+        id: item.id,
         name: item.name,
         in_stock: item.in_stock,
         min_threshold: item.min_threshold,
@@ -103,7 +105,7 @@ export class AIContextBuilder {
         pm.expected_time_minutes,
         pm.objects_per_print,
         pm.printer_preset_id,
-        o.sku as object_sku,
+        o.name as object_name,
         mfs.spool_preset_id
       FROM print_modules pm
       LEFT JOIN objects o ON pm.object_id = o.id
@@ -139,18 +141,18 @@ export class AIContextBuilder {
     const inventory = await this.getInventoryWithVelocity();
     const printers = await this.getAllPrintersWithQueuedJobs();
 
-    const inventoryMap = new Map<string, ObjectWithVelocity>();
-    inventory.forEach(item => inventoryMap.set(item.sku, { ...item }));
+    const inventoryMap = new Map<number, ObjectWithVelocity>();
+    inventory.forEach(item => inventoryMap.set(item.id, { ...item }));
 
     for (const printer of printers) {
       for (const moduleId of printer.module_ids) {
         const module = modules.find(m => m.id === moduleId);
-        if (!module || !module.object_sku) continue;
-        const inv = inventoryMap.get(module.object_sku);
+        if (!module || !module.object_id) continue;
+        const inv = inventoryMap.get(module.object_id);
         if (inv) {
           inv.in_stock += module.objects_per_print;
           inv.days_until_stockout = computeStockout(inv.in_stock, inv.daily_velocity);
-          inv.stockout_risk = this.forecast.riskAtStock(inv.sku, inv.in_stock);
+          inv.stockout_risk = this.forecast.riskAtStock(String(inv.id), inv.in_stock);
         }
       }
     }
@@ -158,7 +160,7 @@ export class AIContextBuilder {
     return {
       adjustedInventory: Array.from(inventoryMap.values()),
       salesVelocity: Array.from(inventoryMap.values()).map(i => ({
-        sku: i.sku,
+        object_id: i.id,
         daily_velocity: i.daily_velocity
       }))
     };

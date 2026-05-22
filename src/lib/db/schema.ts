@@ -116,11 +116,9 @@ export const objects = sqliteTable(
   "objects",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    name: text("name").notNull(), // human display name, e.g. "Hook Blue"
-    // SKU is the stable human-readable identifier for an object.
-    // Used for Shopify mapping, CSV imports, URLs, debugging.
-    // Survives renames (name can change, sku does not).
-    sku: text("sku").notNull(),
+    // Name is the human display identifier. Must be unique per workspace.
+    // "SKU" only lives in shopify_sku_mapping.shopify_sku — that's Shopify's concept.
+    name: text("name").notNull(),
     inStock: integer("in_stock").notNull().default(0),
     minThreshold: integer("min_threshold").notNull().default(0),
     lastCountDate: integer("last_count_date", { mode: "timestamp" }),
@@ -134,10 +132,9 @@ export const objects = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
-    // Phase 3: becomes UNIQUE(workspaceId, sku).
-    uniqueIndex("uniq_objects_sku").on(t.sku),
+    // Phase 3: becomes UNIQUE(workspaceId, name).
+    uniqueIndex("uniq_objects_name").on(t.name),
     index("idx_objects_category").on(t.category),
-    // Filter index for the low-stock dashboard.
     index("idx_objects_stock").on(t.inStock, t.minThreshold),
   ],
 );
@@ -191,6 +188,9 @@ export const printers = sqliteTable(
       { onDelete: "set null" },
     ),
     loadedNozzleDiameter: real("loaded_nozzle_diameter"),
+    // Number of filament slots (1 = single-colour, 4 = AMS, etc.).
+    // Drives how many rows exist in printer_loaded_spools for this printer.
+    slotCount: integer("slot_count").notNull().default(1),
     // Soft-delete: set false when a printer is decommissioned but kept for
     // historical print_jobs references.
     active: integer("active", { mode: "boolean" }).notNull().default(true),
@@ -280,16 +280,18 @@ export const printModules = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     name: text("name").notNull(),
     // Total expected filament weight across all slots (sum of slot weights).
-    weight: integer("weight").notNull(),
-    expectedTimeMinutes: integer("expected_time_minutes").notNull(),
-    objectsPerPrint: integer("objects_per_print").notNull(),
-    // Required: a module is sliced for a specific plate and printer model.
-    platePresetId: integer("plate_preset_id")
-      .notNull()
-      .references(() => platePresets.id, { onDelete: "restrict" }),
-    printerPresetId: integer("printer_preset_id")
-      .notNull()
-      .references(() => printerPresets.id, { onDelete: "restrict" }),
+    weight: integer("weight").notNull().default(0),
+    expectedTimeMinutes: integer("expected_time_minutes").notNull().default(0),
+    objectsPerPrint: integer("objects_per_print").notNull().default(1),
+    // Nullable: set during upload or edit; modules can exist before being assigned.
+    platePresetId: integer("plate_preset_id").references(
+      () => platePresets.id,
+      { onDelete: "set null" },
+    ),
+    printerPresetId: integer("printer_preset_id").references(
+      () => printerPresets.id,
+      { onDelete: "set null" },
+    ),
     // Optional: a module may produce a tracked object, or be a one-off/test print.
     objectId: integer("object_id").references(() => objects.id, {
       onDelete: "set null",

@@ -1,26 +1,26 @@
 <script lang="ts">
-  import type { InventoryItem, InventoryLog } from '$lib/types';
+  import type { ObjectItem, InventoryLog } from '$lib/types';
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
 
   // extend item type locally to include AI fields
-  type InventoryItemUI = InventoryItem & {
+  type InventoryItemUI = ObjectItem & {
     daily_velocity?: number;
     days_until_stockout?: number;
   };
 
   // Set & weight types from server
   interface SetComponent {
-    object_sku: string;
+    object_id: number;
     quantity: number;
   }
   interface SetDefinition {
-    sku: string;
+    shopify_sku: string;
     label: string;
     components: SetComponent[];
   }
   interface UnitWeight {
-    slug: string;
+    id: number;
     name: string;
     weight_per_unit: number;
   }
@@ -70,7 +70,7 @@
     const q = setSearchQuery.toLowerCase();
     return sets.filter(s =>
       s.label.toLowerCase().includes(q) ||
-      s.sku.toLowerCase().includes(q)
+      s.shopify_sku.toLowerCase().includes(q)
     );
   });
 
@@ -79,10 +79,7 @@
     const weights = data.unitWeights || [];
     if (!weightSearchQuery) return weights;
     const q = weightSearchQuery.toLowerCase();
-    return weights.filter(w =>
-      w.name.toLowerCase().includes(q) ||
-      w.slug.toLowerCase().includes(q)
-    );
+    return weights.filter(w => w.name.toLowerCase().includes(q));
   });
 
   // Filtered items for direct add tab
@@ -90,30 +87,27 @@
     let items = data.items || [];
     if (!directSearchQuery) return items;
     const q = directSearchQuery.toLowerCase();
-    return items.filter(i =>
-      i.name.toLowerCase().includes(q) ||
-      i.slug?.toLowerCase().includes(q) ||
-      i.sku?.toLowerCase().includes(q)
-    );
+    return items.filter(i => i.name.toLowerCase().includes(q));
   });
 
-  // Compute count from weight for a given slug
-  function getCountFromWeight(slug: string): number {
-    const weight = weightInputs[slug] || 0;
-    const unitWeight = (data.unitWeights || []).find(w => w.slug === slug);
+  // Compute count from weight for a given id key (string-encoded number)
+  function getCountFromWeight(idKey: string): number {
+    const weight = weightInputs[idKey] || 0;
+    const unitWeight = (data.unitWeights || []).find(w => String(w.id) === idKey);
     if (!unitWeight || unitWeight.weight_per_unit <= 0 || weight <= 0) return 0;
     return Math.floor(weight / unitWeight.weight_per_unit);
   }
 
-  // Summary of pending changes for sets tab
+  // Summary of pending changes for sets tab (keyed by String(object_id))
   const setPendingSummary = $derived(() => {
     const summary: Record<string, number> = {};
     const sets = data.setDefinitions || [];
     for (const set of sets) {
-      const count = setCounts[set.sku] || 0;
+      const count = setCounts[set.shopify_sku] || 0;
       if (count <= 0) continue;
       for (const comp of set.components) {
-        summary[comp.object_sku] = (summary[comp.object_sku] || 0) + comp.quantity * count;
+        const k = String(comp.object_id);
+        summary[k] = (summary[k] || 0) + comp.quantity * count;
       }
     }
     return summary;
@@ -122,9 +116,9 @@
   // Summary of pending changes for weight tab
   const weightPendingSummary = $derived(() => {
     const summary: Record<string, number> = {};
-    for (const [slug, _weight] of Object.entries(weightInputs)) {
-      const count = getCountFromWeight(slug);
-      if (count > 0) summary[slug] = count;
+    for (const [idKey] of Object.entries(weightInputs)) {
+      const count = getCountFromWeight(idKey);
+      if (count > 0) summary[idKey] = count;
     }
     return summary;
   });
@@ -132,16 +126,16 @@
   // Summary of pending changes for direct tab
   const directPendingSummary = $derived(() => {
     const summary: Record<string, number> = {};
-    for (const [slug, count] of Object.entries(directCounts)) {
-      if (count > 0) summary[slug] = count;
+    for (const [idKey, count] of Object.entries(directCounts)) {
+      if (count > 0) summary[idKey] = count;
     }
     return summary;
   });
 
-  // Get item name by slug
-  function getItemName(slug: string): string {
-    const item = (data.items || []).find(i => i.slug === slug);
-    return item?.name || slug;
+  // Get item name by string-encoded id
+  function getItemName(idKey: string): string {
+    const id = parseInt(idKey);
+    return (data.items || []).find(i => i.id === id)?.name || idKey;
   }
 
   // Reset check tool state
@@ -180,7 +174,7 @@
   }
 
   // Start editing an item's stock
-  function startEdit(item: InventoryItem) {
+  function startEdit(item: ObjectItem) {
     editingItemId = item.id;
     editCount = item.in_stock;
   }
@@ -225,11 +219,7 @@
     // Apply filters
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      items = items.filter(item =>
-        item.name.toLowerCase().includes(query) ||
-        item.slug?.toLowerCase().includes(query) ||
-        item.sku?.toLowerCase().includes(query)
-      );
+      items = items.filter(item => item.name.toLowerCase().includes(query));
     }
 
     if (showLowStockOnly) {
@@ -667,7 +657,7 @@
                       {changeType.label}
                     </span>
                     <div class="flex-1 min-w-0">
-                      <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate leading-snug">{log.item_name}</p>
+                      <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate leading-snug">{log.object_name}</p>
                       {#if log.reason}
                         <p class="text-[10px] text-zinc-400 truncate mt-0.5">{log.reason}</p>
                       {/if}
@@ -729,15 +719,15 @@
                     <div class="flex items-center justify-between gap-3">
                       <div class="flex-1 min-w-0">
                         <p class="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate">{set.label}</p>
-                        <p class="text-[10px] text-zinc-400 mt-0.5 truncate">{set.components.map(c => `${c.quantity}× ${getItemName(c.object_sku)}`).join(' + ')}</p>
+                        <p class="text-[10px] text-zinc-400 mt-0.5 truncate">{set.components.map(c => `${c.quantity}× ${getItemName(String(c.object_id))}`).join(' + ')}</p>
                       </div>
                       <div class="flex items-center gap-1 shrink-0">
-                        <button onclick={() => { setCounts[set.sku] = Math.max(0, (setCounts[set.sku] || 0) - 1); setCounts = { ...setCounts }; }} disabled={(setCounts[set.sku] || 0) === 0}
+                        <button onclick={() => { setCounts[set.shopify_sku] = Math.max(0, (setCounts[set.shopify_sku] || 0) - 1); setCounts = { ...setCounts }; }} disabled={(setCounts[set.shopify_sku] || 0) === 0}
                           class="w-7 h-7 flex items-center justify-center rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">−</button>
-                        <input type="number" min="0" value={setCounts[set.sku] || 0}
-                          oninput={(e) => { setCounts[set.sku] = parseInt((e.target as HTMLInputElement).value) || 0; setCounts = { ...setCounts }; }}
+                        <input type="number" min="0" value={setCounts[set.shopify_sku] || 0}
+                          oninput={(e) => { setCounts[set.shopify_sku] = parseInt((e.target as HTMLInputElement).value) || 0; setCounts = { ...setCounts }; }}
                           class="w-12 h-7 bg-white dark:bg-[#111] border border-zinc-200 dark:border-zinc-700 rounded-md px-2 text-center text-xs font-semibold tabular-nums text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"/>
-                        <button onclick={() => { setCounts[set.sku] = (setCounts[set.sku] || 0) + 1; setCounts = { ...setCounts }; }}
+                        <button onclick={() => { setCounts[set.shopify_sku] = (setCounts[set.shopify_sku] || 0) + 1; setCounts = { ...setCounts }; }}
                           class="w-7 h-7 flex items-center justify-center rounded-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors">+</button>
                       </div>
                     </div>
@@ -769,7 +759,8 @@
             {:else}
               <div class="grid sm:grid-cols-2 gap-2">
                 {#each filteredWeightItems() as w}
-                  {@const count = getCountFromWeight(w.slug)}
+                  {@const wKey = String(w.id)}
+                  {@const count = getCountFromWeight(wKey)}
                   <div class="rounded-lg border border-zinc-100 dark:border-[#1e1e1e] bg-zinc-50 dark:bg-[#0d0d0d] px-4 py-3">
                     <div class="flex items-center justify-between gap-3">
                       <div class="flex-1 min-w-0">
@@ -778,8 +769,8 @@
                       </div>
                       <div class="flex items-center gap-2 shrink-0">
                         <div class="relative">
-                          <input type="number" min="0" step="1" placeholder="0" value={weightInputs[w.slug] || ''}
-                            oninput={(e) => { weightInputs[w.slug] = parseFloat((e.target as HTMLInputElement).value) || 0; weightInputs = { ...weightInputs }; }}
+                          <input type="number" min="0" step="1" placeholder="0" value={weightInputs[wKey] || ''}
+                            oninput={(e) => { weightInputs[wKey] = parseFloat((e.target as HTMLInputElement).value) || 0; weightInputs = { ...weightInputs }; }}
                             class="w-20 h-7 bg-white dark:bg-[#111] border border-zinc-200 dark:border-zinc-700 rounded-md pr-5 pl-2 text-right text-xs tabular-nums text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"/>
                           <span class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400">g</span>
                         </div>
@@ -814,8 +805,9 @@
             {:else}
               <div class="grid sm:grid-cols-2 gap-2">
                 {#each filteredDirectItems() as item}
+                  {@const iKey = String(item.id)}
                   {@const currentStock = item.in_stock}
-                  {@const pending = directCounts[item.slug] || 0}
+                  {@const pending = directCounts[iKey] || 0}
                   <div class="rounded-lg border border-zinc-100 dark:border-[#1e1e1e] bg-zinc-50 dark:bg-[#0d0d0d] px-4 py-3">
                     <div class="flex items-center justify-between gap-3">
                       <div class="flex-1 min-w-0">
@@ -823,12 +815,12 @@
                         <p class="text-[10px] text-zinc-400 mt-0.5">{currentStock}{pending > 0 ? ` → ${currentStock + pending}` : ''}</p>
                       </div>
                       <div class="flex items-center gap-1 shrink-0">
-                        <button onclick={() => { directCounts[item.slug] = Math.max(0, (directCounts[item.slug] || 0) - 1); directCounts = { ...directCounts }; }} disabled={(directCounts[item.slug] || 0) === 0}
+                        <button onclick={() => { directCounts[iKey] = Math.max(0, (directCounts[iKey] || 0) - 1); directCounts = { ...directCounts }; }} disabled={(directCounts[iKey] || 0) === 0}
                           class="w-7 h-7 flex items-center justify-center rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">−</button>
-                        <input type="number" min="0" value={directCounts[item.slug] || 0}
-                          oninput={(e) => { directCounts[item.slug] = parseInt((e.target as HTMLInputElement).value) || 0; directCounts = { ...directCounts }; }}
+                        <input type="number" min="0" value={directCounts[iKey] || 0}
+                          oninput={(e) => { directCounts[iKey] = parseInt((e.target as HTMLInputElement).value) || 0; directCounts = { ...directCounts }; }}
                           class="w-12 h-7 bg-white dark:bg-[#111] border border-zinc-200 dark:border-zinc-700 rounded-md px-2 text-center text-xs font-semibold tabular-nums text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"/>
-                        <button onclick={() => { directCounts[item.slug] = (directCounts[item.slug] || 0) + 1; directCounts = { ...directCounts }; }}
+                        <button onclick={() => { directCounts[iKey] = (directCounts[iKey] || 0) + 1; directCounts = { ...directCounts }; }}
                           class="w-7 h-7 flex items-center justify-center rounded-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors">+</button>
                       </div>
                     </div>
@@ -865,7 +857,7 @@
                   await update();
                 };
               }}>
-                <input type="hidden" name="entries" value={JSON.stringify(Object.entries(setCounts).filter(([_, c]) => c > 0).map(([sku, count]) => ({ sku, count })))} />
+                <input type="hidden" name="entries" value={JSON.stringify(Object.entries(setCounts).filter(([_, c]) => c > 0).map(([shopify_sku, count]) => ({ shopify_sku, count })))} />
                 <button type="submit" disabled={checkSubmitting || Object.keys(setPendingSummary()).length === 0}
                   class="h-8 px-5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-xs font-semibold hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                   {checkSubmitting ? 'Adding…' : `Add ${Object.values(setPendingSummary()).reduce((s, v) => s + v, 0)} items`}
@@ -880,7 +872,7 @@
                   await update();
                 };
               }}>
-                <input type="hidden" name="entries" value={JSON.stringify(Object.entries(weightPendingSummary()).map(([slug, count]) => ({ slug, count })))} />
+                <input type="hidden" name="entries" value={JSON.stringify(Object.entries(weightPendingSummary()).map(([idKey, count]) => ({ id: parseInt(idKey), count })))} />
                 <button type="submit" disabled={checkSubmitting || Object.keys(weightPendingSummary()).length === 0}
                   class="h-8 px-5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-xs font-semibold hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                   {checkSubmitting ? 'Adding…' : `Add ${Object.values(weightPendingSummary()).reduce((s, v) => s + v, 0)} items`}
@@ -895,7 +887,7 @@
                   await update();
                 };
               }}>
-                <input type="hidden" name="entries" value={JSON.stringify(Object.entries(directCounts).filter(([_, c]) => c > 0).map(([slug, count]) => ({ slug, count })))} />
+                <input type="hidden" name="entries" value={JSON.stringify(Object.entries(directCounts).filter(([_, c]) => c > 0).map(([idKey, count]) => ({ id: parseInt(idKey), count })))} />
                 <button type="submit" disabled={checkSubmitting || Object.keys(directPendingSummary()).length === 0}
                   class="h-8 px-5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg text-xs font-semibold hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                   {checkSubmitting ? 'Adding…' : `Add ${Object.values(directPendingSummary()).reduce((s, v) => s + v, 0)} items`}

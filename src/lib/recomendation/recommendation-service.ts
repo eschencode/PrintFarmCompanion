@@ -56,8 +56,8 @@ export class AIRecommendationService {
       printer = await getPrinterById(this.db, printerId);
     }
 
-    const isCompatibleModule = (m: ModuleContext, invSku: string) => {
-      if (m.object_sku !== invSku) return false;
+    const isCompatibleModule = (m: ModuleContext, invId: number) => {
+      if (m.object_id !== invId) return false;
       if (m.spool_preset_id === null || m.spool_preset_id === undefined) return false;
       if (printer?.printer_preset_id && m.printer_preset_id && m.printer_preset_id !== printer.printer_preset_id) return false;
       return true;
@@ -67,7 +67,7 @@ export class AIRecommendationService {
     const suggestions: SpoolSuggestion[] = [];
 
     for (const invItem of orderedItems) {
-      const module = modules.find(m => isCompatibleModule(m, invItem.sku));
+      const module = modules.find(m => isCompatibleModule(m, invItem.id));
       if (!module || !module.spool_preset_id) continue;
 
       const presetId = Number(module.spool_preset_id);
@@ -77,7 +77,6 @@ export class AIRecommendationService {
       suggestions.push({
         preset_id: presetId,
         priority: invItem.priority,
-        object_sku: invItem.sku,
         object_name: invItem.name,
         in_stock: invItem.in_stock,
         daily_velocity: invItem.daily_velocity,
@@ -121,7 +120,7 @@ export function prioritizeInventoryFromContext(
     }
 
     prioritized[priority].push({
-      sku: item.sku,
+      id: item.id,
       name: item.name,
       in_stock: item.in_stock,
       min_threshold: item.min_threshold,
@@ -140,7 +139,7 @@ export function prioritizeInventoryFromContext(
 export interface SuggestedPrintQueueItem {
   module_id: number;
   module_name: string;
-  object_sku: string;
+  object_name: string;
   priority: InventoryPriority;
   weight_of_print: number;
   spool_weight_after_print: number;
@@ -190,17 +189,17 @@ export async function getSuggestedPrintQueue(
 
   const printableModules = modules.filter(m => {
     if (m.spool_preset_id !== loadedSpool.preset_id) return false;
-    if (!m.object_sku) return false;
+    if (!m.object_id) return false;
     if (m.printer_preset_id && printer.printer_preset_id) return m.printer_preset_id === printer.printer_preset_id;
     return true;
   });
 
-  const remainingWeight = Math.floor(loadedSpool.remaining_weight);
+  const remainingWeight = Math.min(Math.floor(loadedSpool.remaining_weight), 10_000);
   if (remainingWeight <= 0) return [];
 
-  const getSimulatedItem = (inventory: PrioritizedInventory, sku: string) => {
+  const getSimulatedItem = (inventory: PrioritizedInventory, objectId: number) => {
     for (const items of Object.values(inventory)) {
-      const found = (items as PrioritizedObjectItem[]).find(i => i.sku === sku);
+      const found = (items as PrioritizedObjectItem[]).find(i => i.id === objectId);
       if (found) return found;
     }
     return undefined;
@@ -209,6 +208,7 @@ export async function getSuggestedPrintQueue(
   const unrolledItems: UnrolledItem[] = [];
 
   for (const module of printableModules) {
+    if (module.weight <= 0) continue;
     let simInventory: PrioritizedInventory = JSON.parse(JSON.stringify(prioritized));
     let accumulatedWeight = module.weight;
 
@@ -216,7 +216,7 @@ export async function getSuggestedPrintQueue(
       let currentPriority: InventoryPriority = 'VERY_LOW';
       let currentRisk = 0;
       for (const [prio, items] of Object.entries(simInventory)) {
-        const match = (items as PrioritizedObjectItem[]).find(i => i.sku === module.object_sku);
+        const match = (items as PrioritizedObjectItem[]).find(i => i.id === module.object_id);
         if (match) {
           currentPriority = prio as InventoryPriority;
           currentRisk = match.stockout_risk;
@@ -236,10 +236,10 @@ export async function getSuggestedPrintQueue(
         stockout_risk: currentRisk
       });
 
-      const invItem = getSimulatedItem(simInventory, module.object_sku!);
+      const invItem = getSimulatedItem(simInventory, module.object_id!);
       if (invItem) {
         invItem.in_stock += module.objects_per_print ?? 1;
-        invItem.stockout_risk = forecast.riskAtStock(invItem.sku, invItem.in_stock);
+        invItem.stockout_risk = forecast.riskAtStock(String(invItem.id), invItem.in_stock);
       }
 
       simInventory = prioritizeInventoryFromContext({
@@ -291,7 +291,7 @@ export async function getSuggestedPrintQueue(
     queue.push({
       module_id: print.module.id,
       module_name: print.module.name,
-      object_sku: print.module.object_sku!,
+      object_name: print.module.object_name ?? '',
       priority: print.priority,
       weight_of_print: print.weight,
       spool_weight_after_print: currentSpoolWeight

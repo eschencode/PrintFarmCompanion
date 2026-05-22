@@ -9,314 +9,254 @@
 
   const dispatch = createEventDispatcher();
 
-  let formData: any = { ...module };
-  let isSaving = false;
-  let saveMessage = '';
+  // Form state — mirrors the new schema field names
+  let name = '';
+  let weight = 0;
+  let estimatedTime = 0;
+  let objectsPerPrint = 1;
+  let nozzleDiameter: number | null = null;
+  let defaultSpoolPresetId: number | null = null;
+  let objectId: number | null = null;
+  let printerPresetId: number | null = null;
 
-  $: if (isOpen) {
-    formData = { ...module };
-    saveMessage = '';
+  let isSaving = false;
+  let error = '';
+
+  // ── Inline new-object creation ────────────────────────────────────────────
+  let showNewObjectForm = false;
+  let newObjectName = '';
+  let newObjectError = '';
+  let savingNewObject = false;
+  let createdObjects: { id: number; name: string }[] = [];
+  $: allInventoryItems = [...inventoryItems, ...createdObjects];
+
+  async function createNewObject() {
+    newObjectError = '';
+    const n = newObjectName.trim();
+    if (!n) { newObjectError = 'Name is required'; return; }
+    savingNewObject = true;
+    try {
+      const res = await fetch('/api/objects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: n }),
+      });
+      const result = await res.json() as { success: boolean; data?: { id: number }; error?: string };
+      if (result.success && result.data?.id) {
+        createdObjects = [...createdObjects, { id: result.data.id, name: n }];
+        objectId = result.data.id;
+        showNewObjectForm = false;
+        newObjectName = '';
+      } else {
+        newObjectError = result.error ?? 'Failed to create';
+      }
+    } catch {
+      newObjectError = 'Network error';
+    } finally {
+      savingNewObject = false;
+    }
   }
 
-  async function saveChanges() {
-    isSaving = true;
-    saveMessage = '';
+  // Populate form whenever the modal opens
+  $: if (isOpen && module) {
+    name = module.name ?? '';
+    weight = module.weight ?? 0;
+    estimatedTime = module.expected_time_minutes ?? 0;
+    objectsPerPrint = module.objects_per_print ?? 1;
+    nozzleDiameter = module.nozzle_diameter ?? null;
+    defaultSpoolPresetId = module.default_spool_preset_id ?? null;
+    objectId = module.object_id ?? null;
+    printerPresetId = module.printer_preset_id ?? null;
+    error = '';
+    showNewObjectForm = false;
+    createdObjects = [];
+  }
 
+  function formatTime(min: number): string {
+    if (!min) return '';
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  }
+
+  async function save() {
+    isSaving = true;
+    error = '';
     try {
-      const response = await fetch(`/api/print-modules?id=${module.id}`, {
+      const res = await fetch(`/api/print-modules?id=${module.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: formData.name,
-          expected_weight: formData.expected_weight ? Math.ceil(parseFloat(formData.expected_weight)) : null,
-          expected_time: formData.expected_time ? parseInt(formData.expected_time) : null,
-          objects_per_print: formData.objects_per_print ? parseInt(formData.objects_per_print) : 1,
-          plate_type: formData.plate_type || null,
-          nozzle_diameter: formData.nozzle_diameter ? parseFloat(formData.nozzle_diameter) : null,
-          default_spool_preset_id: formData.default_spool_preset_id ? parseInt(formData.default_spool_preset_id) : null,
-          local_file_handler_path: formData.local_file_handler_path || null,
-          inventory_slug: formData.inventory_slug || null,
-          printer_model: formData.printer_model || null,
+          name,
+          expected_weight: weight,
+          estimated_time: estimatedTime,
+          objects_per_print: objectsPerPrint,
+          nozzle_diameter: nozzleDiameter,
+          default_spool_preset_id: defaultSpoolPresetId,
+          object_id: objectId,
+          printer_preset_id: printerPresetId,
         }),
       });
-
-      const result = await response.json() as any;
+      const result = await res.json() as { success: boolean; error?: string };
       if (result.success) {
-        saveMessage = 'Module updated successfully!';
-        setTimeout(() => {
-          handleClose();
-        }, 1000);
+        dispatch('close');
       } else {
-        saveMessage = `Error: ${result.error || 'Unknown error'}`;
+        error = result.error ?? 'Save failed';
       }
-    } catch (error) {
-      saveMessage = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    } catch {
+      error = 'Network error';
     } finally {
       isSaving = false;
     }
   }
 
-  function handleClose() {
+  function close() {
     isOpen = false;
     dispatch('close');
-  }
-
-  function getSpoolPresetInfo(presetId: number | null) {
-    if (!presetId) return null;
-    return spoolPresets.find(p => p.id === presetId);
   }
 </script>
 
 {#if isOpen}
-  <!-- Backdrop -->
-  <div role="presentation" class="fixed inset-0 z-40 bg-black/50" onclick={handleClose} onkeydown={(e) => { if (e.key === 'Escape') handleClose(); }}></div>
+  <div role="presentation" class="fixed inset-0 z-40 bg-black/50" onclick={close} onkeydown={(e) => e.key === 'Escape' && close()}></div>
 
-  <!-- Modal -->
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] w-full max-w-lg max-h-[92vh] flex flex-col">
+
       <!-- Header -->
-      <div class="sticky top-0 bg-white dark:bg-[#111] border-b border-zinc-100 dark:border-[#1e1e1e] p-6 flex items-center justify-between">
-        <h2 class="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Edit Module: {module.name}</h2>
-        <button aria-label="Close" onclick={handleClose} class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+      <div class="flex items-start gap-4 p-5 border-b border-zinc-100 dark:border-[#1e1e1e]">
+        {#if module.thumbnail}
+          <img src={module.thumbnail} alt="" class="w-14 h-14 rounded-lg object-cover shrink-0 bg-zinc-100 dark:bg-[#1a1a1a]" />
+        {:else}
+          <div class="w-14 h-14 rounded-lg bg-zinc-100 dark:bg-[#1a1a1a] shrink-0 flex items-center justify-center">
+            <svg class="w-6 h-6 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+            </svg>
+          </div>
+        {/if}
+        <div class="flex-1 min-w-0">
+          <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500 mb-1">Edit Module</p>
+          <input
+            type="text"
+            bind:value={name}
+            class="w-full text-base font-medium bg-transparent text-zinc-900 dark:text-zinc-100 focus:outline-none border-b border-transparent focus:border-zinc-300 dark:focus:border-zinc-600 transition-colors pb-0.5"
+          />
+          {#if module.filename}
+            <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-1 font-mono truncate">{module.filename}</p>
+          {/if}
+        </div>
+        <button onclick={close} class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 shrink-0 mt-1">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
           </svg>
         </button>
       </div>
 
-      <!-- Content -->
-      <div class="p-6 space-y-6">
-        <!-- Basic Info Section -->
+      <!-- Scrollable body -->
+      <div class="flex-1 overflow-y-auto p-5 space-y-5">
+
+        <!-- Print settings -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="em-weight" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Weight (g)</label>
+            <input id="em-weight" type="number" bind:value={weight} min="0"
+              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors" />
+          </div>
+          <div>
+            <label for="em-time" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">
+              Time (min){estimatedTime ? ` — ${formatTime(estimatedTime)}` : ''}
+            </label>
+            <input id="em-time" type="number" bind:value={estimatedTime} min="0"
+              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors" />
+          </div>
+          <div>
+            <label for="em-objs" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Objects per Print</label>
+            <input id="em-objs" type="number" bind:value={objectsPerPrint} min="1"
+              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors" />
+          </div>
+          <div>
+            <label for="em-nozzle" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Nozzle (mm)</label>
+            <input id="em-nozzle" type="number" step="0.1"
+              value={nozzleDiameter ?? ''}
+              oninput={(e) => { const v = parseFloat((e.target as HTMLInputElement).value); nozzleDiameter = isNaN(v) ? null : v; }}
+              placeholder="0.4"
+              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors" />
+          </div>
+        </div>
+
+        <!-- Spool preset -->
         <div>
-          <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-4">Basic Information</h3>
-          <div class="space-y-4">
-            <div>
-              <label for="edit-name" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Module Name</label>
-              <input
-                id="edit-name"
-                type="text"
-                bind:value={formData.name}
-                class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600"
-              />
-            </div>
-
-            {#if module.file_name}
-              <div>
-                <label for="edit-file-name" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">File Name</label>
-                <input id="edit-file-name" type="text" value={module.file_name} disabled class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-zinc-50 dark:bg-[#0a0a0a] text-zinc-600 dark:text-zinc-400 cursor-not-allowed" />
-              </div>
-            {/if}
-
-            {#if module.local_file_handler_path}
-              <div>
-                <label for="edit-lfh-path" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Local File Handler Path</label>
-                <input id="edit-lfh-path" type="text" bind:value={formData.local_file_handler_path} class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
-              </div>
-            {/if}
-
-            {#if module.pi_file_path}
-              <div>
-                <label for="edit-pi-path" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Pi File Path</label>
-                <input id="edit-pi-path" type="text" value={module.pi_file_path} disabled class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-zinc-50 dark:bg-[#0a0a0a] text-zinc-600 dark:text-zinc-400 cursor-not-allowed" />
-              </div>
-            {/if}
-          </div>
+          <label for="em-spool" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Spool Preset</label>
+          <select id="em-spool" bind:value={defaultSpoolPresetId}
+            class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors">
+            <option value={null}>None</option>
+            {#each spoolPresets as p (p.id)}
+              <option value={p.id}>{p.brand} {p.color} ({p.material})</option>
+            {/each}
+          </select>
         </div>
 
-        <!-- Filament/Spool Section -->
+        <!-- Printer preset -->
         <div>
-          <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-4">Spool Preset</h3>
-          <div class="space-y-4">
-            <div>
-              <label for="edit-spool" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Default Spool Preset</label>
-              <select
-                id="edit-spool"
-                bind:value={formData.default_spool_preset_id}
-                class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600"
-              >
-                <option value="">None</option>
-                {#each spoolPresets as preset (preset.id)}
-                  <option value={preset.id}>
-                    {preset.name} ({preset.material}{preset.color ? ` - ${preset.color}` : ''})
-                  </option>
-                {/each}
-              </select>
-            </div>
-
-            {#if formData.default_spool_preset_id && getSpoolPresetInfo(formData.default_spool_preset_id)}
-              {@const spool = getSpoolPresetInfo(formData.default_spool_preset_id)}
-              <div class="p-3 bg-zinc-50 dark:bg-[#0a0a0a] rounded-lg border border-zinc-200 dark:border-[#262626]">
-                <h4 class="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-2">Spool Details</h4>
-                <div class="space-y-1 text-xs">
-                  <div class="flex justify-between">
-                    <span class="text-zinc-600 dark:text-zinc-400">Name:</span>
-                    <span class="text-zinc-900 dark:text-zinc-100 font-medium">{spool.name}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-zinc-600 dark:text-zinc-400">Brand:</span>
-                    <span class="text-zinc-900 dark:text-zinc-100">{spool.brand || '—'}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-zinc-600 dark:text-zinc-400">Material:</span>
-                    <span class="text-zinc-900 dark:text-zinc-100">{spool.material}</span>
-                  </div>
-                  {#if spool.color}
-                    <div class="flex justify-between items-center">
-                      <span class="text-zinc-600 dark:text-zinc-400">Color:</span>
-                      <div class="flex items-center gap-2">
-                        <span class="w-3 h-3 rounded-full border border-zinc-300 dark:border-zinc-600" style="background:{spool.color}"></span>
-                        <span class="text-zinc-900 dark:text-zinc-100">{spool.color}</span>
-                      </div>
-                    </div>
-                  {/if}
-                  <div class="flex justify-between">
-                    <span class="text-zinc-600 dark:text-zinc-400">Default Weight:</span>
-                    <span class="text-zinc-900 dark:text-zinc-100">{spool.default_weight}g</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-zinc-600 dark:text-zinc-400">In Storage:</span>
-                    <span class="text-zinc-900 dark:text-zinc-100 font-medium">{spool.storage_count}</span>
-                  </div>
-                  {#if spool.cost}
-                    <div class="flex justify-between">
-                      <span class="text-zinc-600 dark:text-zinc-400">Cost:</span>
-                      <span class="text-zinc-900 dark:text-zinc-100">${spool.cost.toFixed(2)}</span>
-                    </div>
-                  {/if}
-                </div>
-              </div>
-            {/if}
-          </div>
+          <label for="em-printer" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Printer Preset</label>
+          <select id="em-printer" bind:value={printerPresetId}
+            class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors">
+            <option value={null}>None</option>
+            {#each printerModels as m (m.id)}
+              <option value={m.id}>{m.brand} {m.model}</option>
+            {/each}
+          </select>
         </div>
 
-        <!-- Print Settings Section -->
+        <!-- Object (inventory) -->
         <div>
-          <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-4">Print Settings</h3>
-          <div class="space-y-4">
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label for="edit-weight" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Expected Weight (g)</label>
-                <input id="edit-weight" type="number" bind:value={formData.expected_weight} placeholder="0" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
-              </div>
-              <div>
-                <label for="edit-time" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Expected Time (min)</label>
-                <input id="edit-time" type="number" bind:value={formData.expected_time} placeholder="0" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label for="edit-obj-count" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Objects per Print</label>
-                <input id="edit-obj-count" type="number" bind:value={formData.objects_per_print} placeholder="1" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
-              </div>
-              <div>
-                <label for="edit-nozzle" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Nozzle Diameter (mm)</label>
-                <input id="edit-nozzle" type="number" step="0.1" bind:value={formData.nozzle_diameter} placeholder="0.4" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
-              </div>
-            </div>
-
-            <div>
-              <label for="edit-plate-type" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Plate Type</label>
-              <input id="edit-plate-type" type="text" bind:value={formData.plate_type} placeholder="e.g., Textured, Smooth" class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
-            </div>
+          <div class="flex items-center justify-between mb-1">
+            <label for="em-object" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Object</label>
+            <button type="button"
+              onclick={() => { showNewObjectForm = !showNewObjectForm; newObjectName = ''; newObjectError = ''; }}
+              class="text-[10px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
+              {showNewObjectForm ? 'Cancel' : '+ New Object'}
+            </button>
           </div>
+
+          {#if showNewObjectForm}
+            <div class="bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#2a2a2a] rounded-lg p-3 space-y-2 mb-2">
+              <input type="text" bind:value={newObjectName} placeholder="Object name"
+                class="w-full bg-white dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#333] rounded px-2 py-1 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500" />
+              {#if newObjectError}<p class="text-[10px] text-red-500">{newObjectError}</p>{/if}
+              <button type="button" onclick={createNewObject} disabled={savingNewObject || !newObjectName.trim()}
+                class="w-full py-1 text-xs font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {savingNewObject ? 'Creating…' : 'Create & Select'}
+              </button>
+            </div>
+          {/if}
+
+          <select id="em-object" bind:value={objectId}
+            class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors">
+            <option value={null}>None</option>
+            {#each allInventoryItems as item (item.id)}
+              <option value={item.id}>{item.name}</option>
+            {/each}
+          </select>
         </div>
 
-        <!-- Additional Info Section -->
-        <div>
-          <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-4">Additional Information</h3>
-          <div class="space-y-4">
-            {#if module.inventory_slug !== undefined}
-              <div>
-                <!-- svelte-ignore a11y_label_has_associated_control -->
-                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Inventory Slug</label>
-                {#if inventoryItems.length > 0}
-                  <select
-                    bind:value={formData.inventory_slug}
-                    class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600"
-                  >
-                    <option value="">None</option>
-                    {#each inventoryItems as item (item.slug)}
-                      <option value={item.slug}>{item.name}</option>
-                    {/each}
-                  </select>
-                {:else}
-                  <input type="text" bind:value={formData.inventory_slug} class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
-                {/if}
-              </div>
-            {/if}
-
-            {#if module.printer_model !== undefined}
-              <div>
-                <!-- svelte-ignore a11y_label_has_associated_control -->
-                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Printer Model</label>
-                {#if printerModels.length > 0}
-                  <select
-                    bind:value={formData.printer_model}
-                    class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600"
-                  >
-                    <option value="">None</option>
-                    {#each printerModels as model (model.id)}
-                      <option value={model.name}>{model.name}</option>
-                    {/each}
-                  </select>
-                {:else}
-                  <input type="text" bind:value={formData.printer_model} class="w-full px-3 py-2 text-sm border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#1a1a1a] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600" />
-                {/if}
-              </div>
-            {/if}
-          </div>
-        </div>
-
-        <!-- Status Info -->
-        <div class="p-4 bg-zinc-50 dark:bg-[#0a0a0a] rounded-lg border border-zinc-200 dark:border-[#262626]">
-          <h3 class="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-3">Status Information</h3>
-          <div class="space-y-2 text-xs">
-            <div class="flex justify-between">
-              <span class="text-zinc-600 dark:text-zinc-400">Module ID:</span>
-              <span class="text-zinc-900 dark:text-zinc-100 font-mono">{module.id}</span>
-            </div>
-            {#if module.file_name}
-              <div class="flex justify-between">
-                <span class="text-zinc-600 dark:text-zinc-400">File Type:</span>
-                <span class="text-zinc-900 dark:text-zinc-100">.3mf</span>
-              </div>
-            {/if}
-            {#if module.file_stored_on_pi}
-              <div class="flex justify-between">
-                <span class="text-zinc-600 dark:text-zinc-400">Stored on Pi:</span>
-                <span class="text-emerald-600 dark:text-emerald-400 font-medium">Yes</span>
-              </div>
-            {/if}
-          </div>
-        </div>
       </div>
 
       <!-- Footer -->
-      <div class="sticky bottom-0 bg-zinc-50 dark:bg-[#0a0a0a] border-t border-zinc-100 dark:border-[#1e1e1e] p-6 flex gap-3">
-        {#if saveMessage}
-          <div class="flex-1 px-3 py-2 rounded-lg text-xs font-medium {saveMessage.includes('successfully') ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400'}">
-            {saveMessage}
-          </div>
+      <div class="border-t border-zinc-100 dark:border-[#1e1e1e] p-4 flex items-center justify-between gap-3">
+        {#if error}
+          <p class="text-xs text-red-500 flex-1">{error}</p>
+        {:else}
+          <div class="flex-1"></div>
         {/if}
-        <button onclick={handleClose} class="px-4 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg hover:bg-zinc-50 dark:hover:bg-[#262626] transition-colors">
+        <button onclick={close} class="px-4 py-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors">
           Cancel
         </button>
-        <button
-          onclick={saveChanges}
-          disabled={isSaving}
-          class="px-4 py-2 text-xs font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isSaving ? 'Saving...' : 'Save Changes'}
+        <button onclick={save} disabled={isSaving || !name.trim()}
+          class="px-4 py-2 text-xs font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          {isSaving ? 'Saving…' : 'Save'}
         </button>
       </div>
+
     </div>
   </div>
 {/if}
-
-<style>
-  :global(body) {
-    overflow: auto;
-  }
-</style>
-

@@ -19,6 +19,7 @@ export const actions: Actions = {
     return db.createPrinter(database, {
       name: formData.get('name') as string,
       printerPresetId: Number(formData.get('printerPresetId')) || Number(formData.get('printerModelId')),
+      slotCount: Number(formData.get('slotCount')) || 1,
     }, {
       printerIp: (formData.get('printerIp') as string) || null,
       serial: (formData.get('printerSerial') as string) || null,
@@ -31,10 +32,12 @@ export const actions: Actions = {
     if (!database) return { success: false, error: 'Database not available' };
     const formData = await request.formData();
     const printerId = Number(formData.get('printerId'));
-    await db.updatePrinter(database, printerId, {
+    const result = await db.updatePrinter(database, printerId, {
       name: formData.get('name') as string,
       printerPresetId: Number(formData.get('printerPresetId')) || Number(formData.get('printerModelId')) || undefined,
+      slotCount: Number(formData.get('slotCount')) || undefined,
     });
+    if (!result.success) return result;
     await db.upsertPrinterSecrets(database, printerId, {
       printerIp: (formData.get('printerIp') as string) || null,
       serial: (formData.get('printerSerial') as string) || null,

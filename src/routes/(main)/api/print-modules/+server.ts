@@ -19,7 +19,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     name, file_name, thumbnail,
     estimated_time, nozzle_diameter,
     expected_weight, default_spool_preset_id,
-    objects_per_print, inventory_slug, printer_preset_id, printer_model_id,
+    objects_per_print, object_id, printer_preset_id,
     local_file_handler_path, pi_file_path,
     plate_preset_id,
   } = body;
@@ -28,17 +28,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     return json({ success: false, error: 'name and file_name are required' }, { status: 400 });
   }
 
-  // Resolve object_id from slug/sku if provided
-  let object_id: number | null = null;
-  if (inventory_slug) {
-    const obj = await drizzleDb.get<{ id: number }>(
-      sql`SELECT id FROM objects WHERE sku = ${inventory_slug} LIMIT 1`
-    );
-    object_id = obj?.id ?? null;
-  }
-
-  // Use explicit printer_preset_id if provided, else try to look up by model name
-  const resolvedPresetId = (printer_preset_id as number | null) ?? (printer_model_id as number | null) ?? null;
+  const resolvedObjectId = (object_id as number | null) ?? null;
+  const resolvedPresetId = (printer_preset_id as number | null) ?? null;
 
   const filename = (pi_file_path as string) || (local_file_handler_path as string) || (file_name as string);
   const now = Math.floor(Date.now() / 1000);
@@ -50,8 +41,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
          nozzle_diameter, object_id, printer_preset_id, active, created_at, updated_at)
       VALUES (
         ${name}, ${filename}, ${thumbnail ?? null},
-        ${expected_weight ?? 0}, ${estimated_time ?? null}, ${objects_per_print ?? 1},
-        ${nozzle_diameter ?? null}, ${object_id}, ${resolvedPresetId},
+        ${expected_weight ?? 0}, ${estimated_time ?? 0}, ${objects_per_print ?? 1},
+        ${nozzle_diameter ?? null}, ${resolvedObjectId}, ${resolvedPresetId},
         1, ${now}, ${now}
       )
     `);
@@ -99,7 +90,7 @@ export const GET: RequestHandler = async ({ platform, url }) => {
              pp.brand || ' ' || pp.model as printer_model_name,
              mfs.spool_preset_id as default_spool_preset_id,
              sp.material as spool_preset_material, sp.color as spool_preset_color, sp.brand as spool_preset_brand,
-             o.sku as inventory_slug, o.name as object_name
+             o.id as object_id, o.name as object_name
       FROM print_modules pm
       LEFT JOIN printer_presets pp ON pm.printer_preset_id = pp.id
       LEFT JOIN module_filament_slots mfs ON pm.id = mfs.module_id AND mfs.slot_index = 0
@@ -137,22 +128,14 @@ export const PATCH: RequestHandler = async ({ url, request, platform }) => {
 
   const {
     name, estimated_time, nozzle_diameter, expected_weight,
-    default_spool_preset_id, objects_per_print, inventory_slug,
-    printer_preset_id, printer_model_id, plate_preset_id,
+    default_spool_preset_id, objects_per_print, object_id,
+    printer_preset_id, plate_preset_id,
   } = body;
 
   if (!name) return json({ success: false, error: 'name is required' }, { status: 400 });
 
-  // Resolve object_id
-  let object_id: number | null = null;
-  if (inventory_slug) {
-    const obj = await drizzleDb.get<{ id: number }>(
-      sql`SELECT id FROM objects WHERE sku = ${inventory_slug} LIMIT 1`
-    );
-    object_id = obj?.id ?? null;
-  }
-
-  const resolvedPresetId = (printer_preset_id as number | null) ?? (printer_model_id as number | null) ?? null;
+  const resolvedObjectId = (object_id as number | null) ?? null;
+  const resolvedPresetId = (printer_preset_id as number | null) ?? null;
   const now = Math.floor(Date.now() / 1000);
 
   try {
@@ -163,7 +146,7 @@ export const PATCH: RequestHandler = async ({ url, request, platform }) => {
         nozzle_diameter = ${nozzle_diameter ?? null},
         weight = ${expected_weight ?? null},
         objects_per_print = ${objects_per_print ?? 1},
-        object_id = ${object_id},
+        object_id = ${resolvedObjectId},
         printer_preset_id = ${resolvedPresetId},
         updated_at = ${now}
       WHERE id = ${id}

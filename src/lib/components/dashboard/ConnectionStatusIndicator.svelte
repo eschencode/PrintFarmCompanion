@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Printer } from '$lib/types';
+  import type { DashboardPrinter } from '$lib/types';
 
   /** Fixed top-right indicator showing file handler and direct-connection status. */
   export let fileHandlerState: { token: string; connected: boolean; checking: boolean };
@@ -7,7 +7,7 @@
   /** Set of printer serials currently connected via direct MQTT. */
   export let directConnected: Set<string>;
   /** All printers — used to compute how many have a serial configured. */
-  export let printers: Printer[];
+  export let printers: DashboardPrinter[];
 </script>
 
 <!-- Status Indicator (Top-right corner) -->

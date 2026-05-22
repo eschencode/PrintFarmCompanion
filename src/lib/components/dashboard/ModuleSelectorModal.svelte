@@ -1,25 +1,25 @@
 <script lang="ts">
   import { formatTime } from '$lib/utils/time';
-  import type { Printer, Spool, PrintModule, SpoolPreset } from '$lib/types';
+  import type { DashboardPrinter, SpoolWithPreset, PrintModuleFull, SpoolPreset } from '$lib/types';
 
   /**
    * Modal for picking a print module before starting a job.
    * Modules are grouped into four categories by spool compatibility and material quantity.
    */
-  export let printer: Printer;
-  export let loadedSpool: Spool | null;
+  export let printer: DashboardPrinter;
+  export let loadedSpool: SpoolWithPreset | null;
   /** Pre-categorised modules from getCategorizedModules(). */
   export let categorizedModules: {
-    compatiblePrintable: PrintModule[];
-    compatibleInsufficientMaterial: PrintModule[];
-    anySpoolPrintable: PrintModule[];
-    anySpoolInsufficientMaterial: PrintModule[];
+    compatiblePrintable: PrintModuleFull[];
+    compatibleInsufficientMaterial: PrintModuleFull[];
+    anySpoolPrintable: PrintModuleFull[];
+    anySpoolInsufficientMaterial: PrintModuleFull[];
   };
   export let spoolPresets: SpoolPreset[];
   /** Set of printer serials currently being started — disables the Start button. */
   export let startingSerials: Set<string>;
   export let onClose: () => void;
-  export let onEnqueue: (module: PrintModule, printer: Printer) => void;
+  export let onEnqueue: (module: PrintModuleFull, printer: DashboardPrinter) => void;
 
   // Local state — resets automatically when modal is destroyed
   let selectedModuleId: number | null = null;
@@ -54,7 +54,7 @@
             {#if loadedSpool}
               {@const loadedPreset = spoolPresets.find((p: any) => p.id === loadedSpool.preset_id)}
               <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-2">
-                Using: {loadedSpool.brand} {loadedSpool.material} - {loadedSpool.color} ({loadedSpool.remaining_weight}g)
+                Using: {loadedSpool.preset?.brand ?? ''} {loadedSpool.preset?.material ?? ''} - {loadedSpool.preset?.color ?? ''} ({loadedSpool.remaining_weight}g)
                 {#if loadedPreset}
                   <span class="text-blue-500 dark:text-blue-400 ml-1">(Preset: {loadedPreset.name})</span>
                 {/if}
@@ -170,7 +170,7 @@
                       </div>
                       <div class="flex justify-between items-center">
                         <span class="text-zinc-500">Time:</span>
-                        <span class="text-zinc-500">{formatTime(module.expected_time ?? 0)}</span>
+                        <span class="text-zinc-500">{formatTime(module.expected_time_minutes ?? 0)}</span>
                       </div>
                       {#if loadedSpool}
                         <div class="flex justify-between items-center pt-1 border-t border-zinc-200/60 dark:border-[#1a1a22]">
@@ -295,7 +295,7 @@
                       </div>
                       <div class="flex justify-between items-center">
                         <span class="text-zinc-500">Time:</span>
-                        <span class="text-zinc-500">{formatTime(module.expected_time ?? 0)}</span>
+                        <span class="text-zinc-500">{formatTime(module.expected_time_minutes ?? 0)}</span>
                       </div>
                       {#if loadedSpool}
                         <div class="flex justify-between items-center pt-1 border-t border-zinc-200/60 dark:border-[#1a1a22]">
@@ -386,13 +386,13 @@
             {@const selectedModule = allModules.find((m: any) => m.id === selectedModuleId)}
             <button
               type="button"
-              disabled={startingSerials.has(printer.secrets?.serial ?? '')}
+              disabled={startingSerials.has(printer.printer_serial ?? '')}
               onclick={() => selectedModule && onEnqueue(selectedModule, printer)}
               class="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium disabled:opacity-50"
             >
               {#if selectedModule && loadedSpool && (selectedModule.weight ?? 0) > loadedSpool.remaining_weight}
                 Start Print (Low Material)
-              {:else if selectedModule?.file_stored_on_pi && printer?.printer_ip}
+              {:else if selectedModule?.filename && printer?.printer_ip}
                 Start Print (Pi)
               {:else}
                 Start Print Job

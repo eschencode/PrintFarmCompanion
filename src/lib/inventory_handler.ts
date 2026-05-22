@@ -17,9 +17,9 @@ export async function getObjectById(db: D1Database, id: number): Promise<ObjectI
   return result ?? null;
 }
 
-export async function getObjectBySku(db: D1Database, sku: string): Promise<ObjectItem | null> {
+export async function getObjectByName(db: D1Database, name: string): Promise<ObjectItem | null> {
   const drizzleDb = getDb(db);
-  const result = await drizzleDb.get<ObjectItem>(sql`SELECT * FROM objects WHERE sku = ${sku}`);
+  const result = await drizzleDb.get<ObjectItem>(sql`SELECT * FROM objects WHERE name = ${name}`);
   return result ?? null;
 }
 
@@ -51,16 +51,16 @@ export async function getInventoryLogs(
 export async function getAllRecentLogs(
   db: D1Database,
   limit = 100,
-): Promise<(InventoryLog & { object_name: string; object_sku: string })[]> {
+): Promise<(InventoryLog & { object_name: string })[]> {
   const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all<InventoryLog & { object_name: string; object_sku: string }>(sql`
-    SELECT il.*, o.name as object_name, o.sku as object_sku
+  const rows = await drizzleDb.all<InventoryLog & { object_name: string }>(sql`
+    SELECT il.*, o.name as object_name
     FROM inventory_log il
     JOIN objects o ON il.object_id = o.id
     ORDER BY il.created_at DESC
     LIMIT ${limit}
   `);
-  return (rows ?? []) as unknown as (InventoryLog & { object_name: string; object_sku: string })[];
+  return (rows ?? []) as unknown as (InventoryLog & { object_name: string })[];
 }
 
 // ─── Create / Update / Delete ─────────────────────────────────────────────────
@@ -69,7 +69,6 @@ export async function createObject(
   db: D1Database,
   item: {
     name: string;
-    sku: string; // required — stable human-readable identifier
     inStock?: number;
     minThreshold?: number;
     category?: string | null;
@@ -79,9 +78,9 @@ export async function createObject(
   try {
     const now = Math.floor(Date.now() / 1000);
     const result = await drizzleDb.run(sql`
-      INSERT INTO objects (name, sku, in_stock, min_threshold, category, created_at, updated_at)
+      INSERT INTO objects (name, in_stock, min_threshold, category, created_at, updated_at)
       VALUES (
-        ${item.name}, ${item.sku},
+        ${item.name},
         ${item.inStock ?? 0}, ${item.minThreshold ?? 0},
         ${item.category ?? null}, ${now}, ${now}
       )
@@ -89,11 +88,11 @@ export async function createObject(
     return {
       success: true,
       message: `Object "${item.name}" created`,
-      data: { id: result.meta.last_row_id, sku: item.sku },
+      data: { id: result.meta.last_row_id },
     };
   } catch (error) {
     console.error('Error creating object:', error);
-    return { success: false, error: 'Failed to create object' };
+    return { success: false, error: 'Failed to create object (name may already exist)' };
   }
 }
 
@@ -102,7 +101,6 @@ export async function updateObject(
   id: number,
   item: {
     name?: string;
-    sku?: string;
     minThreshold?: number;
     category?: string | null;
   },
@@ -111,7 +109,6 @@ export async function updateObject(
   try {
     const updates: ReturnType<typeof sql>[] = [];
     if (item.name !== undefined) updates.push(sql`name = ${item.name}`);
-    if (item.sku !== undefined) updates.push(sql`sku = ${item.sku}`);
     if (item.minThreshold !== undefined) updates.push(sql`min_threshold = ${item.minThreshold}`);
     if (item.category !== undefined) updates.push(sql`category = ${item.category}`);
     if (updates.length === 0) return { success: false, error: 'No updates provided' };
@@ -128,10 +125,8 @@ export async function updateObject(
 
 /**
  * Delete an object.
- * Blocked by design if inventory_log rows exist (onDelete: restrict on the FK).
- * The audit history is the source of truth — deleting a product with history
- * would make past sales and print records unresolvable.
- * If the object has history, archive it instead (set a "hidden" category or similar).
+ * Blocked if inventory_log rows exist — the audit trail is the source of truth.
+ * Archive instead by changing the category to e.g. "archived".
  */
 export async function deleteObject(db: D1Database, id: number): Promise<ServerResponse> {
   const drizzleDb = getDb(db);
@@ -148,7 +143,6 @@ export async function deleteObject(db: D1Database, id: number): Promise<ServerRe
       };
     }
 
-    // Also check Shopify mappings — cascade handles the delete but warn first
     await drizzleDb.run(sql`DELETE FROM shopify_sku_mapping WHERE object_id = ${id}`);
     await drizzleDb.run(sql`DELETE FROM objects WHERE id = ${id}`);
 
@@ -161,11 +155,6 @@ export async function deleteObject(db: D1Database, id: number): Promise<ServerRe
 
 // ─── Stock Adjustments ────────────────────────────────────────────────────────
 
-/**
- * Add stock after printing. Uses change_type '+ printed'.
- * printJobId links the log entry back to the job that produced the stock.
- * (For print-completion, prefer calling this from jobs.ts which already has jobId.)
- */
 export async function addPrintedStock(
   db: D1Database,
   objectId: number,
@@ -188,7 +177,6 @@ export async function addPrintedStock(
   }
 }
 
-/** Manually add stock (e.g. transferring from another location). */
 export async function addStock(db: D1Database, objectId: number, quantity: number): Promise<ServerResponse> {
   const drizzleDb = getDb(db);
   try {
@@ -204,7 +192,6 @@ export async function addStock(db: D1Database, objectId: number, quantity: numbe
   }
 }
 
-/** Manually remove stock (damage, loss, etc.). */
 export async function removeStock(db: D1Database, objectId: number, quantity: number): Promise<ServerResponse> {
   const drizzleDb = getDb(db);
   try {
@@ -256,11 +243,6 @@ export async function recordSaleB2B(db: D1Database, objectId: number, quantity: 
   }
 }
 
-/**
- * Manual stock count session.
- * Sets in_stock to the actual observed count, records the discrepancy
- * (actual - expected) on the object row, and logs the adjustment.
- */
 export async function performManualCount(
   db: D1Database,
   objectId: number,
@@ -272,7 +254,7 @@ export async function performManualCount(
     if (!object) return { success: false, error: 'Object not found' };
 
     const expected = object.in_stock;
-    const discrepancy = actualCount - expected; // positive = more than expected
+    const discrepancy = actualCount - expected;
     const now = Math.floor(Date.now() / 1000);
 
     await drizzleDb.run(sql`
@@ -284,7 +266,6 @@ export async function performManualCount(
       WHERE id = ${objectId}
     `);
 
-    // Log as addition or removal depending on the sign
     const changeType: InventoryChangeType = discrepancy >= 0 ? '+ stock count' : '- stock count';
     await logInventoryChange(db, objectId, changeType, Math.abs(discrepancy));
 
@@ -299,56 +280,8 @@ export async function performManualCount(
   }
 }
 
-// ─── SKU-based convenience wrappers ──────────────────────────────────────────
-// SKU is the stable identifier for external lookups (Shopify, CSV, etc.)
-
-export async function addStockBySku(
-  db: D1Database,
-  sku: string,
-  quantity: number,
-): Promise<ServerResponse> {
-  const object = await getObjectBySku(db, sku);
-  if (!object) return { success: false, error: `Object with SKU "${sku}" not found` };
-  return addStock(db, object.id, quantity);
-}
-
-export async function recordSaleB2CBySku(
-  db: D1Database,
-  sku: string,
-  quantity: number,
-): Promise<ServerResponse> {
-  const object = await getObjectBySku(db, sku);
-  if (!object) return { success: false, error: `Object with SKU "${sku}" not found` };
-  return recordSaleB2C(db, object.id, quantity);
-}
-
-export async function recordSaleB2BBySku(
-  db: D1Database,
-  sku: string,
-  quantity: number,
-): Promise<ServerResponse> {
-  const object = await getObjectBySku(db, sku);
-  if (!object) return { success: false, error: `Object with SKU "${sku}" not found` };
-  return recordSaleB2B(db, object.id, quantity);
-}
-
-export async function performManualCountBySku(
-  db: D1Database,
-  sku: string,
-  actualCount: number,
-): Promise<ServerResponse> {
-  const object = await getObjectBySku(db, sku);
-  if (!object) return { success: false, error: `Object with SKU "${sku}" not found` };
-  return performManualCount(db, object.id, actualCount);
-}
-
 // ─── Internal log writer ──────────────────────────────────────────────────────
 
-/**
- * Append one row to inventory_log.
- * quantity is ALWAYS positive — the sign is encoded in change_type.
- * printJobId is set for '+ printed' entries, null for everything else.
- */
 async function logInventoryChange(
   db: D1Database,
   objectId: number,

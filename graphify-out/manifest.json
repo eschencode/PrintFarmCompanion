@@ -1,0 +1,1007 @@
+{
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/svelte.config.js": {
+    "mtime": 1775823738.6099827,
+    "ast_hash": "47298d7923ab23b699035cbab235ed68",
+    "semantic_hash": "47298d7923ab23b699035cbab235ed68"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/package.json": {
+    "mtime": 1779386863.9285853,
+    "ast_hash": "a15d2d9a554d39bc3abed55dbb00c5a1",
+    "semantic_hash": "a15d2d9a554d39bc3abed55dbb00c5a1"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/tsconfig.json": {
+    "mtime": 1775823738.6100662,
+    "ast_hash": "42cd974daecd2445874bc7bb9597808b",
+    "semantic_hash": "42cd974daecd2445874bc7bb9597808b"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/eslint.config.js": {
+    "mtime": 1775823738.586631,
+    "ast_hash": "4c2df8bb903c3cad9c6ea6083a0695a7",
+    "semantic_hash": "4c2df8bb903c3cad9c6ea6083a0695a7"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/drizzle.config.ts": {
+    "mtime": 1779122866.9004858,
+    "ast_hash": "0575bcb76a20320121ee14301e80e84b",
+    "semantic_hash": "0575bcb76a20320121ee14301e80e84b"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/vite.config.ts": {
+    "mtime": 1775823738.6101387,
+    "ast_hash": "1115e5f8d229162a05adcdce66b227d2",
+    "semantic_hash": "1115e5f8d229162a05adcdce66b227d2"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/.claude/settings.local.json": {
+    "mtime": 1779356545.1894302,
+    "ast_hash": "fb811c7d5ce0ec695d55e71ed2783d57",
+    "semantic_hash": "fb811c7d5ce0ec695d55e71ed2783d57"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/tauri.conf.json": {
+    "mtime": 1777321279.3687043,
+    "ast_hash": "38b6f82d73a953c19c6ece05d143fc8d",
+    "semantic_hash": "38b6f82d73a953c19c6ece05d143fc8d"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/build.rs": {
+    "mtime": 1777321279.3438716,
+    "ast_hash": "1be34a5c61c2c35365de3dab14298f0b",
+    "semantic_hash": "1be34a5c61c2c35365de3dab14298f0b"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/capabilities/default.json": {
+    "mtime": 1777321279.3442032,
+    "ast_hash": "9d6f8b19db34969bda83a6e2a746f3b8",
+    "semantic_hash": "9d6f8b19db34969bda83a6e2a746f3b8"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/src/bambu.rs": {
+    "mtime": 1777321279.367203,
+    "ast_hash": "68329670657e5a44a9eb38e4155b44aa",
+    "semantic_hash": "68329670657e5a44a9eb38e4155b44aa"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/src/lib.rs": {
+    "mtime": 1777321279.3677835,
+    "ast_hash": "549a7a11e5e2241373c3aefd86216007",
+    "semantic_hash": "549a7a11e5e2241373c3aefd86216007"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/src/main.rs": {
+    "mtime": 1777321279.3681574,
+    "ast_hash": "90cd5ae20c8076e3757206bf1fef4062",
+    "semantic_hash": "90cd5ae20c8076e3757206bf1fef4062"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/pi/bambu_client.py": {
+    "mtime": 1779119493.159195,
+    "ast_hash": "9502539d0a1e8c5035313f56f53b2a3d",
+    "semantic_hash": "9502539d0a1e8c5035313f56f53b2a3d"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/pi/__init__.py": {
+    "mtime": 1775823738.5916045,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/pi/log_buffer.py": {
+    "mtime": 1775823738.5919604,
+    "ast_hash": "ccbbb258ef8c60408c436a0a48d2958e",
+    "semantic_hash": "ccbbb258ef8c60408c436a0a48d2958e"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/pi/main.py": {
+    "mtime": 1779119493.1596887,
+    "ast_hash": "ed4bca25ca0dc89cd6ededf8878a6042",
+    "semantic_hash": "ed4bca25ca0dc89cd6ededf8878a6042"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/.drizzle/visualizer.json": {
+    "mtime": 1779299119.2080944,
+    "ast_hash": "910803a893335d4b4d464b631242a463",
+    "semantic_hash": "910803a893335d4b4d464b631242a463"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/.vscode/settings.json": {
+    "mtime": 1775823738.5857832,
+    "ast_hash": "bb97b5c48786209df82e0bfb86a4505a",
+    "semantic_hash": "bb97b5c48786209df82e0bfb86a4505a"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/app.d.ts": {
+    "mtime": 1775823738.5927148,
+    "ast_hash": "7a723bea3a4149d13a560a8572f22c52",
+    "semantic_hash": "7a723bea3a4149d13a560a8572f22c52"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/plate-types.ts": {
+    "mtime": 1777321279.3754568,
+    "ast_hash": "99bdbddf07dab959fd7c79f73086c671",
+    "semantic_hash": "99bdbddf07dab959fd7c79f73086c671"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/types.ts": {
+    "mtime": 1779384694.656706,
+    "ast_hash": "de4ec774693b38a725e155541f66a0d0",
+    "semantic_hash": "de4ec774693b38a725e155541f66a0d0"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/category-colors.ts": {
+    "mtime": 1777321279.3739867,
+    "ast_hash": "6cd225ae0e89c02912bd5e4937c175a2",
+    "semantic_hash": "6cd225ae0e89c02912bd5e4937c175a2"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/server.ts": {
+    "mtime": 1779301204.0770814,
+    "ast_hash": "ead1cc428c6a61781f2bd3d109a8cd3b",
+    "semantic_hash": "ead1cc428c6a61781f2bd3d109a8cd3b"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/inventory_handler.ts": {
+    "mtime": 1779384730.8486288,
+    "ast_hash": "24e481e4668c7d1fb87e866be26c70c1",
+    "semantic_hash": "24e481e4668c7d1fb87e866be26c70c1"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/recomendation/recommendation-service.ts": {
+    "mtime": 1779384808.4966054,
+    "ast_hash": "789779f0fb2fe9a7e560e3de55678123",
+    "semantic_hash": "789779f0fb2fe9a7e560e3de55678123"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/recomendation/context-builder.ts": {
+    "mtime": 1779384762.3664975,
+    "ast_hash": "a8cf4e84358e268bca188e44d4a1ac20",
+    "semantic_hash": "a8cf4e84358e268bca188e44d4a1ac20"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/recomendation/index.ts": {
+    "mtime": 1779316915.4354448,
+    "ast_hash": "a2b72ed59416b77f5f8aae1d04b297ef",
+    "semantic_hash": "a2b72ed59416b77f5f8aae1d04b297ef"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/recomendation/forecast.ts": {
+    "mtime": 1777321279.3732698,
+    "ast_hash": "f791358be1309cee90aa5f201a891881",
+    "semantic_hash": "f791358be1309cee90aa5f201a891881"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/shopify/client.ts": {
+    "mtime": 1775823738.5985985,
+    "ast_hash": "c54397fe49b59a040359e425678df516",
+    "semantic_hash": "c54397fe49b59a040359e425678df516"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/shopify/index.ts": {
+    "mtime": 1775823738.5986886,
+    "ast_hash": "1306b8d8a19520c127fe3be777ceb623",
+    "semantic_hash": "1306b8d8a19520c127fe3be777ceb623"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/shopify/sync.ts": {
+    "mtime": 1779319682.5672867,
+    "ast_hash": "78c7ef2f988655dd2152458ff0477154",
+    "semantic_hash": "78c7ef2f988655dd2152458ff0477154"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/stores/desktop.ts": {
+    "mtime": 1777321279.376347,
+    "ast_hash": "700fbd99533e28458b28eae03f3baf82",
+    "semantic_hash": "700fbd99533e28458b28eae03f3baf82"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/stores/connectionToggles.ts": {
+    "mtime": 1779119493.163104,
+    "ast_hash": "0fc2829235c434d1ceeac8b13cce57c8",
+    "semantic_hash": "0fc2829235c434d1ceeac8b13cce57c8"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/stores/autoQueueStore.ts": {
+    "mtime": 1775823738.598983,
+    "ast_hash": "b3ecc25be6bc8736ef99328f761703cd",
+    "semantic_hash": "b3ecc25be6bc8736ef99328f761703cd"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/stores/timeRange.ts": {
+    "mtime": 1778577516.0551481,
+    "ast_hash": "651103ceaaecf6941de32112a4b21a49",
+    "semantic_hash": "651103ceaaecf6941de32112a4b21a49"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/stores/fileHandler.ts": {
+    "mtime": 1779119493.1634576,
+    "ast_hash": "4d7fd982fac91056968124b0b1510468",
+    "semantic_hash": "4d7fd982fac91056968124b0b1510468"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/server/modules.ts": {
+    "mtime": 1779384735.3158512,
+    "ast_hash": "e21790ee59b723e79b164fec3a13c2be",
+    "semantic_hash": "e21790ee59b723e79b164fec3a13c2be"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/server/printers.ts": {
+    "mtime": 1779316996.1490693,
+    "ast_hash": "7f05c62b84a8ebb2c3990630eb10d960",
+    "semantic_hash": "7f05c62b84a8ebb2c3990630eb10d960"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/server/jobs.ts": {
+    "mtime": 1779301161.28717,
+    "ast_hash": "e72cdfcdbceca151d6d9d64173eb9559",
+    "semantic_hash": "e72cdfcdbceca151d6d9d64173eb9559"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/server/spools.ts": {
+    "mtime": 1779301080.8038495,
+    "ast_hash": "8b09642d6408d5ab3c012cf1ccf166c6",
+    "semantic_hash": "8b09642d6408d5ab3c012cf1ccf166c6"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/server/grid.ts": {
+    "mtime": 1779301184.9681733,
+    "ast_hash": "1043e1d6fc4be9219a843f5df553b484",
+    "semantic_hash": "1043e1d6fc4be9219a843f5df553b484"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/utils/printerData.ts": {
+    "mtime": 1779386852.351533,
+    "ast_hash": "755eac24c975bd5d6dca3dd68f58652e",
+    "semantic_hash": "755eac24c975bd5d6dca3dd68f58652e"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/utils/statsCompute.ts": {
+    "mtime": 1779319324.4652603,
+    "ast_hash": "fe205335ab3082a10a73cd8a4ef5ce8f",
+    "semantic_hash": "fe205335ab3082a10a73cd8a4ef5ce8f"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/utils/printerImage.ts": {
+    "mtime": 1778577516.0561965,
+    "ast_hash": "ab10398e8de76fddc3f84d693fd1fd9a",
+    "semantic_hash": "ab10398e8de76fddc3f84d693fd1fd9a"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/utils/time.ts": {
+    "mtime": 1778577516.0566487,
+    "ast_hash": "cbbb8253611d3177f221359031833d25",
+    "semantic_hash": "cbbb8253611d3177f221359031833d25"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/EditModuleModal.svelte": {
+    "mtime": 1779385806.098988,
+    "ast_hash": "6b834c55768e8ca6cd4e4822c4034e52",
+    "semantic_hash": "6b834c55768e8ca6cd4e4822c4034e52"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/ZipBulkUpload.svelte": {
+    "mtime": 1779119493.161453,
+    "ast_hash": "356c89530a8839c0ec5bc6cb8fdcca26",
+    "semantic_hash": "356c89530a8839c0ec5bc6cb8fdcca26"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/ThreeMfUpload.svelte": {
+    "mtime": 1779385534.4232633,
+    "ast_hash": "9c18d7e7701478921b7b5b3476c4fd01",
+    "semantic_hash": "9c18d7e7701478921b7b5b3476c4fd01"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/settings/AutoQueueSection.svelte": {
+    "mtime": 1779119493.1617975,
+    "ast_hash": "0f3193ea702ca26b2dd08515344fccd3",
+    "semantic_hash": "0f3193ea702ca26b2dd08515344fccd3"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/settings/ConnectionsSection.svelte": {
+    "mtime": 1779319564.0654964,
+    "ast_hash": "73ab439003f144472badeb705fa5ee12",
+    "semantic_hash": "73ab439003f144472badeb705fa5ee12"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/dashboard/ConnectionStatusIndicator.svelte": {
+    "mtime": 1778577516.0492814,
+    "ast_hash": "d8f98e893b86b3b2a36a64dab7e2bd80",
+    "semantic_hash": "d8f98e893b86b3b2a36a64dab7e2bd80"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/dashboard/SpoolSelectorModal.svelte": {
+    "mtime": 1778577516.052234,
+    "ast_hash": "930ab6d579dccf0365b5f4f7c43decd0",
+    "semantic_hash": "930ab6d579dccf0365b5f4f7c43decd0"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/dashboard/AutoQueueToast.svelte": {
+    "mtime": 1778577516.0489807,
+    "ast_hash": "8ef81b6c5384a8f5adaf969c6ad6c776",
+    "semantic_hash": "8ef81b6c5384a8f5adaf969c6ad6c776"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/dashboard/ModuleSelectorModal.svelte": {
+    "mtime": 1779319564.0610979,
+    "ast_hash": "8fe8bd346b9ee6b71dbfb19bc3564f8b",
+    "semantic_hash": "8fe8bd346b9ee6b71dbfb19bc3564f8b"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/dashboard/QuickStartModal.svelte": {
+    "mtime": 1779319564.0631528,
+    "ast_hash": "dc6836183d60e0b3b79cbe7dad0b5c69",
+    "semantic_hash": "dc6836183d60e0b3b79cbe7dad0b5c69"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/dashboard/PrinterCard.svelte": {
+    "mtime": 1779402907.872399,
+    "ast_hash": "63a5555b5a7727c8202e148661f0f9ef",
+    "semantic_hash": "63a5555b5a7727c8202e148661f0f9ef"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/dashboard/PrinterDetailModal.svelte": {
+    "mtime": 1779320237.9290676,
+    "ast_hash": "687795d987146623b74b3a5c55da3b3c",
+    "semantic_hash": "687795d987146623b74b3a5c55da3b3c"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/dashboard/StartQueueToast.svelte": {
+    "mtime": 1778577516.0528767,
+    "ast_hash": "f26b4e90983c27d50cb5a6925bc2947c",
+    "semantic_hash": "f26b4e90983c27d50cb5a6925bc2947c"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/dashboard/FailureReasonModal.svelte": {
+    "mtime": 1779319553.4521158,
+    "ast_hash": "0a0f56e17db884b8e9500a2c6187710b",
+    "semantic_hash": "0a0f56e17db884b8e9500a2c6187710b"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/dashboard/GridNavigation.svelte": {
+    "mtime": 1778577516.0501704,
+    "ast_hash": "bf01868d654b9cf2e6305bddd2629d12",
+    "semantic_hash": "bf01868d654b9cf2e6305bddd2629d12"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/stats/TimeRangeSelector.svelte": {
+    "mtime": 1778577516.0544462,
+    "ast_hash": "00f1a49edef2da8c65ba46e0cf01fa07",
+    "semantic_hash": "00f1a49edef2da8c65ba46e0cf01fa07"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/components/stats/ModuleBreakdown.svelte": {
+    "mtime": 1778577516.0541902,
+    "ast_hash": "4622b64303d4ea222902671f394be436",
+    "semantic_hash": "4622b64303d4ea222902671f394be436"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/actions/shine.ts": {
+    "mtime": 1778577516.0484307,
+    "ast_hash": "8e91e034cf3fa19aafaa26b7f8b7ab5a",
+    "semantic_hash": "8e91e034cf3fa19aafaa26b7f8b7ab5a"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/db/schema.ts": {
+    "mtime": 1779384633.7956064,
+    "ast_hash": "ce36313ba8923bbf7b171b1bb685cb19",
+    "semantic_hash": "ce36313ba8923bbf7b171b1bb685cb19"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/db/index.ts": {
+    "mtime": 1779122864.4430408,
+    "ast_hash": "0cbabeb4206fa7196f95cbff5d5b29d8",
+    "semantic_hash": "0cbabeb4206fa7196f95cbff5d5b29d8"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/+layout.svelte": {
+    "mtime": 1775823738.6058164,
+    "ast_hash": "0b115f4397252d490614347893819794",
+    "semantic_hash": "0b115f4397252d490614347893819794"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/+page.server.ts": {
+    "mtime": 1779301798.0886765,
+    "ast_hash": "59018ec57da9d8ee57d9fc50c71c580b",
+    "semantic_hash": "59018ec57da9d8ee57d9fc50c71c580b"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/+page.svelte": {
+    "mtime": 1779320237.9327023,
+    "ast_hash": "8b666ad93aee0655ae0bd7b2d5ccdfff",
+    "semantic_hash": "8b666ad93aee0655ae0bd7b2d5ccdfff"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/+layout.svelte": {
+    "mtime": 1777321279.3773525,
+    "ast_hash": "433c6857895495973e05f929580f1d2b",
+    "semantic_hash": "433c6857895495973e05f929580f1d2b"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/settings/+page.server.ts": {
+    "mtime": 1779119493.1663387,
+    "ast_hash": "d3578a07ef8e970937c9c50a165c1bf3",
+    "semantic_hash": "d3578a07ef8e970937c9c50a165c1bf3"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/settings/+page.svelte": {
+    "mtime": 1779119493.166675,
+    "ast_hash": "754e2b4f78027f2ff8fa324a2ba13420",
+    "semantic_hash": "754e2b4f78027f2ff8fa324a2ba13420"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/settings/materials/+page.server.ts": {
+    "mtime": 1779317127.2931685,
+    "ast_hash": "ccb316f232b8ca6ac79e24e53c30236e",
+    "semantic_hash": "ccb316f232b8ca6ac79e24e53c30236e"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/settings/materials/+page.svelte": {
+    "mtime": 1779318311.2605727,
+    "ast_hash": "c1454f57ce191f9a1bd03e0a39225322",
+    "semantic_hash": "c1454f57ce191f9a1bd03e0a39225322"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/settings/dashboard/+page.server.ts": {
+    "mtime": 1779119493.1674938,
+    "ast_hash": "740410786bb1dbcfc3fb9425bfb26492",
+    "semantic_hash": "740410786bb1dbcfc3fb9425bfb26492"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/settings/dashboard/+page.svelte": {
+    "mtime": 1779319262.6725562,
+    "ast_hash": "706d7079f2f2f630f24023e7510815e0",
+    "semantic_hash": "706d7079f2f2f630f24023e7510815e0"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/settings/integrations/+page.server.ts": {
+    "mtime": 1779384971.0119853,
+    "ast_hash": "6a202d9485c2df284bb034f518f17eef",
+    "semantic_hash": "6a202d9485c2df284bb034f518f17eef"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/settings/integrations/+page.svelte": {
+    "mtime": 1779385021.6001492,
+    "ast_hash": "008ec77d5f2481fc4bbb932a0b91d353",
+    "semantic_hash": "008ec77d5f2481fc4bbb932a0b91d353"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/settings/connections/+page.server.ts": {
+    "mtime": 1779119493.1669476,
+    "ast_hash": "61fccf138b4315c05dd5228bf6d97967",
+    "semantic_hash": "61fccf138b4315c05dd5228bf6d97967"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/settings/connections/+page.svelte": {
+    "mtime": 1779119493.1671822,
+    "ast_hash": "26a1a486f9d4cc23c7c8465baca4605b",
+    "semantic_hash": "26a1a486f9d4cc23c7c8465baca4605b"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/settings/printers/+page.server.ts": {
+    "mtime": 1779318262.6249263,
+    "ast_hash": "285fdd37f3a677ba258dcd8feadad9ff",
+    "semantic_hash": "285fdd37f3a677ba258dcd8feadad9ff"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/settings/printers/+page.svelte": {
+    "mtime": 1779318284.849182,
+    "ast_hash": "5e77d616304765d31aa5624646507df2",
+    "semantic_hash": "5e77d616304765d31aa5624646507df2"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/products/+page.server.ts": {
+    "mtime": 1779384897.868782,
+    "ast_hash": "f3cf71e1d73cab19749163e122716f29",
+    "semantic_hash": "f3cf71e1d73cab19749163e122716f29"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/products/+page.svelte": {
+    "mtime": 1779384955.6497836,
+    "ast_hash": "ce45b2b6823e07b2f2b2a47e00cc661e",
+    "semantic_hash": "ce45b2b6823e07b2f2b2a47e00cc661e"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/storage/+page.server.ts": {
+    "mtime": 1779317407.8363833,
+    "ast_hash": "b36d716a46944edf0aab6167b5051c28",
+    "semantic_hash": "b36d716a46944edf0aab6167b5051c28"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/storage/+page.svelte": {
+    "mtime": 1775823738.605716,
+    "ast_hash": "5e66ad75c331873ff58382a8357f5f9a",
+    "semantic_hash": "5e66ad75c331873ff58382a8357f5f9a"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/recommendations/+page.server.ts": {
+    "mtime": 1779317152.7904232,
+    "ast_hash": "8cd830866af59dfdccbdf098447f02a2",
+    "semantic_hash": "8cd830866af59dfdccbdf098447f02a2"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/recommendations/+page.svelte": {
+    "mtime": 1779319354.3106387,
+    "ast_hash": "98667c8e5cacd424d99d533b68e6414f",
+    "semantic_hash": "98667c8e5cacd424d99d533b68e6414f"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/logs/+page.svelte": {
+    "mtime": 1775823738.603759,
+    "ast_hash": "03a9bb75e64becf26fecb1ece78f1156",
+    "semantic_hash": "03a9bb75e64becf26fecb1ece78f1156"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/logs/+page.ts": {
+    "mtime": 1775823738.6038423,
+    "ast_hash": "d519d19c7b253b50a6c56a3cf1f6462b",
+    "semantic_hash": "d519d19c7b253b50a6c56a3cf1f6462b"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/inventory/+page.server.ts": {
+    "mtime": 1779385116.0033374,
+    "ast_hash": "a81f6d4e55d678b1bc24769f0f6207b5",
+    "semantic_hash": "a81f6d4e55d678b1bc24769f0f6207b5"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/inventory/+page.svelte": {
+    "mtime": 1779386112.2735863,
+    "ast_hash": "f52149929c2738086996b11b9a9532e9",
+    "semantic_hash": "f52149929c2738086996b11b9a9532e9"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/inventory/b2b-sell/+page.server.ts": {
+    "mtime": 1779385130.7542632,
+    "ast_hash": "fbab6853c619d8753adb83ea51eb40b4",
+    "semantic_hash": "fbab6853c619d8753adb83ea51eb40b4"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/inventory/b2b-sell/+page.svelte": {
+    "mtime": 1779386164.7994795,
+    "ast_hash": "b8f5fe5cf25c76da40864657e3e9ab99",
+    "semantic_hash": "b8f5fe5cf25c76da40864657e3e9ab99"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/inventory/stock-count/+page.server.ts": {
+    "mtime": 1779385143.754809,
+    "ast_hash": "b5870839edb4df64f2b2da320eba53e2",
+    "semantic_hash": "b5870839edb4df64f2b2da320eba53e2"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/inventory/stock-count/+page.svelte": {
+    "mtime": 1779403043.2537525,
+    "ast_hash": "f217bff17f27b4b3fee35156b8fc9a6d",
+    "semantic_hash": "f217bff17f27b4b3fee35156b8fc9a6d"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/print-modules/+server.ts": {
+    "mtime": 1779385495.618616,
+    "ast_hash": "4bbd25ea8d6864882739bf5107cc67c6",
+    "semantic_hash": "4bbd25ea8d6864882739bf5107cc67c6"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/ai-recommendations/+server.ts": {
+    "mtime": 1779317139.7672098,
+    "ast_hash": "5693707b56eab7f292ef01778565c84d",
+    "semantic_hash": "5693707b56eab7f292ef01778565c84d"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/printer/[id]/+server.ts": {
+    "mtime": 1779317006.5895493,
+    "ast_hash": "af4ed16f90ea891b61f969c669efd21f",
+    "semantic_hash": "af4ed16f90ea891b61f969c669efd21f"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/cron-sync/+server.ts": {
+    "mtime": 1779119493.164895,
+    "ast_hash": "a8c83c39637fe5c0256e07ca747b5d28",
+    "semantic_hash": "a8c83c39637fe5c0256e07ca747b5d28"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/objects/+server.ts": {
+    "mtime": 1779384815.955474,
+    "ast_hash": "49e2d7a0d41c0f24c9e11bdf48e1152a",
+    "semantic_hash": "49e2d7a0d41c0f24c9e11bdf48e1152a"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/pi/pause/+server.ts": {
+    "mtime": 1779195742.1305032,
+    "ast_hash": "e95948f08d55d2f7d064a42bad84efd5",
+    "semantic_hash": "e95948f08d55d2f7d064a42bad84efd5"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/pi/webhook/+server.ts": {
+    "mtime": 1779317022.7822878,
+    "ast_hash": "20ef6af99912e846a7e5017fc6743d42",
+    "semantic_hash": "20ef6af99912e846a7e5017fc6743d42"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/pi/cancel/+server.ts": {
+    "mtime": 1779195737.0275104,
+    "ast_hash": "0ecda0547061a171dbf2f09deaa9adb8",
+    "semantic_hash": "0ecda0547061a171dbf2f09deaa9adb8"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/pi/resume/+server.ts": {
+    "mtime": 1779195747.537523,
+    "ast_hash": "0448b9445407d145d01561e74bf8ba80",
+    "semantic_hash": "0448b9445407d145d01561e74bf8ba80"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/pi/status/+server.ts": {
+    "mtime": 1779318580.0752475,
+    "ast_hash": "73cf0c13dd97a7e44860f9b279b028ec",
+    "semantic_hash": "73cf0c13dd97a7e44860f9b279b028ec"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/pi/print/+server.ts": {
+    "mtime": 1779319802.336641,
+    "ast_hash": "4286f80fef6c2b2926c4405975928364",
+    "semantic_hash": "4286f80fef6c2b2926c4405975928364"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/pi/logs/+server.ts": {
+    "mtime": 1775823738.6007667,
+    "ast_hash": "cad705c08a5b1f467a5f7f9b67936c84",
+    "semantic_hash": "cad705c08a5b1f467a5f7f9b67936c84"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/pi/logs/printers/+server.ts": {
+    "mtime": 1775823738.6009007,
+    "ast_hash": "26b95a0540cf347f4b3e6526a7a8952d",
+    "semantic_hash": "26b95a0540cf347f4b3e6526a7a8952d"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/pi/upload/+server.ts": {
+    "mtime": 1775823738.6016417,
+    "ast_hash": "79b85c6b9cd0a5140c0effd9b617d975",
+    "semantic_hash": "79b85c6b9cd0a5140c0effd9b617d975"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/printer-models/+server.ts": {
+    "mtime": 1779319839.3989232,
+    "ast_hash": "da8335d8df194dacf0c1c47fd859cadc",
+    "semantic_hash": "da8335d8df194dacf0c1c47fd859cadc"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/api/stats/+server.ts": {
+    "mtime": 1779319324.4711833,
+    "ast_hash": "4d616ba273a3ebd130c62d19e005038d",
+    "semantic_hash": "4d616ba273a3ebd130c62d19e005038d"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/modules/+page.server.ts": {
+    "mtime": 1779369978.4926906,
+    "ast_hash": "634448f5e2659742594dbfc5081d8781",
+    "semantic_hash": "634448f5e2659742594dbfc5081d8781"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/modules/+page.svelte": {
+    "mtime": 1779384879.89088,
+    "ast_hash": "ece148704bf75f2c666c97445df94f4a",
+    "semantic_hash": "ece148704bf75f2c666c97445df94f4a"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/stats/+page.server.ts": {
+    "mtime": 1779319875.142315,
+    "ast_hash": "0cf0001bab1a86ea1fdf57446b67757b",
+    "semantic_hash": "0cf0001bab1a86ea1fdf57446b67757b"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/routes/(main)/stats/+page.svelte": {
+    "mtime": 1779319324.4787226,
+    "ast_hash": "ab22184b234707f849a8b5a7115569b9",
+    "semantic_hash": "ab22184b234707f849a8b5a7115569b9"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/drizzle/0003_drop_object_sku.sql": {
+    "mtime": 1779384640.150146,
+    "ast_hash": "d13150999e4718b596d12595cf021cd2",
+    "semantic_hash": "d13150999e4718b596d12595cf021cd2"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/drizzle/0000_nifty_dakota_north.sql": {
+    "mtime": 1779299298.9278336,
+    "ast_hash": "ae8c2f08e4e66a1d2c688265e0072d32",
+    "semantic_hash": "ae8c2f08e4e66a1d2c688265e0072d32"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/drizzle/0001_flippant_skaar.sql": {
+    "mtime": 1779302296.4868598,
+    "ast_hash": "7ccce8f67c98a4ae98d0cdcd6e285b28",
+    "semantic_hash": "7ccce8f67c98a4ae98d0cdcd6e285b28"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/drizzle/0002_nullable_module_fks.sql": {
+    "mtime": 1779369922.0942175,
+    "ast_hash": "71c69f6cdba64518850320c275bb74b0",
+    "semantic_hash": "71c69f6cdba64518850320c275bb74b0"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/drizzle/meta/0000_snapshot.json": {
+    "mtime": 1779299298.9275532,
+    "ast_hash": "a252ea8a93b809dc17f366b56a8c64c9",
+    "semantic_hash": "a252ea8a93b809dc17f366b56a8c64c9"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/drizzle/meta/_journal.json": {
+    "mtime": 1779302296.4867473,
+    "ast_hash": "c8edf205b3d575d0b7da28d25c689234",
+    "semantic_hash": "c8edf205b3d575d0b7da28d25c689234"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/drizzle/meta/0001_snapshot.json": {
+    "mtime": 1779302296.485259,
+    "ast_hash": "e34ca04fad6c076ee5fee5f83f2191b4",
+    "semantic_hash": "e34ca04fad6c076ee5fee5f83f2191b4"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/README.md": {
+    "mtime": 1779209564.148471,
+    "ast_hash": "6687736177e862aaa603d17ea4e334c7",
+    "semantic_hash": "6687736177e862aaa603d17ea4e334c7"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/README.md": {
+    "mtime": 1777321279.3415773,
+    "ast_hash": "94c0c43c1b2bbdde0ff8eda4a70e0068",
+    "semantic_hash": "94c0c43c1b2bbdde0ff8eda4a70e0068"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/dist-stub/index.html": {
+    "mtime": 1777321279.3420506,
+    "ast_hash": "7057276073d87875a779270fbd95c0cc",
+    "semantic_hash": "7057276073d87875a779270fbd95c0cc"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/docs/dashboard-migration-plan.md": {
+    "mtime": 1779403883.2291405,
+    "ast_hash": "3bff20123182c572c26ae807bb1f0607",
+    "semantic_hash": "3bff20123182c572c26ae807bb1f0607"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/docs/handoff-2026-05-21.md": {
+    "mtime": 1779320312.4043498,
+    "ast_hash": "f72ae2e133269171ed666d212b788e44",
+    "semantic_hash": "f72ae2e133269171ed666d212b788e44"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/docs/saas-migration-plan.md": {
+    "mtime": 1779386878.2618053,
+    "ast_hash": "5ce7ad9f6066cdd9eb013d4d04cf6176",
+    "semantic_hash": "5ce7ad9f6066cdd9eb013d4d04cf6176"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/docs/database-design.md": {
+    "mtime": 1779317517.8504891,
+    "ast_hash": "3cede21995a4c1726abe37a1c74d9a8e",
+    "semantic_hash": "3cede21995a4c1726abe37a1c74d9a8e"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/pi/requirements.txt": {
+    "mtime": 1775823738.5922885,
+    "ast_hash": "b3d4dc9dc40452d2d8b75ef5956ae262",
+    "semantic_hash": "b3d4dc9dc40452d2d8b75ef5956ae262"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/pi/SETUP.md": {
+    "mtime": 1775823738.5915637,
+    "ast_hash": "f4318ae4b3949fc77dcc702bc3acb0cd",
+    "semantic_hash": "f4318ae4b3949fc77dcc702bc3acb0cd"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/pi/README.md": {
+    "mtime": 1775823738.5914655,
+    "ast_hash": "fd6d563d66d457e524374722de5db443",
+    "semantic_hash": "fd6d563d66d457e524374722de5db443"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/static/robots.txt": {
+    "mtime": 1775823738.6098742,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/.github/workflows/main.yml": {
+    "mtime": 1775823738.5852952,
+    "ast_hash": "8d1902da459118492c119b76d1ef4fe7",
+    "semantic_hash": "8d1902da459118492c119b76d1ef4fe7"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/app.html": {
+    "mtime": 1775823738.592806,
+    "ast_hash": "e8f20d9bbdd6b5d1b19d651a703e0d1a",
+    "semantic_hash": "e8f20d9bbdd6b5d1b19d651a703e0d1a"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/assets/about.txt": {
+    "mtime": 1775823738.5951288,
+    "ast_hash": "f77e2638f3d3f49481f962968d96b5e9",
+    "semantic_hash": "f77e2638f3d3f49481f962968d96b5e9"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/p1s.png": {
+    "mtime": 1777321279.366377,
+    "ast_hash": "d6ffe6bbe5c72e647973866a387d11b4",
+    "semantic_hash": "d6ffe6bbe5c72e647973866a387d11b4"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/icon.png": {
+    "mtime": 1777321279.3585312,
+    "ast_hash": "3ba4e78d729d51dbeda29afa30df44f8",
+    "semantic_hash": "3ba4e78d729d51dbeda29afa30df44f8"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/Square30x30Logo.png": {
+    "mtime": 1777321279.3482237,
+    "ast_hash": "6bdad6eec74e667167f0ae987ffcecc2",
+    "semantic_hash": "6bdad6eec74e667167f0ae987ffcecc2"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/Square150x150Logo.png": {
+    "mtime": 1777321279.347681,
+    "ast_hash": "91ebdcf1168e34ef37a3c9e580d3a4bf",
+    "semantic_hash": "91ebdcf1168e34ef37a3c9e580d3a4bf"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/StoreLogo.png": {
+    "mtime": 1777321279.34991,
+    "ast_hash": "19ca55d0d886638065ce98c2bcbc922a",
+    "semantic_hash": "19ca55d0d886638065ce98c2bcbc922a"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/Square107x107Logo.png": {
+    "mtime": 1777321279.346463,
+    "ast_hash": "2f0589f8d3901c9b0c6d5429304277a3",
+    "semantic_hash": "2f0589f8d3901c9b0c6d5429304277a3"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/Square89x89Logo.png": {
+    "mtime": 1777321279.3497398,
+    "ast_hash": "6409e8f65b8249d5dc95973ff8e8b729",
+    "semantic_hash": "6409e8f65b8249d5dc95973ff8e8b729"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/Square310x310Logo.png": {
+    "mtime": 1777321279.3485396,
+    "ast_hash": "da554e812b5eb47ba6f5e5652d4c2bc6",
+    "semantic_hash": "da554e812b5eb47ba6f5e5652d4c2bc6"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/Square142x142Logo.png": {
+    "mtime": 1777321279.3468072,
+    "ast_hash": "e7b155f388cf3c6a76f8b4149cf19697",
+    "semantic_hash": "e7b155f388cf3c6a76f8b4149cf19697"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/128x128.png": {
+    "mtime": 1777321279.3446505,
+    "ast_hash": "5360efba416df97c5694aab9802526c8",
+    "semantic_hash": "5360efba416df97c5694aab9802526c8"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/Square284x284Logo.png": {
+    "mtime": 1777321279.34798,
+    "ast_hash": "b320ba82be994fa8a8c9cdc83a53cf39",
+    "semantic_hash": "b320ba82be994fa8a8c9cdc83a53cf39"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/32x32.png": {
+    "mtime": 1777321279.3453588,
+    "ast_hash": "b149bdef27bb9c6efef22aac77844a40",
+    "semantic_hash": "b149bdef27bb9c6efef22aac77844a40"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/Square44x44Logo.png": {
+    "mtime": 1777321279.3487897,
+    "ast_hash": "4abb7ed4696bd1be9eee7c30aa89d7eb",
+    "semantic_hash": "4abb7ed4696bd1be9eee7c30aa89d7eb"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/Square71x71Logo.png": {
+    "mtime": 1777321279.3490388,
+    "ast_hash": "6e02eaaf4d9b8904aa76356d4883f0cd",
+    "semantic_hash": "6e02eaaf4d9b8904aa76356d4883f0cd"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/128x128@2x.png": {
+    "mtime": 1777321279.3451073,
+    "ast_hash": "734a7ed0849837013e1138ea5908cf65",
+    "semantic_hash": "734a7ed0849837013e1138ea5908cf65"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/64x64.png": {
+    "mtime": 1777321279.3456323,
+    "ast_hash": "eabf8438e7f87558f29146653c2ec791",
+    "semantic_hash": "eabf8438e7f87558f29146653c2ec791"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-20x20@3x.png": {
+    "mtime": 1777321279.3594596,
+    "ast_hash": "c0aeae30231312bd5fc12013beecce39",
+    "semantic_hash": "c0aeae30231312bd5fc12013beecce39"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-512@2x.png": {
+    "mtime": 1777321279.3628533,
+    "ast_hash": "b3a409723ce9652185bfaf03ec30520f",
+    "semantic_hash": "b3a409723ce9652185bfaf03ec30520f"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-83.5x83.5@2x.png": {
+    "mtime": 1777321279.3646734,
+    "ast_hash": "1d9258f45a7a120e7fa1e4b527f70622",
+    "semantic_hash": "1d9258f45a7a120e7fa1e4b527f70622"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-20x20@2x.png": {
+    "mtime": 1777321279.3591528,
+    "ast_hash": "2ece0a9e4494f9fe1e5850521eafc4e7",
+    "semantic_hash": "2ece0a9e4494f9fe1e5850521eafc4e7"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-29x29@3x.png": {
+    "mtime": 1777321279.361256,
+    "ast_hash": "eac0bc5ec1f7dcc568de7cf10159a7a4",
+    "semantic_hash": "eac0bc5ec1f7dcc568de7cf10159a7a4"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-40x40@2x.png": {
+    "mtime": 1777321279.3616784,
+    "ast_hash": "1a6b07eae6592ca6bfcda0f74185ec9c",
+    "semantic_hash": "1a6b07eae6592ca6bfcda0f74185ec9c"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-60x60@3x.png": {
+    "mtime": 1777321279.363394,
+    "ast_hash": "32af6ea709f8b5e90034841a757a6896",
+    "semantic_hash": "32af6ea709f8b5e90034841a757a6896"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-40x40@2x-1.png": {
+    "mtime": 1777321279.361576,
+    "ast_hash": "1a6b07eae6592ca6bfcda0f74185ec9c",
+    "semantic_hash": "1a6b07eae6592ca6bfcda0f74185ec9c"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-20x20@2x-1.png": {
+    "mtime": 1777321279.3590398,
+    "ast_hash": "2ece0a9e4494f9fe1e5850521eafc4e7",
+    "semantic_hash": "2ece0a9e4494f9fe1e5850521eafc4e7"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-60x60@2x.png": {
+    "mtime": 1777321279.363012,
+    "ast_hash": "0f2476824841c0f173b087f1fd29b450",
+    "semantic_hash": "0f2476824841c0f173b087f1fd29b450"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-76x76@1x.png": {
+    "mtime": 1777321279.363635,
+    "ast_hash": "abdb015e8e4f3dab48e1aa2a33c60a6d",
+    "semantic_hash": "abdb015e8e4f3dab48e1aa2a33c60a6d"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-40x40@3x.png": {
+    "mtime": 1777321279.3619044,
+    "ast_hash": "0f2476824841c0f173b087f1fd29b450",
+    "semantic_hash": "0f2476824841c0f173b087f1fd29b450"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-29x29@2x.png": {
+    "mtime": 1777321279.3609805,
+    "ast_hash": "b1388939dbd2d03a8b18e0fc3cad8018",
+    "semantic_hash": "b1388939dbd2d03a8b18e0fc3cad8018"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-76x76@2x.png": {
+    "mtime": 1777321279.3642347,
+    "ast_hash": "c477fece15c7115e64c7c5b770d5af55",
+    "semantic_hash": "c477fece15c7115e64c7c5b770d5af55"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-29x29@1x.png": {
+    "mtime": 1777321279.3597214,
+    "ast_hash": "11d0177e7fc31d412a2f326401257d5b",
+    "semantic_hash": "11d0177e7fc31d412a2f326401257d5b"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-40x40@1x.png": {
+    "mtime": 1777321279.361357,
+    "ast_hash": "2ece0a9e4494f9fe1e5850521eafc4e7",
+    "semantic_hash": "2ece0a9e4494f9fe1e5850521eafc4e7"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-20x20@1x.png": {
+    "mtime": 1777321279.3588352,
+    "ast_hash": "8419fe1d416e9f025a55db06caff8d03",
+    "semantic_hash": "8419fe1d416e9f025a55db06caff8d03"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/ios/AppIcon-29x29@2x-1.png": {
+    "mtime": 1777321279.3608634,
+    "ast_hash": "b1388939dbd2d03a8b18e0fc3cad8018",
+    "semantic_hash": "b1388939dbd2d03a8b18e0fc3cad8018"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-mdpi/ic_launcher_foreground.png": {
+    "mtime": 1777321279.3519232,
+    "ast_hash": "ab4dc7c133c63e6b1d23b2ccdc9c31e9",
+    "semantic_hash": "ab4dc7c133c63e6b1d23b2ccdc9c31e9"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-mdpi/ic_launcher.png": {
+    "mtime": 1777321279.3515754,
+    "ast_hash": "a938efcc62cf1152b014bdc597a9097d",
+    "semantic_hash": "a938efcc62cf1152b014bdc597a9097d"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-mdpi/ic_launcher_round.png": {
+    "mtime": 1777321279.352641,
+    "ast_hash": "e6dd0d5970645265b2266b194ea912a2",
+    "semantic_hash": "e6dd0d5970645265b2266b194ea912a2"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-hdpi/ic_launcher_foreground.png": {
+    "mtime": 1777321279.3509078,
+    "ast_hash": "b5f4d11ffb23a70f872c3e83a487aed8",
+    "semantic_hash": "b5f4d11ffb23a70f872c3e83a487aed8"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-hdpi/ic_launcher.png": {
+    "mtime": 1777321279.350461,
+    "ast_hash": "d397ee123d818875ad55994c134fd281",
+    "semantic_hash": "d397ee123d818875ad55994c134fd281"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-hdpi/ic_launcher_round.png": {
+    "mtime": 1777321279.35108,
+    "ast_hash": "451e7cfa9b1109fad0bccd09b6f87f59",
+    "semantic_hash": "451e7cfa9b1109fad0bccd09b6f87f59"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_foreground.png": {
+    "mtime": 1777321279.3556993,
+    "ast_hash": "02865bb62d9138b92270f37be818fd84",
+    "semantic_hash": "02865bb62d9138b92270f37be818fd84"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher.png": {
+    "mtime": 1777321279.355269,
+    "ast_hash": "2cb42dc452756ea197cea171389770fa",
+    "semantic_hash": "2cb42dc452756ea197cea171389770fa"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher_round.png": {
+    "mtime": 1777321279.3562956,
+    "ast_hash": "0915337f3c333849446da36ff41d0481",
+    "semantic_hash": "0915337f3c333849446da36ff41d0481"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_foreground.png": {
+    "mtime": 1777321279.3543298,
+    "ast_hash": "5207ee84e2e2e86804f4e587f1b12705",
+    "semantic_hash": "5207ee84e2e2e86804f4e587f1b12705"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher.png": {
+    "mtime": 1777321279.3540363,
+    "ast_hash": "40fc908fc46e4a445795cf38a4770153",
+    "semantic_hash": "40fc908fc46e4a445795cf38a4770153"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-xxhdpi/ic_launcher_round.png": {
+    "mtime": 1777321279.354727,
+    "ast_hash": "fd5f35617b92e271c2227efc8649b3ba",
+    "semantic_hash": "fd5f35617b92e271c2227efc8649b3ba"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_foreground.png": {
+    "mtime": 1777321279.3534918,
+    "ast_hash": "9bb2c97e54c43c0861a12e1deebd3034",
+    "semantic_hash": "9bb2c97e54c43c0861a12e1deebd3034"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-xhdpi/ic_launcher.png": {
+    "mtime": 1777321279.3530881,
+    "ast_hash": "50933d672c1f163b2b0e4e2f33d3ab9f",
+    "semantic_hash": "50933d672c1f163b2b0e4e2f33d3ab9f"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/desktop/src-tauri/icons/android/mipmap-xhdpi/ic_launcher_round.png": {
+    "mtime": 1777321279.353739,
+    "ast_hash": "10019be9a0216df2775e90617c9e5f01",
+    "semantic_hash": "10019be9a0216df2775e90617c9e5f01"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/static/images/kuechenrollenHalter.JPG": {
+    "mtime": 1775823738.608235,
+    "ast_hash": "f5eed0110cf98595edabd2fc617dc36a",
+    "semantic_hash": "f5eed0110cf98595edabd2fc617dc36a"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/static/images/haken.JPG": {
+    "mtime": 1775823738.607498,
+    "ast_hash": "7f14214414b95c99f354a2c70ca300c6",
+    "semantic_hash": "7f14214414b95c99f354a2c70ca300c6"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/static/images/hakenhalter.JPG": {
+    "mtime": 1775823738.6076472,
+    "ast_hash": "e1a41f7ee534c109e59a47db0eec4578",
+    "semantic_hash": "e1a41f7ee534c109e59a47db0eec4578"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/static/images/klohalter.JPG": {
+    "mtime": 1775823738.6078556,
+    "ast_hash": "9927cf2c570de721eeb494d2cc9500cb",
+    "semantic_hash": "9927cf2c570de721eeb494d2cc9500cb"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/static/images/screen.png": {
+    "mtime": 1775823738.609295,
+    "ast_hash": "5f3b4075c43c52a1352a5be1fb62e932",
+    "semantic_hash": "5f3b4075c43c52a1352a5be1fb62e932"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/static/images/vase.JPG": {
+    "mtime": 1775823738.6098309,
+    "ast_hash": "05f5190f3d4b132ca5ab79ba6c0f6c21",
+    "semantic_hash": "05f5190f3d4b132ca5ab79ba6c0f6c21"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/static/images/st\u00f6psel.JPG": {
+    "mtime": 1775823738.6096528,
+    "ast_hash": "bbbe2b302953ba0a8de78dc1f5c1b43d",
+    "semantic_hash": "bbbe2b302953ba0a8de78dc1f5c1b43d"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/static/images/stab.JPG": {
+    "mtime": 1775823738.6094258,
+    "ast_hash": "d5cd0e0bb6e663c50bebe7e1836d9c56",
+    "semantic_hash": "d5cd0e0bb6e663c50bebe7e1836d9c56"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/assets/favicon-16x16.png": {
+    "mtime": 1775823738.5962007,
+    "ast_hash": "c5916b95753237c21f5d403cd7ab23cd",
+    "semantic_hash": "c5916b95753237c21f5d403cd7ab23cd"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/assets/p1s.png": {
+    "mtime": 1775823738.5973837,
+    "ast_hash": "d6ffe6bbe5c72e647973866a387d11b4",
+    "semantic_hash": "d6ffe6bbe5c72e647973866a387d11b4"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/assets/android-chrome-192x192.png": {
+    "mtime": 1775823738.5953152,
+    "ast_hash": "51d94e6b58937cb6e2e46238e709e97f",
+    "semantic_hash": "51d94e6b58937cb6e2e46238e709e97f"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/assets/apple-touch-icon.png": {
+    "mtime": 1775823738.596112,
+    "ast_hash": "d4c2830c2b7421212b8b782620aeb7e0",
+    "semantic_hash": "d4c2830c2b7421212b8b782620aeb7e0"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/assets/android-chrome-512x512.png": {
+    "mtime": 1775823738.5955355,
+    "ast_hash": "bdd55ad3a69dc04a05d7e012b105ea55",
+    "semantic_hash": "bdd55ad3a69dc04a05d7e012b105ea55"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/assets/H2S.png": {
+    "mtime": 1775823738.5947232,
+    "ast_hash": "dacb464f92d4003441bea808b25c5ee3",
+    "semantic_hash": "dacb464f92d4003441bea808b25c5ee3"
+  },
+  "/Users/linus/Documents/dilemma/dillemaDev/PrintFarmCompanion/src/lib/assets/favicon-32x32.png": {
+    "mtime": 1775823738.5962899,
+    "ast_hash": "cdc1f73788c2826d27fe2079e8429fce",
+    "semantic_hash": "cdc1f73788c2826d27fe2079e8429fce"
+  }
+}

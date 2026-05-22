@@ -20,12 +20,11 @@ export interface ProductSkuMapping {
 export interface Product {
   id: number;
   name: string;
-  sku: string;
   category: string | null;
   in_stock: number;
   min_threshold: number;
   modules: ProductModule[];
-  skus: ProductSkuMapping[];
+  shopify_skus: ProductSkuMapping[];
 }
 
 export const load: PageServerLoad = async ({ platform }) => {
@@ -74,12 +73,11 @@ export const load: PageServerLoad = async ({ platform }) => {
   const products: Product[] = items.map(item => ({
     id: item.id,
     name: item.name,
-    sku: item.sku,
     category: item.category,
     in_stock: item.in_stock,
     min_threshold: item.min_threshold,
     modules: modulesByObjectId[item.id] ?? [],
-    skus: skusByObjectId[item.id] ?? [],
+    shopify_skus: skusByObjectId[item.id] ?? [],
   }));
 
   const categories = [...new Set(products.map(p => p.category).filter(Boolean) as string[])].sort();
@@ -95,18 +93,16 @@ export const actions: Actions = {
     const form = await request.formData();
     const id = form.get('id') ? Number(form.get('id')) : null;
     const name = (form.get('name') as string | null)?.trim();
-    const sku = (form.get('sku') as string | null)?.trim();
     const category = (form.get('category') as string | null)?.trim() || null;
-    const min_threshold = Number(form.get('min_threshold') ?? 5);
+    const min_threshold = Number(form.get('min_threshold') ?? 0);
 
-    if (!name || !sku) return fail(400, { error: 'Name and SKU are required' });
-    if (!/^[a-z0-9-]+$/.test(sku)) return fail(400, { error: 'SKU may only contain lowercase letters, numbers and hyphens' });
+    if (!name) return fail(400, { error: 'Name is required' });
 
     if (id) {
-      const result = await updateObject(db, id, { name, sku, minThreshold: min_threshold, category });
+      const result = await updateObject(db, id, { name, minThreshold: min_threshold, category });
       if (!result.success) return fail(400, { error: result.error });
     } else {
-      const result = await createObject(db, { name, sku, minThreshold: min_threshold, category });
+      const result = await createObject(db, { name, minThreshold: min_threshold, category });
       if (!result.success) return fail(409, { error: result.error });
     }
 

@@ -71,6 +71,8 @@ export interface Printer {
   printer_preset_id: number;
   loaded_plate_id: number | null;
   loaded_nozzle_diameter: number | null;
+  /** Number of filament slots. 1 = single-colour, 4 = AMS, etc. */
+  slot_count: number;
   /** false = decommissioned. Row kept so historical print_jobs still resolve. */
   active: boolean;
   created_at: number;
@@ -102,7 +104,7 @@ export interface PrinterSecrets {
 export interface PrinterFull extends Printer {
   preset?: PrinterPreset | null;
   loaded_plate?: PlatePreset | null;
-  loaded_spools?: (PrinterLoadedSpool & { spool?: SpoolWithPreset | null })[];
+  loaded_spools?: (PrinterLoadedSpool & { spool: SpoolWithPreset | null })[];
   secrets?: PrinterSecrets | null;
 }
 
@@ -161,6 +163,8 @@ export interface PrintModuleFull extends PrintModule {
   plate_preset?: PlatePreset | null;
   object?: ObjectItem | null;
   filament_slots?: (ModuleFilamentSlot & { preset?: SpoolPreset | null })[];
+  /** Spool preset required at slot 0 — joined from module_filament_slots. */
+  default_spool_preset_id?: number | null;
 }
 
 // ============================================================================
@@ -207,6 +211,22 @@ export interface PrintJobFull extends PrintJob {
   spools?: (PrintJobSpool & { spool?: SpoolWithPreset | null })[];
 }
 
+/**
+ * PrintJob as returned by getActivePrintJobs / getAllPrintJobs —
+ * includes ad-hoc columns from SQL joins (module + printer aliases).
+ */
+export interface PrintJobWithDetails extends PrintJob {
+  module_name?: string | null;
+  module_weight?: number | null;
+  module_thumbnail?: string | null;
+  expected_time_minutes?: number | null;
+  objects_per_print?: number | null;
+  printer_name?: string | null;
+  printer_serial?: string | null;
+  /** Optional client-side field set when the Pi reports live progress. */
+  progress?: number | null;
+}
+
 // ============================================================================
 // QUEUE TYPES
 // ============================================================================
@@ -230,9 +250,8 @@ export interface PrinterQueuedJob {
 /** A finished product produced by the farm. Single source of truth for stock. */
 export interface ObjectItem {
   id: number;
+  /** Unique display name. "SKU" only lives in shopify_sku_mapping.shopify_sku. */
   name: string;
-  /** Stable human-readable identifier. Survives renames. Used for Shopify mapping. */
-  sku: string;
   in_stock: number;
   min_threshold: number;
   last_count_date: number | null;
@@ -345,7 +364,7 @@ export interface PiStatus {
 export type InventoryPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW';
 
 export interface ObjectWithVelocity {
-  sku: string;
+  id: number;
   name: string;
   in_stock: number;
   min_threshold: number;
@@ -357,7 +376,7 @@ export interface ObjectWithVelocity {
 }
 
 export interface SalesVelocity {
-  sku: string;
+  object_id: number;
   daily_velocity: number;
 }
 
@@ -367,7 +386,7 @@ export interface AIRecommendationContext {
 }
 
 export interface PrioritizedObjectItem {
-  sku: string;
+  id: number;
   name: string;
   in_stock: number;
   min_threshold: number;
@@ -389,7 +408,6 @@ export interface PrioritizedInventory {
 export interface SpoolSuggestion {
   preset_id: number;
   priority: InventoryPriority;
-  object_sku: string;
   object_name: string;
   in_stock: number;
   daily_velocity: number;
@@ -403,12 +421,12 @@ export interface ModuleContext {
   id: number;
   name: string;
   object_id: number | null;
+  /** Name of the linked object (joined from objects.name). */
+  object_name: string | null;
   weight: number;
   expected_time_minutes: number;
   objects_per_print: number;
   printer_preset_id: number;
-  /** SKU of the linked object (joined from objects.sku). */
-  object_sku: string | null;
   /** Spool preset required at slot 0 (joined from module_filament_slots). */
   spool_preset_id: number | null;
 }
@@ -515,6 +533,7 @@ export interface NewSpoolPreset {
 export interface NewPrinter {
   name: string;
   printer_preset_id: number;
+  slot_count?: number;
 }
 
 // ============================================================================

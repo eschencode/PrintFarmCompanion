@@ -49,14 +49,13 @@
   }
 
   function getItemLabel(mapping: any): string {
-    return mapping.object_name || mapping.object_sku || `Object #${mapping.object_id}`;
+    return mapping.object_name || `Object #${mapping.object_id}`;
   }
 
   $: groupedMappings = (() => {
     const search = skuSearch.toLowerCase();
     const filtered = (data.skuMappings as any[] ?? []).filter((m) =>
       m.shopify_sku.toLowerCase().includes(search) ||
-      (m.object_sku || '').toLowerCase().includes(search) ||
       getItemLabel(m).toLowerCase().includes(search)
     );
     const groups: Record<string, typeof filtered> = {};
@@ -70,13 +69,6 @@
   // ── Inline inventory item creator ───────────────────────────────────────────
   let showNewInventoryItem = false;
   let newInvName = '';
-  let newInvSlug = '';
-
-  function slugify(text: string): string {
-    return text.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
-  }
-
-  $: if (newInvName && !newInvSlug) newInvSlug = slugify(newInvName);
 
   // ── Shopify test result ─────────────────────────────────────────────────────
   let testingShopify = false;
@@ -301,7 +293,6 @@
               <div class="flex-1 min-w-0">
                 <p class="text-sm text-zinc-800 dark:text-zinc-200">{item.name}</p>
               </div>
-              <code class="text-[11px] font-mono text-zinc-400 bg-zinc-50 dark:bg-[#161616] px-1.5 py-0.5 rounded">{item.sku}</code>
               <span class="text-xs text-zinc-400 tabular-nums">{item.in_stock} in stock</span>
             </div>
           {/each}
@@ -393,7 +384,7 @@
                   >
                     <option value={0}>— select item —</option>
                     {#each (data.inventoryItems as any[] ?? []) as inv}
-                      <option value={inv.id}>{inv.name} ({inv.sku})</option>
+                      <option value={inv.id}>{inv.name}</option>
                     {/each}
                   </select>
 
@@ -435,39 +426,31 @@
               </button>
             {:else}
               <div class="mt-3 p-3 bg-zinc-50 dark:bg-[#161616] rounded-lg border border-zinc-100 dark:border-[#1e1e1e] space-y-2">
-                <p class="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400">New Inventory Item</p>
-                <div class="grid grid-cols-2 gap-2">
-                  <div>
-                    <label for="newInvName" class="text-[10px] text-zinc-400 block mb-1">Name</label>
-                    <input id="newInvName" type="text" bind:value={newInvName} oninput={() => newInvSlug = slugify(newInvName)} placeholder="Widget Black XL" class="w-full h-8 bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-md px-2.5 text-xs text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"/>
-                  </div>
-                  <div>
-                    <label for="newInvSlug" class="text-[10px] text-zinc-400 block mb-1">Slug</label>
-                    <input id="newInvSlug" type="text" bind:value={newInvSlug} placeholder="widget-black-xl" class="w-full h-8 bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-md px-2.5 text-xs font-mono text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"/>
-                  </div>
+                <p class="text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-400">New Object</p>
+                <div>
+                  <label for="newInvName" class="text-[10px] text-zinc-400 block mb-1">Name</label>
+                  <input id="newInvName" type="text" bind:value={newInvName} placeholder="Widget Black XL" class="w-full h-8 bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-md px-2.5 text-xs text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"/>
                 </div>
                 <div class="flex gap-2">
                   <form method="POST" action="?/addInventoryItem"
                     use:enhance={({ formData }) => {
                       formData.set('name', newInvName);
-                      formData.set('slug', newInvSlug);
                       return async ({ result, update }) => {
                         if (result.type === 'success') {
-                          (data.inventoryItems as any[]).push({ name: newInvName, slug: newInvSlug, in_stock: 0 });
+                          (data.inventoryItems as any[]).push({ name: newInvName, in_stock: 0 });
                           data.inventoryItems = [...(data.inventoryItems as any[])];
                           newInvName = '';
-                          newInvSlug = '';
                           showNewInventoryItem = false;
                         }
                         await update({ reset: false });
                       };
                     }}
                   >
-                    <button type="submit" disabled={!newInvName.trim() || !newInvSlug.trim()} class="h-7 px-3 rounded-md text-[11px] font-medium bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    <button type="submit" disabled={!newInvName.trim()} class="h-7 px-3 rounded-md text-[11px] font-medium bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                       Create
                     </button>
                   </form>
-                  <button type="button" onclick={() => { showNewInventoryItem = false; newInvName = ''; newInvSlug = ''; }} class="h-7 px-3 rounded-md text-[11px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
+                  <button type="button" onclick={() => { showNewInventoryItem = false; newInvName = ''; }} class="h-7 px-3 rounded-md text-[11px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
                     Cancel
                   </button>
                 </div>

@@ -3,8 +3,8 @@
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
 
-  interface SetComponent { inventory_slug: string; quantity: number; }
-  interface SetDefinition { sku: string; label: string; components: SetComponent[]; }
+  interface SetComponent { object_id: number; quantity: number; }
+  interface SetDefinition { shopify_sku: string; label: string; components: SetComponent[]; }
 
   let { data }: { data: PageData } = $props();
 
@@ -13,44 +13,40 @@
   let submitting = $state(false);
   let successMessage = $state('');
 
-  // Set sell state
+  // Set sell state — keyed by shopify_sku
   let setCounts = $state<Record<string, number>>({});
   let setSearch = $state('');
 
-  // Direct sell state
+  // Direct sell state — keyed by String(item.id)
   let directCounts = $state<Record<string, number>>({});
   let directSearch = $state('');
 
-  function getItemName(slug: string): string {
-    return (data.items || []).find(i => i.slug === slug)?.name || slug;
+  function getItemName(idKey: string): string {
+    const id = parseInt(idKey);
+    return (data.items || []).find(i => i.id === id)?.name || idKey;
   }
 
   const visibleSets = $derived(
     (data.setDefinitions || []).filter(s =>
-      !setSearch || s.label.toLowerCase().includes(setSearch.toLowerCase()) || s.sku.toLowerCase().includes(setSearch.toLowerCase())
+      !setSearch || s.label.toLowerCase().includes(setSearch.toLowerCase()) || s.shopify_sku.toLowerCase().includes(setSearch.toLowerCase())
     )
   );
 
   const visibleDirectItems = $derived(
-    (data.items || [])
-      .filter(i => {
-        const n = i.name.toLowerCase();
-        const s = i.slug?.toLowerCase() || '';
-        return !(n.includes('vase shrunk') || s.includes('vase-shrunk'));
-      })
-      .filter(i =>
-        !directSearch || i.name.toLowerCase().includes(directSearch.toLowerCase()) || i.slug?.toLowerCase().includes(directSearch.toLowerCase())
-      )
+    (data.items || []).filter(i =>
+      !directSearch || i.name.toLowerCase().includes(directSearch.toLowerCase())
+    )
   );
 
-  // Summaries
+  // Summaries — keyed by String(object_id)
   const setSummary = $derived(() => {
     const s: Record<string, number> = {};
     for (const set of (data.setDefinitions || [])) {
-      const n = setCounts[set.sku] || 0;
+      const n = setCounts[set.shopify_sku] || 0;
       if (n <= 0) continue;
       for (const comp of set.components) {
-        s[comp.inventory_slug] = (s[comp.inventory_slug] || 0) + comp.quantity * n;
+        const k = String(comp.object_id);
+        s[k] = (s[k] || 0) + comp.quantity * n;
       }
     }
     return s;
@@ -58,8 +54,8 @@
 
   const directSummary = $derived(() => {
     const s: Record<string, number> = {};
-    for (const [slug, count] of Object.entries(directCounts)) {
-      if (count > 0) s[slug] = count;
+    for (const [idKey, count] of Object.entries(directCounts)) {
+      if (count > 0) s[idKey] = count;
     }
     return s;
   });
@@ -119,22 +115,22 @@
               <div class="flex items-center gap-3 px-4 py-3 border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#111111] hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
                 <div class="flex-1 min-w-0">
                   <p class="text-sm font-medium text-zinc-900 dark:text-zinc-50 truncate">{set.label}</p>
-                  <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">{set.components.map(c => `${c.quantity}× ${getItemName(c.inventory_slug)}`).join(' + ')}</p>
+                  <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">{set.components.map(c => `${c.quantity}× ${getItemName(String(c.object_id))}`).join(' + ')}</p>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
                   <button
-                    onclick={() => { setCounts[set.sku] = Math.max(0, (setCounts[set.sku] || 0) - 1); setCounts = { ...setCounts }; }}
-                    disabled={(setCounts[set.sku] || 0) === 0}
+                    onclick={() => { setCounts[set.shopify_sku] = Math.max(0, (setCounts[set.shopify_sku] || 0) - 1); setCounts = { ...setCounts }; }}
+                    disabled={(setCounts[set.shopify_sku] || 0) === 0}
                     class={minusBtnCls}
                   >−</button>
                   <input
                     type="number" min="0"
-                    value={setCounts[set.sku] || 0}
-                    oninput={(e) => { setCounts[set.sku] = parseInt((e.target as HTMLInputElement).value) || 0; setCounts = { ...setCounts }; }}
+                    value={setCounts[set.shopify_sku] || 0}
+                    oninput={(e) => { setCounts[set.shopify_sku] = parseInt((e.target as HTMLInputElement).value) || 0; setCounts = { ...setCounts }; }}
                     class={stepperInputCls}
                   />
                   <button
-                    onclick={() => { setCounts[set.sku] = (setCounts[set.sku] || 0) + 1; setCounts = { ...setCounts }; }}
+                    onclick={() => { setCounts[set.shopify_sku] = (setCounts[set.shopify_sku] || 0) + 1; setCounts = { ...setCounts }; }}
                     class={plusBtnCls}
                   >+</button>
                 </div>
@@ -153,31 +149,31 @@
         {:else}
           <div class="space-y-1.5">
             {#each visibleDirectItems as item}
-              {@const slug = item.slug || ''}
+              {@const iKey = String(item.id)}
               <div class="flex items-center gap-3 px-4 py-2.5 border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#111111] hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
                 <div class="flex-1 min-w-0">
                   <p class="text-sm text-zinc-900 dark:text-zinc-50 truncate">{item.name}</p>
                   <p class="text-xs text-zinc-400 dark:text-zinc-500">
                     In stock: {item.in_stock}
-                    {#if (directCounts[slug] || 0) > 0}
-                      → {Math.max(0, item.in_stock - (directCounts[slug] || 0))} after sale
+                    {#if (directCounts[iKey] || 0) > 0}
+                      → {Math.max(0, item.in_stock - (directCounts[iKey] || 0))} after sale
                     {/if}
                   </p>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
                   <button
-                    onclick={() => { directCounts[slug] = Math.max(0, (directCounts[slug] || 0) - 1); directCounts = { ...directCounts }; }}
-                    disabled={(directCounts[slug] || 0) === 0}
+                    onclick={() => { directCounts[iKey] = Math.max(0, (directCounts[iKey] || 0) - 1); directCounts = { ...directCounts }; }}
+                    disabled={(directCounts[iKey] || 0) === 0}
                     class={minusBtnCls}
                   >−</button>
                   <input
                     type="number" min="0"
-                    value={directCounts[slug] || 0}
-                    oninput={(e) => { directCounts[slug] = parseInt((e.target as HTMLInputElement).value) || 0; directCounts = { ...directCounts }; }}
+                    value={directCounts[iKey] || 0}
+                    oninput={(e) => { directCounts[iKey] = parseInt((e.target as HTMLInputElement).value) || 0; directCounts = { ...directCounts }; }}
                     class={stepperInputCls}
                   />
                   <button
-                    onclick={() => { directCounts[slug] = (directCounts[slug] || 0) + 1; directCounts = { ...directCounts }; }}
+                    onclick={() => { directCounts[iKey] = (directCounts[iKey] || 0) + 1; directCounts = { ...directCounts }; }}
                     class={plusBtnCls}
                   >+</button>
                 </div>
@@ -195,9 +191,9 @@
           <h2 class="text-xs font-medium text-zinc-500 uppercase tracking-wide">Items to deduct</h2>
         </div>
         <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {#each Object.entries(activeSummary()) as [slug, qty]}
+          {#each Object.entries(activeSummary()) as [idKey, qty]}
             <div class="flex items-center justify-between px-4 py-2.5">
-              <span class="text-sm text-zinc-700 dark:text-zinc-300">{getItemName(slug)}</span>
+              <span class="text-sm text-zinc-700 dark:text-zinc-300">{getItemName(idKey)}</span>
               <span class="text-sm font-medium text-red-600 dark:text-red-400">−{qty}</span>
             </div>
           {/each}
@@ -228,11 +224,11 @@
         >
           {#if activeMode === 'sets'}
             <input type="hidden" name="entries" value={JSON.stringify(
-              Object.entries(setCounts).filter(([, c]) => (c || 0) > 0).map(([sku, count]) => ({ sku, count: count || 0 }))
+              Object.entries(setCounts).filter(([, c]) => (c || 0) > 0).map(([shopify_sku, count]) => ({ shopify_sku, count: count || 0 }))
             )} />
           {:else}
             <input type="hidden" name="entries" value={JSON.stringify(
-              Object.entries(directCounts).filter(([, c]) => (c || 0) > 0).map(([slug, count]) => ({ slug, count: count || 0 }))
+              Object.entries(directCounts).filter(([, c]) => (c || 0) > 0).map(([idKey, count]) => ({ id: parseInt(idKey), count: count || 0 }))
             )} />
           {/if}
           <button

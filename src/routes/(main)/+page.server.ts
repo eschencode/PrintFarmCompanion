@@ -30,7 +30,7 @@ export const load: PageServerLoad = async ({ platform }) => {
       printer_ip: p.secrets?.printer_ip ?? null,
       printer_access_code: p.secrets?.access_code ?? null,
       transport: p.secrets?.transport ?? 'auto',
-      loaded_spool: (slot0 as any)?.spool ?? null,
+      loaded_spool: slot0?.spool ?? null,
       status: !p.active ? 'inactive' : isActivePrinting ? 'printing' : 'idle',
     };
   });
@@ -52,6 +52,19 @@ export const actions: Actions = {
 
     const result = await db.loadSpool(database, { printerId, presetId, initialWeight, slotIndex });
     return result;
+  },
+
+  loadExistingSpool: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) return { success: false, error: 'Database not available' };
+
+    const formData = await request.formData();
+    const printerId = Number(formData.get('printerId'));
+    const slotIndex = Number(formData.get('slotIndex') ?? 0);
+    const spoolId = Number(formData.get('spoolId'));
+
+    if (!spoolId) return { success: false, error: 'No spool selected' };
+    return db.loadExistingSpoolIntoSlot(database, printerId, slotIndex, spoolId);
   },
 
   unloadSpool: async ({ platform, request }) => {

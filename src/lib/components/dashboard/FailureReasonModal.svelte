@@ -1,15 +1,15 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import type { SubmitFunction } from '@sveltejs/kit';
-  import type { Spool, PrintJobExtended } from '$lib/types';
+  import type { SpoolWithPreset, PrintJobWithDetails } from '$lib/types';
 
   /**
    * Modal for recording why a print failed and whether material was consumed.
    * Internal selection state is kept here; the form submission is handled by the
    * completePrintEnhance callback defined in the parent (it must close over parent state).
    */
-  export let activePrintJob: PrintJobExtended | undefined;
-  export let loadedSpool: Spool | null;
+  export let activePrintJob: PrintJobWithDetails | undefined;
+  export let loadedSpool: SpoolWithPreset | null;
   export let onClose: () => void;
   /** enhance callback defined in parent — closes over selectedPrinter and close functions. */
   export let completePrintEnhance: SubmitFunction;
@@ -87,7 +87,7 @@
                 {/if}
               </div>
               <p class="text-xs text-zinc-400 dark:text-zinc-600 tabular-nums">
-                Deduct {activePrintJob.weight}g from spool
+                Deduct {activePrintJob.module_weight ?? 0}g from spool
               </p>
             </button>
 
@@ -188,7 +188,7 @@
 
             <!-- Determine actual weight based on user choice -->
             {#if selectedFailureReason === 'deduct'}
-              <input type="hidden" name="actualWeight" value={activePrintJob.weight} />
+              <input type="hidden" name="actualWeight" value={activePrintJob.module_weight ?? 0} />
             {:else}
               <input type="hidden" name="actualWeight" value="0" />
             {/if}

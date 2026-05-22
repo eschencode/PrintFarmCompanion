@@ -16,7 +16,7 @@
   export let onClose: () => void;
   export let onLoadSpool: () => void;
   export let onSwitchToManual: () => void;
-  export let onEnqueue: (module: PrintModule, printer: Printer) => void;
+  export let onEnqueue: (module: PrintModuleFull, printer: DashboardPrinter) => void;
 </script>
 
 <div
@@ -78,8 +78,8 @@
         <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22] mb-4">
           <p class="text-[10px] uppercase tracking-widest text-zinc-400 mb-2">Loaded Spool</p>
           <div class="flex items-center gap-3">
-            <div class="w-3 h-3 rounded-full shrink-0" style="background-color: {(loadedSpool as any).color ?? '#888'}"></div>
-            <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{(loadedSpool as any).brand ?? ''} {(loadedSpool as any).material ?? ''}</span>
+            <div class="w-3 h-3 rounded-full shrink-0" style="background-color: {loadedSpool.preset?.color ?? '#888'}"></div>
+            <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{loadedSpool.preset?.brand ?? ''} {loadedSpool.preset?.material ?? ''}</span>
             <span class="ml-auto text-xs text-zinc-400 tabular-nums">{loadedSpool.remaining_weight}g left</span>
           </div>
         </div>
@@ -87,7 +87,7 @@
         <!-- Next print card (big start button) -->
         <button
           type="button"
-          disabled={startingSerials.has(printer.secrets?.serial ?? '')}
+          disabled={startingSerials.has(printer.printer_serial ?? '')}
 
           onclick={() => onEnqueue(nextModule, printer)}
           class="w-full text-left bg-emerald-500/5 border-2 border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/40 rounded-2xl p-6 mb-4 transition-all duration-200 disabled:opacity-50 group"
@@ -100,7 +100,7 @@
             </div>
             <div class="flex-1 min-w-0">
               <p class="text-[10px] uppercase tracking-widest text-zinc-400 mb-1">
-                {startingSerials.has(printer.secrets?.serial ?? '') ? 'Starting…' : 'Start Next Print'}
+                {startingSerials.has(printer.printer_serial ?? '') ? 'Starting…' : 'Start Next Print'}
               </p>
               <p class="text-lg font-medium text-zinc-900 dark:text-zinc-50 leading-snug truncate">{nextPrint.module_name ?? `Module #${nextPrint.module_id}`}</p>
               <div class="flex items-center gap-2 mt-1.5">

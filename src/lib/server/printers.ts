@@ -15,6 +15,7 @@ import type {
   PrinterLoadedSpool,
   PrinterFull,
   PrinterQueuedJob,
+  SpoolWithPreset,
   ServerResponse,
 } from '../types';
 
@@ -127,7 +128,7 @@ export async function getAllPrinters(db: D1Database): Promise<Printer[]> {
   const rows = await drizzleDb.all<Printer>(sql`
     SELECT
       p.id, p.name, p.printer_preset_id, p.loaded_plate_id,
-      p.loaded_nozzle_diameter, p.active, p.created_at, p.updated_at
+      p.loaded_nozzle_diameter, p.slot_count, p.active, p.created_at, p.updated_at
     FROM printers p
     ORDER BY p.name
   `);
@@ -139,7 +140,7 @@ export async function getPrinterById(db: D1Database, id: number): Promise<Printe
   const row = await drizzleDb.get<Printer>(sql`
     SELECT
       p.id, p.name, p.printer_preset_id, p.loaded_plate_id,
-      p.loaded_nozzle_diameter, p.active, p.created_at, p.updated_at
+      p.loaded_nozzle_diameter, p.slot_count, p.active, p.created_at, p.updated_at
     FROM printers p
     WHERE p.id = ${id}
   `);
@@ -171,6 +172,7 @@ export async function createPrinter(
     name: string;
     printerPresetId: number;
     loadedNozzleDiameter?: number | null;
+    slotCount?: number;
   },
   secrets?: {
     printerIp?: string | null;
@@ -179,17 +181,28 @@ export async function createPrinter(
   },
 ): Promise<ServerResponse> {
   const drizzleDb = getDb(db);
+  const slotCount = Math.max(1, printer.slotCount ?? 1);
   try {
     const result = await drizzleDb.insert(printers).values({
       name: printer.name,
       printerPresetId: printer.printerPresetId,
       loadedNozzleDiameter: printer.loadedNozzleDiameter ?? null,
+      slotCount,
       active: true,
     });
     const printerId = result.meta.last_row_id as number;
 
     if (secrets) {
       await upsertPrinterSecrets(db, printerId, secrets);
+    }
+
+    // Seed one empty slot row per slot so the printer is immediately addressable.
+    const now = Math.floor(Date.now() / 1000);
+    for (let i = 0; i < slotCount; i++) {
+      await drizzleDb.run(sql`
+        INSERT OR IGNORE INTO printer_loaded_spools (printer_id, slot_index, spool_id, created_at, updated_at)
+        VALUES (${printerId}, ${i}, NULL, ${now}, ${now})
+      `);
     }
 
     return { success: true, message: 'Printer created', data: { id: printerId } };
@@ -208,17 +221,52 @@ export async function updatePrinter(
     loadedPlateId?: number | null;
     loadedNozzleDiameter?: number | null;
     active?: boolean;
+    slotCount?: number;
   },
 ): Promise<ServerResponse> {
   const drizzleDb = getDb(db);
   try {
+    // Reconcile slot rows before updating the printer row.
+    if (printer.slotCount !== undefined) {
+      const current = await getPrinterById(db, id);
+      if (current) {
+        const oldCount = current.slot_count ?? 1;
+        const newCount = Math.max(1, printer.slotCount);
+        const now = Math.floor(Date.now() / 1000);
+
+        if (newCount > oldCount) {
+          for (let i = oldCount; i < newCount; i++) {
+            await drizzleDb.run(sql`
+              INSERT OR IGNORE INTO printer_loaded_spools (printer_id, slot_index, spool_id, created_at, updated_at)
+              VALUES (${id}, ${i}, NULL, ${now}, ${now})
+            `);
+          }
+        } else if (newCount < oldCount) {
+          const occupied = await drizzleDb.get<{ count: number }>(
+            sql`SELECT COUNT(*) as count FROM printer_loaded_spools
+                WHERE printer_id = ${id} AND slot_index >= ${newCount} AND spool_id IS NOT NULL`,
+          );
+          if ((occupied?.count ?? 0) > 0) {
+            return {
+              success: false,
+              error: `Cannot reduce to ${newCount} slot(s): unload spools from slots ${newCount + 1}–${oldCount} first`,
+            };
+          }
+          await drizzleDb.run(
+            sql`DELETE FROM printer_loaded_spools WHERE printer_id = ${id} AND slot_index >= ${newCount}`,
+          );
+        }
+      }
+    }
+
     const updates: ReturnType<typeof sql>[] = [];
     if (printer.name !== undefined) updates.push(sql`name = ${printer.name}`);
     if (printer.printerPresetId !== undefined) updates.push(sql`printer_preset_id = ${printer.printerPresetId}`);
     if (printer.loadedPlateId !== undefined) updates.push(sql`loaded_plate_id = ${printer.loadedPlateId}`);
     if (printer.loadedNozzleDiameter !== undefined) updates.push(sql`loaded_nozzle_diameter = ${printer.loadedNozzleDiameter}`);
     if (printer.active !== undefined) updates.push(sql`active = ${printer.active ? 1 : 0}`);
-    if (updates.length === 0) return { success: false, error: 'No updates provided' };
+    if (printer.slotCount !== undefined) updates.push(sql`slot_count = ${Math.max(1, printer.slotCount)}`);
+    if (updates.length === 0) return { success: true, message: 'Nothing to update' };
     await drizzleDb.run(
       sql`UPDATE printers SET ${sql.join(updates, sql`, `)}, updated_at = ${Math.floor(Date.now() / 1000)} WHERE id = ${id}`,
     );
@@ -311,28 +359,80 @@ export async function upsertPrinterSecrets(
 
 // ─── Loaded Spools (per-slot) ─────────────────────────────────────────────────
 
-/** Get all loaded spool slots for a printer. */
+/** Get all loaded spool slots for a printer, with spool + preset nested. */
 export async function getLoadedSpools(
   db: D1Database,
   printerId: number,
-): Promise<(PrinterLoadedSpool & { spool?: unknown })[]> {
+): Promise<(PrinterLoadedSpool & { spool: SpoolWithPreset | null })[]> {
   const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all(sql`
+  const rows = await drizzleDb.all<{
+    printer_id: number;
+    slot_index: number;
+    spool_id: number | null;
+    created_at: number;
+    updated_at: number;
+    // joined from spools
+    s_id: number | null;
+    preset_id: number | null;
+    initial_weight: number | null;
+    remaining_weight: number | null;
+    // joined from spool_presets
+    color: string | null;
+    brand: string | null;
+    material: string | null;
+    default_weight: number | null;
+    cost: number | null;
+  }>(sql`
     SELECT
       pls.printer_id, pls.slot_index, pls.spool_id,
       pls.created_at, pls.updated_at,
+      s.id      as s_id,
       s.preset_id, s.initial_weight, s.remaining_weight,
-      sp.color, sp.brand, sp.material
+      sp.color, sp.brand, sp.material, sp.default_weight, sp.cost
     FROM printer_loaded_spools pls
     LEFT JOIN spools s ON pls.spool_id = s.id
     LEFT JOIN spool_presets sp ON s.preset_id = sp.id
     WHERE pls.printer_id = ${printerId}
     ORDER BY pls.slot_index
   `);
-  return (rows ?? []) as unknown as (PrinterLoadedSpool & { spool?: unknown })[];
+
+  return (rows ?? []).map((row) => ({
+    printer_id: row.printer_id,
+    slot_index: row.slot_index,
+    spool_id: row.spool_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    spool: row.spool_id && row.s_id
+      ? {
+          id: row.s_id,
+          preset_id: row.preset_id,
+          initial_weight: row.initial_weight!,
+          remaining_weight: row.remaining_weight!,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          preset: row.brand
+            ? {
+                id: row.preset_id!,
+                brand: row.brand,
+                material: row.material ?? '',
+                color: row.color ?? '',
+                default_weight: row.default_weight ?? 0,
+                cost: row.cost ?? 0,
+                in_storage: 0,
+                created_at: 0,
+                updated_at: 0,
+              }
+            : null,
+        }
+      : null,
+  }));
 }
 
-/** Load a spool into a specific slot on a printer (upsert). */
+/**
+ * Set (or clear) the spool in a slot. The slot row must already exist —
+ * rows are pre-seeded by createPrinter / migration 0004. This is a strict
+ * UPDATE so swapping in a new spool automatically displaces the previous one.
+ */
 export async function setLoadedSpool(
   db: D1Database,
   printerId: number,
@@ -341,24 +441,32 @@ export async function setLoadedSpool(
 ): Promise<void> {
   const drizzleDb = getDb(db);
   const now = Math.floor(Date.now() / 1000);
-  if (spoolId === null) {
-    await drizzleDb.run(
-      sql`DELETE FROM printer_loaded_spools WHERE printer_id = ${printerId} AND slot_index = ${slotIndex}`,
-    );
-  } else {
-    await drizzleDb.run(sql`
-      INSERT INTO printer_loaded_spools (printer_id, slot_index, spool_id, created_at, updated_at)
-      VALUES (${printerId}, ${slotIndex}, ${spoolId}, ${now}, ${now})
-      ON CONFLICT (printer_id, slot_index) DO UPDATE SET
-        spool_id   = excluded.spool_id,
-        updated_at = excluded.updated_at
-    `);
-  }
+  await drizzleDb.run(sql`
+    UPDATE printer_loaded_spools
+    SET spool_id = ${spoolId}, updated_at = ${now}
+    WHERE printer_id = ${printerId} AND slot_index = ${slotIndex}
+  `);
 }
 
-/** Remove the spool from slot 0 (convenience for single-color printers). */
+/** Clear the spool from a slot (null out spool_id; the slot row stays). */
 export async function unloadSpool(db: D1Database, printerId: number, slotIndex = 0): Promise<void> {
   await setLoadedSpool(db, printerId, slotIndex, null);
+}
+
+/** Load an already-open physical spool into a printer slot without touching in_storage. */
+export async function loadExistingSpoolIntoSlot(
+  db: D1Database,
+  printerId: number,
+  slotIndex: number,
+  spoolId: number,
+): Promise<ServerResponse> {
+  try {
+    await setLoadedSpool(db, printerId, slotIndex, spoolId);
+    return { success: true, message: `Spool loaded into slot ${slotIndex}` };
+  } catch (error) {
+    console.error('Error loading existing spool:', error);
+    return { success: false, error: 'Failed to load spool' };
+  }
 }
 
 // ─── Printer Queue ────────────────────────────────────────────────────────────

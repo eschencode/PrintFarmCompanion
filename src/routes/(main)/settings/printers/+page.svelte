@@ -13,6 +13,7 @@
   let printerIp = '';
   let printerSerial = '';
   let printerAccessCode = '';
+  let printerSlotCount: number | string = 1;
 
   function openEditPrinter(printer: any) {
     editingPrinter = printer;
@@ -21,6 +22,7 @@
     printerIp = printer.secrets?.printer_ip || '';
     printerSerial = printer.secrets?.serial || '';
     printerAccessCode = printer.secrets?.access_code || '';
+    printerSlotCount = printer.slot_count ?? 1;
     showPrinterEditor = true;
   }
 
@@ -32,6 +34,7 @@
     printerIp = '';
     printerSerial = '';
     printerAccessCode = '';
+    printerSlotCount = 1;
   }
 
   // ── Printer model editor ────────────────────────────────────────────────────
@@ -263,6 +266,19 @@
                 <option value={model.id}>{model.brand} {model.model}</option>
               {/each}
             </select>
+          </div>
+          <div>
+            <label for="slotCount" class="block text-sm text-zinc-500 mb-2">Filament Slots</label>
+            <input
+              type="number"
+              id="slotCount"
+              name="slotCount"
+              bind:value={printerSlotCount}
+              min="1"
+              max="16"
+              class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-4 py-2.5 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 transition-colors"
+            />
+            <p class="text-xs text-zinc-400 mt-1">1 for single-colour · 4 for AMS · 8 for dual AMS</p>
           </div>
           <div class="border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden">
             <div class="px-3 py-2 bg-zinc-50 dark:bg-[#1a1a1a] border-b border-zinc-200 dark:border-[#262626]">

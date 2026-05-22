@@ -28,12 +28,12 @@ export const load: PageServerLoad = async ({ platform }) => {
   }
 
   const skuMappingsRaw = await drizzleDb.all(
-    sql`SELECT sm.id, sm.shopify_sku, sm.object_id, sm.quantity, o.sku as object_sku, o.name as object_name
+    sql`SELECT sm.id, sm.shopify_sku, sm.object_id, sm.quantity, o.name as object_name
         FROM shopify_sku_mapping sm
         LEFT JOIN objects o ON sm.object_id = o.id
-        ORDER BY sm.shopify_sku, o.sku`
+        ORDER BY sm.shopify_sku, o.name`
   );
-  const skuMappings = (skuMappingsRaw || []) as { id: number; shopify_sku: string; object_id: number; quantity: number; object_sku: string; object_name: string }[];
+  const skuMappings = (skuMappingsRaw || []) as { id: number; shopify_sku: string; object_id: number; quantity: number; object_name: string }[];
   const inventoryItems = await getAllObjects(database);
   const spoolPresets = await db.getAllSpoolPresets(database);
 
@@ -104,9 +104,8 @@ export const actions: Actions = {
     const database = platform?.env?.DB;
     if (!database) return fail(400, { error: 'Database not available' });
     const form = await request.formData();
-    const name = (form.get('name') as string).trim();
-    const slug = (form.get('slug') as string).trim();
-    if (!name || !slug) return fail(400, { error: 'Name and slug are required' });
-    return createObject(database, { name, sku: slug });
+    const name = (form.get('name') as string | null)?.trim();
+    if (!name) return fail(400, { error: 'Name is required' });
+    return createObject(database, { name });
   },
 };

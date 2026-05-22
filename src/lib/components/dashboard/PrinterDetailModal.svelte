@@ -3,30 +3,30 @@
   import type { SubmitFunction } from '@sveltejs/kit';
   import { formatTime, formatRemainingTime, getElapsedTime, getRemainingTime, getProgress } from '$lib/utils/time';
   import { getLastPrintJob } from '$lib/utils/printerData';
-  import type { Printer, Spool, PrintModule, PrintJobExtended, PiStatus } from '$lib/types';
+  import type { DashboardPrinter, SpoolWithPreset, PrintModuleFull, PrintJobWithDetails, PiStatus } from '$lib/types';
 
   /**
    * Detail modal for a selected printer. Shows real-time print status when printing,
    * idle info and action buttons when idle, and repair controls when broken.
    */
-  export let printer: Printer;
-  export let activePrintJob: PrintJobExtended | undefined;
-  export let loadedSpool: Spool | null;
+  export let printer: DashboardPrinter;
+  export let activePrintJob: PrintJobWithDetails | undefined;
+  export let loadedSpool: SpoolWithPreset | null;
   /** Live Pi/MQTT status for this printer — drives real-time progress and temps. */
   export let piLive: PiStatus | undefined;
   export let controlLoading: string | null;
   /** Set of serials currently being started — disables start buttons. */
   export let startingSerials: Set<string>;
   export let now: number;
-  export let printJobs: PrintJobExtended[];
-  export let printModules: PrintModule[];
+  export let printJobs: PrintJobWithDetails[];
+  export let printModules: PrintModuleFull[];
   export let onClose: () => void;
   export let onLoadSpool: () => void;
   export let onStartPrint: () => void;
   export let onPrintFailed: () => void;
   export let onSendControl: (action: string, printerId: number) => Promise<void>;
-  export let onToggleBroken: (printer: Printer, broken: boolean) => void;
-  export let onEnqueue: (module: PrintModule, printer: Printer) => void;
+  export let onToggleBroken: (printer: DashboardPrinter, broken: boolean) => void;
+  export let onEnqueue: (module: PrintModuleFull, printer: DashboardPrinter) => void;
   /** enhance callback defined in parent — closes over selectedPrinter, data, and closePrinterModal. */
   export let completePrintSuccessEnhance: SubmitFunction;
 </script>
@@ -52,7 +52,7 @@
       <div class="flex justify-between items-start mb-8">
         <div>
           <h2 class="text-2xl font-light text-zinc-900 dark:text-zinc-50 tracking-tight">{printer.name}</h2>
-          <p class="text-sm text-zinc-400 dark:text-zinc-600 mt-1 tracking-wide">{printer.model}</p>
+          <p class="text-sm text-zinc-400 dark:text-zinc-600 mt-1 tracking-wide">{printer.preset?.brand ?? ''} {printer.preset?.model ?? ''}</p>
         </div>
         <button
           onclick={onClose}
@@ -77,7 +77,7 @@
             <div class="w-2 h-2 bg-emerald-500 rounded-full status-glow-green"></div>
             Idle
           </span>
-        {:else if printer.status === 'BROKEN'}
+        {:else if printer.status === 'inactive'}
           <span class="inline-flex items-center gap-2.5 px-4 py-1.5 bg-red-500/10 text-red-600 dark:text-red-400 rounded-full text-sm font-light tracking-wide">
             <div class="w-2 h-2 bg-red-500 rounded-full status-glow-red animate-pulse"></div>
             Broken / Under Repair
@@ -176,13 +176,13 @@
                 </div>
                 <div>
                   <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">Expected After</p>
-                  <p class="text-xl text-blue-500 dark:text-blue-400 font-light tabular-nums">{Math.max(0, loadedSpool.remaining_weight - (activePrintJob.weight ?? 0)).toFixed(1)}g</p>
+                  <p class="text-xl text-blue-500 dark:text-blue-400 font-light tabular-nums">{Math.max(0, loadedSpool.remaining_weight - (activePrintJob.module_weight ?? 0)).toFixed(1)}g</p>
                 </div>
               </div>
               <div class="mt-4 pt-4 border-t border-zinc-200/60 dark:border-[#1a1a22]">
                 <div class="flex justify-between text-xs">
                   <span class="text-zinc-400 dark:text-zinc-600">Material Usage</span>
-                  <span class="text-amber-500 font-medium tabular-nums">{activePrintJob.weight}g</span>
+                  <span class="text-amber-500 font-medium tabular-nums">{activePrintJob.module_weight ?? 0}g</span>
                 </div>
               </div>
             </div>
@@ -238,7 +238,7 @@
             >
               <input type="hidden" name="jobId" value={activePrintJob.id} />
               <input type="hidden" name="success" value="true" />
-              <input type="hidden" name="actualWeight" value={activePrintJob.weight} />
+              <input type="hidden" name="actualWeight" value={activePrintJob.module_weight ?? 0} />
 
               <button
                 type="submit"
@@ -263,12 +263,12 @@
                 <div class="flex justify-between items-center">
                   <span class="text-sm text-zinc-400 dark:text-zinc-600">Name</span>
                   <span class="text-base text-zinc-900 dark:text-zinc-100 font-medium">
-                    {loadedSpool.brand} {loadedSpool.material}
+                    {loadedSpool.preset?.brand ?? ''} {loadedSpool.preset?.material ?? ''}
                   </span>
                 </div>
                 <div class="flex justify-between items-center">
                   <span class="text-sm text-zinc-400 dark:text-zinc-600">Color</span>
-                  <span class="text-base text-zinc-900 dark:text-zinc-100">{loadedSpool.color || 'N/A'}</span>
+                  <span class="text-base text-zinc-900 dark:text-zinc-100">{loadedSpool.preset?.color || 'N/A'}</span>
                 </div>
                 <div class="flex justify-between items-center">
                   <span class="text-sm text-zinc-400 dark:text-zinc-600">Remaining Weight</span>
@@ -301,7 +301,7 @@
                   </span>
                 {/if}
               </div>
-              {#if lastPrintJob.status !== 'success' && lastPrintJob.failure_reason}
+              {#if lastPrintJob.status !== 'successful' && lastPrintJob.failure_reason}
                 <p class="text-xs text-red-500/70 dark:text-red-400/60 mt-3 pt-3 border-t border-zinc-200/60 dark:border-[#1a1a22]">
                   {lastPrintJob.failure_reason}
                 </p>
@@ -314,14 +314,6 @@
             </div>
           {/if}
 
-          <!-- Printer Stats -->
-          <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
-            <div class="flex justify-between items-center">
-              <span class="text-sm text-zinc-400 dark:text-zinc-600">Total Runtime</span>
-              <span class="text-zinc-900 dark:text-zinc-100 text-sm font-medium tabular-nums">{0}h</span>
-            </div>
-          </div>
-
           <!-- Next Suggested Print -->
           {#if printer?.suggested_queue}
   {@const nextPrint = printer.suggested_queue.find((item: any) => item.status !== 'DONE')}
@@ -329,7 +321,7 @@
     {@const matchingModule = printModules.find((m: any) => m.id === nextPrint.module_id)}
     <button
       type="button"
-      disabled={startingSerials.has(printer.secrets?.serial ?? '')}
+      disabled={startingSerials.has(printer.printer_serial ?? '')}
       onclick={() => matchingModule && onEnqueue(matchingModule, printer)}
       class="w-full text-left bg-emerald-500/5 border border-emerald-500/15 rounded-xl p-5 mt-4 hover:bg-emerald-500/10 hover:border-emerald-500/25 transition-all duration-200 disabled:opacity-50"
     >
@@ -374,18 +366,12 @@
           </button>
         </div>
 
-      {:else if printer.status === 'BROKEN'}
+      {:else if printer.status === 'inactive'}
         <!-- BROKEN STATUS MENU -->
         <div class="space-y-5">
           <div class="bg-red-500/5 border border-red-500/15 rounded-xl p-5">
             <p class="text-sm text-red-600 dark:text-red-400 font-medium mb-1">Printer is under repair</p>
             <p class="text-xs text-zinc-400 dark:text-zinc-600">Downtime is being tracked from when this printer was marked broken. Mark as repaired to stop the downtime clock.</p>
-          </div>
-          <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
-            <div class="flex justify-between items-center">
-              <span class="text-sm text-zinc-400 dark:text-zinc-600">Total Runtime</span>
-              <span class="text-zinc-900 dark:text-zinc-100 text-sm font-medium tabular-nums">{0}h</span>
-            </div>
           </div>
           <button
             disabled={controlLoading === 'marking-repaired'}

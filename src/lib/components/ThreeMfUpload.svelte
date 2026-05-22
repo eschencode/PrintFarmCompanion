@@ -12,6 +12,43 @@
   let isDragging = false;
   let fileInput: HTMLInputElement;
 
+  // ── Inline new-object creation ────────────────────────────────────────────
+  let showNewObjectForm = false;
+  let newObjectName = '';
+  let newObjectError = '';
+  let savingNewObject = false;
+  // Local objects created during this upload session (merged with the prop)
+  let createdObjects: { id: number; name: string }[] = [];
+  $: allInventoryItems = [...inventoryItems, ...createdObjects];
+
+  async function createNewObject() {
+    newObjectError = '';
+    const name = newObjectName.trim();
+    if (!name) { newObjectError = 'Name is required'; return; }
+
+    savingNewObject = true;
+    try {
+      const res = await fetch('/api/objects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const result = await res.json() as { success: boolean; data?: { id: number }; error?: string };
+      if (result.success && result.data?.id) {
+        createdObjects = [...createdObjects, { id: result.data.id, name }];
+        if (previewData) previewData.objectId = result.data.id;
+        showNewObjectForm = false;
+        newObjectName = '';
+      } else {
+        newObjectError = result.error ?? 'Failed to create object';
+      }
+    } catch {
+      newObjectError = 'Network error';
+    } finally {
+      savingNewObject = false;
+    }
+  }
+
   type PreviewData = {
     name: string;
     thumbnail: string | null;
@@ -22,8 +59,8 @@
     expectedWeight: number | null;
     objectsPerPrint: number;
     defaultSpoolPresetId: number | null;
-    inventorySlug: string | null;
-    printerModel: string | null;
+    objectId: number | null;
+    printerPresetId: number | null;
     localFileHandlerPath: string | null;
   };
 
@@ -98,8 +135,8 @@
       let expectedWeight: number | null = null;
       let objectsPerPrint: number = 1;
       let defaultSpoolPresetId: number | null = null;
-      let inventorySlug: string | null = null;
-      let printerModel: string | null = null;
+      let objectId: number | null = null;
+      let printerPresetId: number | null = null;
 
       // Metadata collection object for detailed logging
       const metadata: Record<string, any> = {
@@ -284,6 +321,15 @@
       if (estimatedTime !== null) estimatedTime = Math.round(estimatedTime / 60);
       if (expectedWeight !== null) expectedWeight = Math.ceil(expectedWeight);
 
+      // Try to auto-match printer preset by extracted model name
+      if (printerModels.length > 0 && plateType) {
+        const match = printerModels.find((m: any) =>
+          m.model?.toLowerCase().includes(plateType?.toLowerCase() ?? '') ||
+          plateType?.toLowerCase().includes(m.model?.toLowerCase() ?? '')
+        );
+        if (match) printerPresetId = match.id;
+      }
+
       previewData = {
         name: f.name.replace(/\.3mf$/i, ''),
         thumbnail,
@@ -294,8 +340,8 @@
         expectedWeight: expectedWeight ?? null,
         objectsPerPrint: objectsPerPrint || 1,
         defaultSpoolPresetId,
-        inventorySlug,
-        printerModel: printerModel ?? null,
+        objectId,
+        printerPresetId,
         localFileHandlerPath: suggestedLocalPath,
       };
     } catch (e) {
@@ -369,8 +415,8 @@
           expected_weight: previewData.expectedWeight,
           objects_per_print: previewData.objectsPerPrint,
           default_spool_preset_id: previewData.defaultSpoolPresetId,
-          inventory_slug: previewData.inventorySlug,
-          printer_model: previewData.printerModel,
+          object_id: previewData.objectId,
+          printer_preset_id: previewData.printerPresetId,
           local_file_handler_path: previewData.localFileHandlerPath,
           pi_file_path: piFilePath,
           file_stored_on_pi: fileStoredOnPi,
@@ -474,10 +520,10 @@
               bind:value={previewData.defaultSpoolPresetId}
               class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
             >
-              <option value="">None</option>
+              <option value={null}>None</option>
               {#each spoolPresets as preset (preset.id)}
                 <option value={preset.id}>
-                  {preset.name} ({preset.material})
+                  {preset.brand} {preset.color} ({preset.material})
                 </option>
               {/each}
             </select>
@@ -570,52 +616,70 @@
             </div>
           </div>
 
-          <!-- Printer Model -->
+          <!-- Printer Preset -->
           <div>
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Printer Model</label>
-            {#if printerModels.length > 0}
-              <select
-                bind:value={previewData.printerModel}
-                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-              >
-                <option value={null}>— None selected —</option>
-                {#each printerModels as model (model.id)}
-                  <option value={model.name}>{model.name}</option>
-                {/each}
-              </select>
-            {:else}
-              <input
-                type="text"
-                bind:value={previewData.printerModel}
-                placeholder="e.g. P1S"
-                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-              />
-            {/if}
+            <label for="upload-printer-preset" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Printer Preset</label>
+            <select
+              id="upload-printer-preset"
+              bind:value={previewData.printerPresetId}
+              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+            >
+              <option value={null}>— None —</option>
+              {#each printerModels as model (model.id)}
+                <option value={model.id}>{model.brand} {model.model}</option>
+              {/each}
+            </select>
           </div>
 
-          <!-- Inventory Slug -->
-          <div>
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Inventory</label>
-            {#if inventoryItems.length > 0}
-              <select
-                bind:value={previewData.inventorySlug}
-                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+          <!-- Object (Inventory) -->
+          <div class="col-span-2">
+            <div class="flex items-center justify-between mb-1">
+              <label for="upload-object" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Object</label>
+              <button
+                type="button"
+                onclick={() => { showNewObjectForm = !showNewObjectForm; newObjectName = ''; newObjectError = ''; }}
+                class="text-[10px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
               >
-                <option value="">None</option>
-                {#each inventoryItems as item (item.slug)}
-                  <option value={item.slug}>{item.name}</option>
-                {/each}
-              </select>
-            {:else}
-              <input
-                type="text"
-                bind:value={previewData.inventorySlug}
-                placeholder="slug"
-                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-              />
+                {showNewObjectForm ? 'Cancel' : '+ New Object'}
+              </button>
+            </div>
+
+            {#if showNewObjectForm}
+              <div class="bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#2a2a2a] rounded-lg p-3 space-y-2 mb-2">
+                <div>
+                  <label for="new-obj-name" class="text-[9px] uppercase tracking-wide text-zinc-400 block mb-0.5">Name</label>
+                  <input
+                    id="new-obj-name"
+                    type="text"
+                    bind:value={newObjectName}
+                    placeholder="Blue Hook"
+                    class="w-full bg-white dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#333] rounded px-2 py-1 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500"
+                  />
+                </div>
+                {#if newObjectError}
+                  <p class="text-[10px] text-red-500">{newObjectError}</p>
+                {/if}
+                <button
+                  type="button"
+                  onclick={createNewObject}
+                  disabled={savingNewObject || !newObjectName.trim()}
+                  class="w-full py-1 text-xs font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {savingNewObject ? 'Creating…' : 'Create & Select'}
+                </button>
+              </div>
             {/if}
+
+            <select
+              id="upload-object"
+              bind:value={previewData.objectId}
+              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+            >
+              <option value={null}>None</option>
+              {#each allInventoryItems as item (item.id)}
+                <option value={item.id}>{item.name}</option>
+              {/each}
+            </select>
           </div>
         </div>
       </div>

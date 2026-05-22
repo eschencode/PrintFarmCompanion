@@ -1,4 +1,9 @@
-import type { PrintModuleFull, DashboardPrinter, SpoolWithPreset, PrintJobFull } from '$lib/types';
+import type {
+  PrintModuleFull,
+  DashboardPrinter,
+  SpoolWithPreset,
+  PrintJobFull,
+} from "$lib/types";
 
 type CategorizedModules = {
   compatiblePrintable: PrintModuleFull[];
@@ -22,15 +27,6 @@ export function getActivePrintJob(
   return activePrintJobs.find((job) => job.printer_id === printerId);
 }
 
-/** Returns the slot-0 spool for a printer, or null if none. */
-export function getLoadedSpool(
-  _spoolId: number | null | undefined,
-  _spools: unknown[],
-): SpoolWithPreset | null {
-  // Kept for backwards compat — callers should use printer.loaded_spool directly.
-  return null;
-}
-
 /**
  * Returns the most recent completed job for a printer.
  * Sorted by created_at descending (jobs have no end_time in the new schema).
@@ -41,7 +37,7 @@ export function getLastPrintJob(
 ): PrintJobFull | null {
   if (!printJobs?.length) return null;
   const completed = printJobs.filter(
-    (job) => job.printer_id === printerId && job.status !== 'printing',
+    (job) => job.printer_id === printerId && job.status !== "printing",
   );
   if (!completed.length) return null;
   return completed.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))[0];
@@ -73,7 +69,8 @@ export function getCategorizedModules(
     // Filter by printer model (preset)
     if (module.printer_preset_id !== printer.printer_preset_id) continue;
 
-    const hasEnoughMaterial = loadedSpool.remaining_weight >= (module.weight ?? 0);
+    const hasEnoughMaterial =
+      loadedSpool.remaining_weight >= (module.weight ?? 0);
 
     // Check filament slot compatibility: look at slot 0 requirement
     const slot0 = module.filament_slots?.find((s) => s.slot_index === 0);

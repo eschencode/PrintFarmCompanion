@@ -76,38 +76,10 @@
   $: activeCount = modules.filter((m: any) => m.active).length;
   $: inactiveCount = modules.filter((m: any) => !m.active).length;
 
-  // ── Load auxiliary data (presets etc.) ─────────────────────────────────────
-  let spoolPresets: any[] = [];
-  let printerModels: any[] = [];
-  let inventoryItems: any[] = [];
-  let dataLoaded = false;
-
-  async function loadData() {
-    try {
-      const [presetsRes, modelsRes, inventoryRes] = await Promise.all([
-        fetch('/api/print-modules?presets=true'),
-        fetch('/api/printer-models'),
-        fetch('/api/inventory')
-      ]);
-      if (presetsRes.ok) {
-        const r = await presetsRes.json() as any;
-        if (r.success) spoolPresets = r.data;
-      }
-      if (modelsRes.ok) {
-        const r = await modelsRes.json() as any;
-        if (r.success) printerModels = r.data;
-      }
-      if (inventoryRes.ok) {
-        const r = await inventoryRes.json() as any;
-        if (r.success) inventoryItems = r.data.map((i: any) => ({ slug: i.slug, name: i.name }));
-      }
-      dataLoaded = true;
-    } catch (e) {
-      dataLoaded = true;
-    }
-  }
-
-  $: if (typeof window !== 'undefined' && !dataLoaded) loadData();
+  // ── Auxiliary data from server load ────────────────────────────────────────
+  $: spoolPresets = data.spoolPresets ?? [];
+  $: printerModels = data.printerPresets ?? [];
+  $: inventoryItems = (data.objects ?? []).map((o: any) => ({ id: o.id, name: o.name }));
 
   function formatTime(minutes: number | null): string {
     if (!minutes) return '—';

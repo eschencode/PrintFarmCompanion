@@ -1,15 +1,15 @@
 import type { PageServerLoad, Actions } from './$types';
-import { getAllObjects, recordSaleB2BBySku } from '$lib/inventory_handler';
+import { getAllObjects, recordSaleB2B } from '$lib/inventory_handler';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
 interface SetComponent {
-  inventory_slug: string;
+  object_id: number;
   quantity: number;
 }
 
 interface SetDefinition {
-  sku: string;
+  shopify_sku: string;
   label: string;
   components: SetComponent[];
 }
@@ -17,48 +17,32 @@ interface SetDefinition {
 async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
   const drizzleDb = getDb(db);
   const rows = await drizzleDb.all(sql`
-    SELECT sm.shopify_sku, sm.quantity, o.sku as object_sku, o.name as item_name
+    SELECT sm.shopify_sku, sm.quantity, o.id as object_id, o.name as item_name
     FROM shopify_sku_mapping sm
     JOIN objects o ON sm.object_id = o.id
     ORDER BY sm.shopify_sku, o.name
   `);
 
-  const typedRows = (rows || []) as { shopify_sku: string; object_sku: string; quantity: number; item_name: string }[];
+  const typedRows = (rows || []) as { shopify_sku: string; object_id: number; quantity: number; item_name: string }[];
 
-  const skuGroups: Record<string, { object_sku: string; quantity: number; item_name: string }[]> = {};
+  const groups: Record<string, typeof typedRows> = {};
   for (const row of typedRows) {
-    if (!skuGroups[row.shopify_sku]) skuGroups[row.shopify_sku] = [];
-    skuGroups[row.shopify_sku].push(row);
+    if (!groups[row.shopify_sku]) groups[row.shopify_sku] = [];
+    groups[row.shopify_sku].push(row);
   }
 
   const sets: SetDefinition[] = [];
-  for (const [sku, components] of Object.entries(skuGroups)) {
+  for (const [shopify_sku, components] of Object.entries(groups)) {
     const isBundle = components.length > 1 || components.some(c => c.quantity > 1);
     if (!isBundle) continue;
+    const label = `${shopify_sku}: ${components.map(c => c.quantity > 1 ? `${c.quantity}× ${c.item_name}` : c.item_name).join(' + ')}`;
     sets.push({
-      sku,
-      label: buildSetLabel(sku, components),
-      components: components.map(c => ({ inventory_slug: c.object_sku, quantity: c.quantity }))
+      shopify_sku,
+      label,
+      components: components.map(c => ({ object_id: c.object_id, quantity: c.quantity })),
     });
   }
   return sets;
-}
-
-function buildSetLabel(sku: string, components: { object_sku: string; quantity: number; item_name: string }[]): string {
-  if (sku.startsWith('KLH/')) {
-    const halter = components.find(c => c.object_sku.startsWith('klohalter-'));
-    const stab = components.find(c => c.object_sku.startsWith('stab-'));
-    if (halter && stab) {
-      return `Klohalter Set: ${halter.item_name.split(' ').pop()} / ${stab.item_name.split(' ').pop()}`;
-    }
-  }
-  if (sku.startsWith('WH/K5/') || sku.startsWith('WH/S5/')) {
-    const type = sku.startsWith('WH/K5/') ? 'Kleben' : 'Schrauben';
-    const hooks = components.filter(c => c.object_sku.includes('haken-'));
-    const colors = hooks.map(c => `${c.quantity}x ${c.item_name.split(' ').pop()}`).join(', ');
-    return `5er Pack ${type}: ${colors}`;
-  }
-  return `${sku}: ${components.map(c => `${c.quantity}x ${c.item_name}`).join(', ')}`;
 }
 
 export const load: PageServerLoad = async ({ platform }) => {
@@ -67,7 +51,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 
   const [items, setDefinitions] = await Promise.all([
     getAllObjects(db),
-    getSetDefinitions(db).catch(() => [])
+    getSetDefinitions(db).catch(() => []),
   ]);
 
   return { items, setDefinitions };
@@ -78,35 +62,25 @@ export const actions: Actions = {
     const db = platform?.env?.DB;
     if (!db) return { success: false, error: 'Database not available' };
     const drizzleDb = getDb(db);
-
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
     if (!entriesJson) return { success: false, error: 'No entries provided' };
 
     try {
-      const entries: { sku: string; count: number }[] = JSON.parse(entriesJson);
-      const results: { slug: string; quantity: number; success: boolean }[] = [];
-
+      const entries: { shopify_sku: string; count: number }[] = JSON.parse(entriesJson);
+      let total = 0;
       for (const entry of entries) {
         if (entry.count <= 0) continue;
         const components = await drizzleDb.all(sql`
-          SELECT o.sku as object_sku, sm.quantity
-          FROM shopify_sku_mapping sm
-          JOIN objects o ON sm.object_id = o.id
-          WHERE sm.shopify_sku = ${entry.sku}
+          SELECT sm.object_id, sm.quantity FROM shopify_sku_mapping sm WHERE sm.shopify_sku = ${entry.shopify_sku}
         `);
-
-        const rows = (components || []) as { object_sku: string; quantity: number }[];
-        for (const comp of rows) {
-          const totalQty = comp.quantity * entry.count;
-          const result = await recordSaleB2BBySku(db, comp.object_sku, totalQty);
-          results.push({ slug: comp.object_sku, quantity: totalQty, success: result.success });
+        for (const comp of (components || []) as { object_id: number; quantity: number }[]) {
+          await recordSaleB2B(db, comp.object_id, comp.quantity * entry.count);
+          total++;
         }
       }
-
-      return { success: true, message: `Processed ${results.length} B2B stock removals from sets`, data: results };
-    } catch (error) {
-      console.error('Error processing B2B set sale:', error);
+      return { success: true, message: `Processed ${total} B2B sales from sets` };
+    } catch {
       return { success: false, error: 'Failed to process B2B set sale' };
     }
   },
@@ -114,25 +88,18 @@ export const actions: Actions = {
   b2bSellDirect: async ({ request, platform }) => {
     const db = platform?.env?.DB;
     if (!db) return { success: false, error: 'Database not available' };
-
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
     if (!entriesJson) return { success: false, error: 'No entries provided' };
 
     try {
-      const entries: { slug: string; count: number }[] = JSON.parse(entriesJson);
-      const results: { slug: string; quantity: number; success: boolean }[] = [];
-
+      const entries: { id: number; count: number }[] = JSON.parse(entriesJson);
       for (const entry of entries) {
-        if (entry.count <= 0) continue;
-        const result = await recordSaleB2BBySku(db, entry.slug, entry.count);
-        results.push({ slug: entry.slug, quantity: entry.count, success: result.success });
+        if (entry.count > 0) await recordSaleB2B(db, entry.id, entry.count);
       }
-
-      return { success: true, message: `Recorded ${results.length} B2B direct sales`, data: results };
-    } catch (error) {
-      console.error('Error in B2B direct sale:', error);
+      return { success: true, message: `Recorded ${entries.filter(e => e.count > 0).length} B2B direct sales` };
+    } catch {
       return { success: false, error: 'Failed to record B2B direct sale' };
     }
-  }
+  },
 };
