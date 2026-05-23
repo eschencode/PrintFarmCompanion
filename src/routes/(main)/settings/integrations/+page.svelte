@@ -79,8 +79,8 @@
     shopifyTestResult = null;
     try {
       const res = await fetch('?/testShopifyConnection', { method: 'POST', body: new FormData() });
-      const d = await res.json();
-      shopifyTestResult = d.type === 'success' ? d.data : { success: false, error: d.data?.error ?? 'Unknown error' };
+      const d = await res.json() as { type: string; data?: { success?: boolean; shopName?: string; error?: string } };
+      shopifyTestResult = d.type === 'success' ? (d.data as any) : { success: false, error: d.data?.error ?? 'Unknown error' };
     } catch {
       shopifyTestResult = { success: false, error: 'Request failed' };
     }
@@ -130,8 +130,8 @@
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
               Connected
             </span>
-            {#if data.shopifySyncState?.last_synced_at}
-              <span class="text-xs text-zinc-400">Last sync: {new Date((data.shopifySyncState as any).last_synced_at).toLocaleString()}</span>
+            {#if data.shopifySyncState?.last_sync_at}
+              <span class="text-xs text-zinc-400">Last sync: {new Date(data.shopifySyncState.last_sync_at * 1000).toLocaleString()}</span>
             {:else}
               <span class="text-xs text-zinc-400">Never synced</span>
             {/if}
@@ -172,9 +172,9 @@
               <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a]">
                 {#each (data.shopifyRecentOrders as any[]).slice(0, 5) as order}
                   <div class="px-4 py-2.5 flex items-center justify-between text-xs">
-                    <span class="font-medium text-zinc-700 dark:text-zinc-300">#{order.shopify_order_number}</span>
+                    <span class="font-medium text-zinc-700 dark:text-zinc-300">#{order.order_number ?? order.order_id}</span>
                     <span class="text-zinc-400">{order.total_items} items</span>
-                    <span class="text-zinc-400">{new Date(order.processed_at).toLocaleDateString()}</span>
+                    <span class="text-zinc-400">{new Date(order.processed_at * 1000).toLocaleDateString()}</span>
                   </div>
                 {/each}
               </div>

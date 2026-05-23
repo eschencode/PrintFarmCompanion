@@ -168,6 +168,39 @@
         >
             {printer.name}
         </h3>
+
+        <!-- Slot indicators (one chip per slot, coloured by loaded spool) -->
+        {#if printer.loaded_spools && printer.loaded_spools.length > 0}
+            {@const slots = [...printer.loaded_spools].sort((a, b) => a.slot_index - b.slot_index)}
+            {@const isSingle = slots.length === 1}
+            <div class="flex justify-center items-center gap-1.5 mt-1 px-1">
+                {#each slots as slot (slot.slot_index)}
+                    {#if slot.spool}
+                        <div
+                            class="flex items-center gap-1"
+                            title="Slot {slot.slot_index + 1}: {slot.spool.preset?.brand ?? ''} {slot.spool.preset?.material ?? ''} {slot.spool.preset?.color ?? ''} — {slot.spool.remaining_weight}g"
+                        >
+                            <div
+                                class="rounded-full border border-zinc-300/40 dark:border-white/15 shrink-0"
+                                style="width: clamp(0.45rem, 1.4vw, 0.6rem); height: clamp(0.45rem, 1.4vw, 0.6rem); background-color: {slot.spool.preset?.color || '#888'};"
+                            ></div>
+                            {#if isSingle}
+                                <span class="text-[clamp(0.4rem,1.3vw,0.65rem)] tabular-nums text-zinc-500 dark:text-zinc-400">
+                                    {slot.spool.remaining_weight}g
+                                </span>
+                            {/if}
+                        </div>
+                    {:else}
+                        <div
+                            class="rounded-full border border-dashed border-zinc-300 dark:border-zinc-700 shrink-0"
+                            style="width: clamp(0.45rem, 1.4vw, 0.6rem); height: clamp(0.45rem, 1.4vw, 0.6rem);"
+                            title="Slot {slot.slot_index + 1}: empty"
+                        ></div>
+                    {/if}
+                {/each}
+            </div>
+        {/if}
+
         <p
             class="text-[clamp(0.4rem,1.5vw,0.7rem)] font-light tracking-wide uppercase mt-0.5"
         >

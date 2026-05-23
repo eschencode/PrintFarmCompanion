@@ -23,17 +23,21 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     return json({ error: 'invalid serial' }, { status: 400 });
   }
 
-  // Look up credentials so Pi can auto-register + pushall after a restart
+  // Look up credentials so Pi can auto-register + pushall after a restart.
+  // ip / access_code now live on printer_secrets (joined by printer_id).
   let printerIp = '';
   let printerCode = '';
   let printerName = '';
   if (db) {
     const drizzleDb = getDb(db);
-    const printer = await drizzleDb.get<{ printer_ip?: string; printer_access_code?: string; name?: string }>(
-      sql`SELECT printer_ip, printer_access_code, name FROM printers WHERE printer_serial = ${serial}`
+    const printer = await drizzleDb.get<{ printer_ip?: string; access_code?: string; name?: string }>(
+      sql`SELECT ps.printer_ip, ps.access_code, p.name
+          FROM printers p
+          JOIN printer_secrets ps ON p.id = ps.printer_id
+          WHERE ps.serial = ${serial}`
     );
     printerIp = printer?.printer_ip ?? '';
-    printerCode = printer?.printer_access_code ?? '';
+    printerCode = printer?.access_code ?? '';
     printerName = printer?.name ?? '';
   }
 
@@ -70,30 +74,26 @@ export const GET: RequestHandler = async ({ url, platform }) => {
             let matchedModule: any = null;
             if (normalized) {
               matchedModule = await drizzleDb.get(sql`
-                SELECT id, name, expected_weight, expected_time
+                SELECT id, name, weight, expected_time_minutes
                 FROM print_modules
-                WHERE LOWER(pi_file_path) LIKE ${`%${normalized}%`}
-                   OR LOWER(file_name) LIKE ${`%${normalized}%`}
-                   OR LOWER(name) LIKE ${`%${normalized}%`}
+                WHERE LOWER(filename) LIKE ${`%${normalized}%`}
+                   OR LOWER(name)     LIKE ${`%${normalized}%`}
                 LIMIT 1
               `);
             }
 
             await closeOpenPrintJobsForPrinter(db, printer.id, matchedModule?.id ?? null);
 
-            const now = Date.now();
-            const jobName = matchedModule
-              ? `${matchedModule.name} — reconciled`
-              : (normalized || 'External print');
-            const plannedWeight = matchedModule?.expected_weight ?? 0;
+            // print_jobs.start_time is stored as Unix seconds (schema mode: 'timestamp')
+            const nowSec = Math.floor(Date.now() / 1000);
             const moduleId = matchedModule?.id ?? null;
 
             await drizzleDb.run(sql`
               INSERT INTO print_jobs (module_id, printer_id, start_time, status, external_task_id, created_at, updated_at)
-              VALUES (${moduleId}, ${printer.id}, ${now}, 'printing', ${status.task_id}, ${now}, ${now})
+              VALUES (${moduleId}, ${printer.id}, ${nowSec}, 'printing', ${status.task_id}, ${nowSec}, ${nowSec})
             `);
 
-            await drizzleDb.run(sql`UPDATE printers SET status = 'printing' WHERE id = ${printer.id}`);
+            // printers.status was removed — status is now derived from active print_jobs.
 
             data.reconciled = {
               module_id: moduleId,

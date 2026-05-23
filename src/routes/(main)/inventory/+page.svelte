@@ -4,7 +4,7 @@
   import { goto } from '$app/navigation';
 
   // extend item type locally to include AI fields
-  type InventoryItemUI = ObjectItem & {
+  type ObjectItemUI = ObjectItem & {
     daily_velocity?: number;
     days_until_stockout?: number;
   };
@@ -26,8 +26,8 @@
   }
 
   interface PageData {
-    items: InventoryItemUI[];
-    logs: (InventoryLog & { item_name: string })[];
+    items: ObjectItemUI[];
+    logs: (InventoryLog & { object_name: string })[];
     setDefinitions: SetDefinition[];
     unitWeights: UnitWeight[];
   }
@@ -185,7 +185,7 @@
   }
 
   // Use category field from DB — set it on /products to categorize items
-  function getItemCategory(item: InventoryItem): { category: string; subcategory: string | null; color: string } {
+  function getItemCategory(item: ObjectItem): { category: string; subcategory: string | null; color: string } {
     const nameParts = item.name.split(' ');
     const color = nameParts[nameParts.length - 1];
     const category = item.category || 'Uncategorized';
@@ -194,7 +194,7 @@
 
   // Build grouped structure
   interface GroupedItem {
-    item: InventoryItem;
+    item: ObjectItem;
     color: string;
   }
 
@@ -313,7 +313,7 @@
   }
 
   // Stock level indicator
-  function getStockLevel(item: InventoryItem): 'ok' | 'low' | 'out' {
+  function getStockLevel(item: ObjectItem): 'ok' | 'low' | 'out' {
     if (item.in_stock === 0) return 'out';
     if (item.in_stock < item.min_threshold) return 'low';
     return 'ok';
@@ -547,7 +547,7 @@
                               <div class="border-t border-zinc-50 dark:border-[#171717]">
                               {#each subcategoryData.items.sort((a, b) => a.color.localeCompare(b.color)) as { item, color }}
                                 {@const stockLevel = getStockLevel(item)}
-                                {@const ui = item as InventoryItemUI}
+                                {@const ui = item as ObjectItemUI}
                                 <div class="flex items-center gap-4 pl-16 pr-5 py-2.5 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors {stockLevel === 'out' ? 'border-l-2 border-l-red-400' : stockLevel === 'low' ? 'border-l-2 border-l-amber-400' : 'border-l-2 border-l-transparent'}">
                                   <span class="text-xs text-zinc-500 w-20 shrink-0">{color}</span>
 
@@ -609,7 +609,7 @@
                         <div>
                           {#each categoryData.items as { item, color }}
                             {@const stockLevel = getStockLevel(item)}
-                            {@const ui = item as InventoryItemUI}
+                            {@const ui = item as ObjectItemUI}
                             <div class="flex items-center gap-4 pl-10 pr-5 py-2.5 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors {stockLevel === 'out' ? 'border-l-2 border-l-red-400' : stockLevel === 'low' ? 'border-l-2 border-l-amber-400' : 'border-l-2 border-l-transparent'}">
                               <span class="text-xs text-zinc-600 dark:text-zinc-400 flex-1 min-w-0 truncate">{item.name}</span>
                               <div class="flex items-center gap-5">
@@ -658,9 +658,6 @@
                     </span>
                     <div class="flex-1 min-w-0">
                       <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate leading-snug">{log.object_name}</p>
-                      {#if log.reason}
-                        <p class="text-[10px] text-zinc-400 truncate mt-0.5">{log.reason}</p>
-                      {/if}
                     </div>
                     <div class="text-right shrink-0">
                       <span class="text-xs font-semibold tabular-nums {log.quantity >= 0 ? 'text-emerald-500' : 'text-red-500'}">

@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { PageData } from './$types';
-  import type { InventoryItem } from '$lib/types';
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
 

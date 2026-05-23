@@ -14,7 +14,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   const shopifyConfigured = !!(platform?.env?.SHOPIFY_STORE_DOMAIN && platform?.env?.SHOPIFY_ACCESS_TOKEN);
 
   let shopifySyncState = null;
-  let shopifyRecentOrders: { shopify_order_id: string; shopify_order_number: string; processed_at: number; total_items: number }[] = [];
+  let shopifyRecentOrders: { order_id: string; order_number: string; processed_at: number; total_items: number }[] = [];
 
   if (shopifyConfigured) {
     try {

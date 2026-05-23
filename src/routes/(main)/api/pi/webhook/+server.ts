@@ -41,7 +41,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     return json({ success: false, error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { task_id, status, progress, layer_num, total_layer_num, error_code, gcode_state } = body;
+  const { task_id, status, error_code, gcode_state } = body;
   if (!task_id || !status) {
     return json({ success: false, error: 'task_id and status required' }, { status: 400 });
   }
@@ -49,14 +49,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   const validStatuses = ['printing', 'success', 'failed', 'paused'];
   const safeStatus = validStatuses.includes(status) ? status : 'printing';
 
-  // Always store latest progress/layer data
-  await drizzleDb.run(sql`
-    UPDATE print_jobs SET
-       progress = COALESCE(${progress ?? null}, progress),
-       layer_num = COALESCE(${layer_num ?? null}, layer_num),
-       total_layer_num = COALESCE(${total_layer_num ?? null}, total_layer_num)
-     WHERE external_task_id = ${task_id}
-  `);
+  // Progress/layer data was previously persisted on print_jobs — those columns
+  // were removed in the schema cleanup. Live state is now read directly from
+  // Pi polling (piStatusBySerial in the dashboard), so we only persist start/end
+  // milestones here.
 
   if (safeStatus === 'success' || safeStatus === 'failed') {
     const job = await drizzleDb.get(sql`

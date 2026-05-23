@@ -42,19 +42,24 @@ export class ShopifySyncService {
     }
 
     /**
-     * Get current sync state from database
+     * Get current sync state.
+     *
+     * The shopify_sync table was removed in the schema cleanup. We now derive
+     * last_order_id from the most recently processed shopify_orders row, and
+     * leave the counter fields as zero (analytics live in shopify_orders /
+     * inventory_log now). Sync is still idempotent because processOrder
+     * checks isOrderProcessed before deducting anything.
      */
     async getSyncState(): Promise<SyncState> {
         const drizzleDb = getDb(this.db);
-        const result = await drizzleDb.get<SyncState>(
-            sql`SELECT last_order_id, last_sync_at, orders_processed, items_deducted FROM shopify_sync LIMIT 1`
+        const lastOrder = await drizzleDb.get<{ order_id: string; processed_at: number }>(
+            sql`SELECT order_id, processed_at FROM shopify_orders ORDER BY processed_at DESC LIMIT 1`
         );
-
-        return result || {
-            last_order_id: null,
-            last_sync_at: null,
+        return {
+            last_order_id: lastOrder?.order_id ?? null,
+            last_sync_at: lastOrder?.processed_at ?? null,
             orders_processed: 0,
-            items_deducted: 0
+            items_deducted: 0,
         };
     }
 
@@ -84,7 +89,7 @@ export class ShopifySyncService {
     async isOrderProcessed(orderId: number): Promise<boolean> {
         const drizzleDb = getDb(this.db);
         const result = await drizzleDb.get(
-            sql`SELECT 1 FROM shopify_orders WHERE shopify_order_id = ${String(orderId)}`
+            sql`SELECT 1 FROM shopify_orders WHERE order_id = ${String(orderId)}`
         );
 
         return result !== null;
@@ -225,46 +230,35 @@ export class ShopifySyncService {
     }
 
     /**
-     * Update the sync state in database
+     * No-op: the shopify_sync table was removed; sync state is now derived
+     * from shopify_orders (see getSyncState). Kept as a method so the call
+     * site in sync() doesn't need to change.
      */
     private async updateSyncState(
-        lastOrderId: string | number | null,
-        ordersProcessed: number,
-        itemsDeducted: number
+        _lastOrderId: string | number | null,
+        _ordersProcessed: number,
+        _itemsDeducted: number,
     ): Promise<void> {
-        // Ensure order ID is stored as clean integer string (no decimals)
-        let cleanOrderId: string | null = null;
-        if (lastOrderId !== null) {
-            cleanOrderId = String(lastOrderId).replace(/\..*$/, '').replace(/[^0-9]/g, '');
-        }
-        
-        const drizzleDb = getDb(this.db);
-        await drizzleDb.run(sql`
-            UPDATE shopify_sync 
-            SET last_order_id = COALESCE(${cleanOrderId}, last_order_id),
-                last_sync_at = ${Date.now()},
-                orders_processed = orders_processed + ${ordersProcessed},
-                items_deducted = items_deducted + ${itemsDeducted}
-        `);
+        // intentional no-op
     }
 
     /**
      * Get list of recently processed orders
      */
     async getRecentOrders(limit = 20): Promise<{
-        shopify_order_id: string;
-        shopify_order_number: string;
+        order_id: string;
+        order_number: string;
         processed_at: number;
         total_items: number;
     }[]> {
         const drizzleDb = getDb(this.db);
         const rows = await drizzleDb.all<{
-            shopify_order_id: string;
-            shopify_order_number: string;
+            order_id: string;
+            order_number: string;
             processed_at: number;
             total_items: number;
         }>(sql`
-            SELECT shopify_order_id, shopify_order_number, processed_at, total_items
+            SELECT order_id, order_number, processed_at, total_items
             FROM shopify_orders
             ORDER BY processed_at DESC
             LIMIT ${limit}

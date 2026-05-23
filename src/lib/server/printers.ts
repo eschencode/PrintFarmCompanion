@@ -432,6 +432,9 @@ export async function getLoadedSpools(
  * Set (or clear) the spool in a slot. The slot row must already exist —
  * rows are pre-seeded by createPrinter / migration 0004. This is a strict
  * UPDATE so swapping in a new spool automatically displaces the previous one.
+ *
+ * Auto-unloads the spool from any other slot it currently occupies — a
+ * physical spool can only sit in one place at a time.
  */
 export async function setLoadedSpool(
   db: D1Database,
@@ -441,6 +444,16 @@ export async function setLoadedSpool(
 ): Promise<void> {
   const drizzleDb = getDb(db);
   const now = Math.floor(Date.now() / 1000);
+
+  if (spoolId !== null) {
+    await drizzleDb.run(sql`
+      UPDATE printer_loaded_spools
+      SET spool_id = NULL, updated_at = ${now}
+      WHERE spool_id = ${spoolId}
+        AND NOT (printer_id = ${printerId} AND slot_index = ${slotIndex})
+    `);
+  }
+
   await drizzleDb.run(sql`
     UPDATE printer_loaded_spools
     SET spool_id = ${spoolId}, updated_at = ${now}

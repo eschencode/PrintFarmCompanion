@@ -76,6 +76,124 @@ export async function getAllPrintJobs(db: D1Database): Promise<PrintJobFull[]> {
   return (rows ?? []) as unknown as PrintJobFull[];
 }
 
+/**
+ * Stats-tailored job row. Aggregates print_job_spools across slots so the
+ * caller doesn't need to N+1 queries to compute material / cost.
+ *
+ * - total_used_weight: grams across all slots (null-safe summed)
+ * - total_cost: sum(used_weight * preset.cost / preset.default_weight)
+ *   (preserves existing cost-per-gram math; cost unit is whatever the preset stores)
+ * - primary_color/brand/material: slot 0's spool (the "single-color view")
+ *
+ * start_time / expected_end_time / created_at / updated_at are converted
+ * from Unix seconds to milliseconds here so consumers can use Date.now() math.
+ */
+export interface PrintJobStatsRow {
+  id: number;
+  module_id: number | null;
+  printer_id: number | null;
+  external_task_id: string | null;
+  start_time: number | null;       // ms
+  expected_end_time: number | null; // ms
+  status: string;
+  failure_reason: string | null;
+  created_at: number;              // ms
+  updated_at: number;              // ms
+  printer_name: string | null;
+  module_name: string | null;
+  module_thumbnail: string | null;
+  module_weight: number;
+  expected_time_minutes: number;
+  objects_per_print: number;
+  total_used_weight: number;
+  total_cost: number;
+  primary_color: string | null;
+  primary_brand: string | null;
+  primary_material: string | null;
+}
+
+export async function getAllPrintJobsForStats(db: D1Database): Promise<PrintJobStatsRow[]> {
+  const drizzleDb = getDb(db);
+  const rows = await drizzleDb.all<{
+    id: number;
+    module_id: number | null;
+    printer_id: number | null;
+    external_task_id: string | null;
+    start_time: number | null;
+    expected_end_time: number | null;
+    status: string;
+    failure_reason: string | null;
+    created_at: number;
+    updated_at: number;
+    printer_name: string | null;
+    module_name: string | null;
+    module_thumbnail: string | null;
+    module_weight: number | null;
+    expected_time_minutes: number | null;
+    objects_per_print: number | null;
+    total_used_weight: number | null;
+    total_cost: number | null;
+    primary_color: string | null;
+    primary_brand: string | null;
+    primary_material: string | null;
+  }>(sql`
+    SELECT
+      pj.id, pj.module_id, pj.printer_id, pj.external_task_id,
+      pj.start_time, pj.expected_end_time, pj.status, pj.failure_reason,
+      pj.created_at, pj.updated_at,
+      p.name              as printer_name,
+      pm.name             as module_name,
+      pm.thumbnail        as module_thumbnail,
+      pm.weight           as module_weight,
+      pm.expected_time_minutes,
+      pm.objects_per_print,
+      COALESCE(SUM(pjs.used_weight), 0) as total_used_weight,
+      COALESCE(SUM(
+        CASE WHEN pjs.used_weight IS NOT NULL
+              AND sp.cost > 0
+              AND sp.default_weight > 0
+          THEN pjs.used_weight * sp.cost / sp.default_weight
+          ELSE 0
+        END
+      ), 0) as total_cost,
+      MAX(CASE WHEN pjs.slot_index = 0 THEN sp.color    END) as primary_color,
+      MAX(CASE WHEN pjs.slot_index = 0 THEN sp.brand    END) as primary_brand,
+      MAX(CASE WHEN pjs.slot_index = 0 THEN sp.material END) as primary_material
+    FROM print_jobs pj
+    LEFT JOIN printers          p   ON pj.printer_id = p.id
+    LEFT JOIN print_modules     pm  ON pj.module_id  = pm.id
+    LEFT JOIN print_job_spools  pjs ON pj.id         = pjs.print_job_id
+    LEFT JOIN spools            s   ON pjs.spool_id  = s.id
+    LEFT JOIN spool_presets     sp  ON s.preset_id   = sp.id
+    GROUP BY pj.id
+    ORDER BY pj.created_at DESC
+  `);
+
+  return (rows ?? []).map((r) => ({
+    id: r.id,
+    module_id: r.module_id,
+    printer_id: r.printer_id,
+    external_task_id: r.external_task_id,
+    start_time: r.start_time != null ? r.start_time * 1000 : null,
+    expected_end_time: r.expected_end_time != null ? r.expected_end_time * 1000 : null,
+    status: r.status,
+    failure_reason: r.failure_reason,
+    created_at: r.created_at * 1000,
+    updated_at: r.updated_at * 1000,
+    printer_name: r.printer_name,
+    module_name: r.module_name,
+    module_thumbnail: r.module_thumbnail,
+    module_weight: r.module_weight ?? 0,
+    expected_time_minutes: r.expected_time_minutes ?? 0,
+    objects_per_print: r.objects_per_print ?? 1,
+    total_used_weight: r.total_used_weight ?? 0,
+    total_cost: r.total_cost ?? 0,
+    primary_color: r.primary_color,
+    primary_brand: r.primary_brand,
+    primary_material: r.primary_material,
+  }));
+}
+
 export async function getActivePrintJobs(db: D1Database): Promise<PrintJobFull[]> {
   const drizzleDb = getDb(db);
   const rows = await drizzleDb.all<PrintJob>(sql`

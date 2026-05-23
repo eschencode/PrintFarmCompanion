@@ -7,7 +7,32 @@
 
   export let data: PageData;
 
-  let modules: any[] = data.modules;
+  // Decorate raw modules with derived display fields that no longer exist
+  // as columns in the new schema (printer_model_name, spool_preset_name, etc.).
+  function decorateModule(m: any) {
+    const printerModelName =
+      m.printer_preset_brand && m.printer_preset_model
+        ? `${m.printer_preset_brand} ${m.printer_preset_model}`
+        : null;
+
+    const presetFromList = m.default_spool_preset_id
+      ? data.spoolPresets?.find((p: any) => p.id === m.default_spool_preset_id)
+      : null;
+    const spoolPresetName = presetFromList
+      ? `${presetFromList.brand} ${presetFromList.material}${presetFromList.color ? ' ' + presetFromList.color : ''}`
+      : null;
+    const spoolPresetColor = presetFromList?.color ?? null;
+
+    return {
+      ...m,
+      printer_model_name: printerModelName,
+      spool_preset_name: spoolPresetName,
+      spool_preset_color: spoolPresetColor,
+      plate_type: m.plate_preset_name ?? null,
+    };
+  }
+
+  let modules: any[] = (data.modules ?? []).map(decorateModule);
   let showUpload = false;
   let showZipUpload = false;
   let editingModule: any = null;
@@ -92,7 +117,7 @@
   async function reloadModules() {
     const res = await fetch('/api/print-modules');
     const result = await res.json() as any;
-    if (result.success) modules = result.data;
+    if (result.success) modules = (result.data ?? []).map(decorateModule);
   }
 
   async function handleUploaded() {
@@ -337,17 +362,10 @@
               <div class="h-36 bg-zinc-100 dark:bg-[#1a1a1a] flex items-center justify-center overflow-hidden relative">
                 {#if module.thumbnail}
                   <img src={module.thumbnail} alt={module.name} class="w-full h-full object-cover" />
-                {:else if module.image_path}
-                  <img src={module.image_path} alt={module.name} class="w-full h-full object-cover" />
                 {:else}
                   <svg class="w-10 h-10 text-zinc-300 dark:text-zinc-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
                     <path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
                   </svg>
-                {/if}
-
-                <!-- Pi badge -->
-                {#if module.file_stored_on_pi}
-                  <div class="absolute top-2 right-2 bg-emerald-500/90 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded-full">Pi</div>
                 {/if}
 
                 <!-- Inactive badge -->
@@ -385,11 +403,11 @@
                       {module.spool_preset_name}
                     </span>
                   {/if}
-                  {#if module.expected_weight}
-                    <span class="text-xs text-zinc-400 dark:text-zinc-500">{module.expected_weight}g</span>
+                  {#if module.weight}
+                    <span class="text-xs text-zinc-400 dark:text-zinc-500">{module.weight}g</span>
                   {/if}
-                  {#if module.expected_time}
-                    <span class="text-xs text-zinc-400 dark:text-zinc-500">{formatTime(module.expected_time)}</span>
+                  {#if module.expected_time_minutes}
+                    <span class="text-xs text-zinc-400 dark:text-zinc-500">{formatTime(module.expected_time_minutes)}</span>
                   {/if}
                   {#if module.plate_type}
                     <span class="text-xs text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{module.plate_type}</span>
@@ -399,16 +417,12 @@
                   {/if}
                 </div>
 
-                <!-- File source indicators -->
+                <!-- File indicator -->
                 <div class="mt-2 flex gap-1.5">
-                  {#if module.local_file_handler_path}
-                    <span class="text-[9px] font-medium px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">Local</span>
-                  {/if}
-                  {#if module.pi_file_path}
-                    <span class="text-[9px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">Pi</span>
-                  {/if}
-                  {#if module.file_name && !module.local_file_handler_path && !module.pi_file_path}
-                    <span class="text-[9px] font-medium px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">.3mf</span>
+                  {#if module.filename}
+                    <span class="text-[9px] font-medium px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 truncate max-w-full" title={module.filename}>
+                      {module.filename.split('/').pop()}
+                    </span>
                   {/if}
                 </div>
               </div>

@@ -146,16 +146,55 @@ export async function setStorageCount(
 
 export async function getAllSpools(db: D1Database): Promise<SpoolWithPreset[]> {
   const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all<SpoolWithPreset>(sql`
+  const rows = await drizzleDb.all<{
+    id: number;
+    preset_id: number | null;
+    initial_weight: number;
+    remaining_weight: number;
+    created_at: number;
+    updated_at: number;
+    color: string | null;
+    brand: string | null;
+    material: string | null;
+    default_weight: number | null;
+    cost: number | null;
+    sp_in_storage: number | null;
+    sp_created_at: number | null;
+    sp_updated_at: number | null;
+  }>(sql`
     SELECT
       s.id, s.preset_id, s.initial_weight, s.remaining_weight,
       s.created_at, s.updated_at,
-      sp.color, sp.brand, sp.material, sp.default_weight, sp.cost
+      sp.color, sp.brand, sp.material, sp.default_weight, sp.cost,
+      sp.in_storage    as sp_in_storage,
+      sp.created_at    as sp_created_at,
+      sp.updated_at    as sp_updated_at
     FROM spools s
     LEFT JOIN spool_presets sp ON s.preset_id = sp.id
     ORDER BY s.created_at DESC
   `);
-  return rows ?? [];
+
+  return (rows ?? []).map((r) => ({
+    id: r.id,
+    preset_id: r.preset_id,
+    initial_weight: r.initial_weight,
+    remaining_weight: r.remaining_weight,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+    preset: r.preset_id && r.brand
+      ? {
+          id: r.preset_id,
+          brand: r.brand,
+          material: r.material ?? '',
+          color: r.color ?? '',
+          default_weight: r.default_weight ?? 0,
+          cost: r.cost ?? 0,
+          in_storage: r.sp_in_storage ?? 0,
+          created_at: r.sp_created_at ?? 0,
+          updated_at: r.sp_updated_at ?? 0,
+        }
+      : null,
+  }));
 }
 
 export async function getSpoolById(db: D1Database, id: number): Promise<Spool | null> {

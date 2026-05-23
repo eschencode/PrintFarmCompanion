@@ -56,7 +56,7 @@
               <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-2">
                 Using: {loadedSpool.preset?.brand ?? ''} {loadedSpool.preset?.material ?? ''} - {loadedSpool.preset?.color ?? ''} ({loadedSpool.remaining_weight}g)
                 {#if loadedPreset}
-                  <span class="text-blue-500 dark:text-blue-400 ml-1">(Preset: {loadedPreset.name})</span>
+                  <span class="text-blue-500 dark:text-blue-400 ml-1">(Preset: {loadedPreset.brand} {loadedPreset.material})</span>
                 {/if}
               </p>
             {/if}
@@ -161,7 +161,7 @@
                       {#if modulePreset}
                         <div class="flex justify-between items-center text-blue-600 dark:text-blue-400">
                           <span class="text-zinc-500">Preset:</span>
-                          <span>{modulePreset.name}</span>
+                          <span>{modulePreset.brand} {modulePreset.material}</span>
                         </div>
                       {/if}
                       <div class="flex justify-between items-center">
@@ -227,7 +227,7 @@
                       {#if modulePreset}
                         <div class="flex justify-between items-center text-blue-600 dark:text-blue-400">
                           <span class="text-zinc-500">Preset:</span>
-                          <span>{modulePreset.name}</span>
+                          <span>{modulePreset.brand} {modulePreset.material}</span>
                         </div>
                       {/if}
                       <div class="flex justify-between items-center">
