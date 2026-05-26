@@ -12,7 +12,7 @@ export async function getModuleFilamentSlots(
   const drizzleDb = getDb(db);
   const rows = await drizzleDb.all(sql`
     SELECT
-      mfs.module_id, mfs.slot_index, mfs.spool_preset_id,
+      mfs.module_id, mfs.slot_index, mfs.spool_preset_id, mfs.weight,
       sp.color, sp.brand, sp.material, sp.default_weight
     FROM module_filament_slots mfs
     LEFT JOIN spool_presets sp ON mfs.spool_preset_id = sp.id
@@ -29,14 +29,14 @@ export async function getModuleFilamentSlots(
 export async function setModuleFilamentSlots(
   db: D1Database,
   moduleId: number,
-  slots: { slotIndex: number; spoolPresetId: number }[],
+  slots: { slotIndex: number; spoolPresetId: number | null; weight?: number | null }[],
 ): Promise<void> {
   const drizzleDb = getDb(db);
   await drizzleDb.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${moduleId}`);
   for (const slot of slots) {
     await drizzleDb.run(sql`
-      INSERT INTO module_filament_slots (module_id, slot_index, spool_preset_id)
-      VALUES (${moduleId}, ${slot.slotIndex}, ${slot.spoolPresetId})
+      INSERT INTO module_filament_slots (module_id, slot_index, spool_preset_id, weight)
+      VALUES (${moduleId}, ${slot.slotIndex}, ${slot.spoolPresetId}, ${slot.weight ?? null})
     `);
   }
 }
@@ -110,8 +110,9 @@ export async function createPrintModule(
     nozzleDiameter?: number | null;
     filename: string;
     thumbnail?: string | null;
-    /** Filament slot requirements. Empty = no requirements (any filament). */
-    filamentSlots?: { slotIndex: number; spoolPresetId: number }[];
+    /** Filament slot requirements. Empty = no requirements (any filament).
+     *  spoolPresetId = null means slot accepts any loaded spool. */
+    filamentSlots?: { slotIndex: number; spoolPresetId: number | null }[];
   },
 ): Promise<ServerResponse> {
   const drizzleDb = getDb(db);
@@ -160,7 +161,7 @@ export async function updatePrintModule(
     filename?: string;
     thumbnail?: string | null;
     active?: boolean;
-    filamentSlots?: { slotIndex: number; spoolPresetId: number }[];
+    filamentSlots?: { slotIndex: number; spoolPresetId: number | null }[];
   },
 ): Promise<ServerResponse> {
   const drizzleDb = getDb(db);

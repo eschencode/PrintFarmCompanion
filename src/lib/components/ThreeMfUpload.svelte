@@ -49,6 +49,18 @@
     }
   }
 
+  type FilamentSlot = {
+    slotIndex: number;
+    /** null = "Any spool" wildcard */
+    spoolPresetId: number | null;
+    /** Expected grams used from this slot. null = unknown. */
+    weight: number | null;
+    /** Detected hex colour from the .3mf, kept for the preview swatch even when no preset matches. */
+    detectedColor: string | null;
+    /** Detected material/type (e.g. PLA), for the helper text. */
+    detectedType: string | null;
+  };
+
   type PreviewData = {
     name: string;
     thumbnail: string | null;
@@ -58,11 +70,53 @@
     nozzleDiameter: number | null;
     expectedWeight: number | null;
     objectsPerPrint: number;
-    defaultSpoolPresetId: number | null;
+    slots: FilamentSlot[];
     objectId: number | null;
     printerPresetId: number | null;
     localFileHandlerPath: string | null;
   };
+
+  // Try to find a spool preset that matches a detected (type, color) pair.
+  // Type-only match if color is missing; color is matched case-insensitively
+  // ignoring an optional leading "#".
+  function matchPreset(presets: any[], type: string | null, color: string | null): number | null {
+    if (!presets?.length) return null;
+    const normColor = (c: string | null | undefined) =>
+      (c ?? '').replace(/^#/, '').toLowerCase().slice(0, 6);
+    const normType = (t: string | null | undefined) => (t ?? '').toLowerCase().trim();
+
+    const wantColor = normColor(color);
+    const wantType = normType(type);
+
+    // Prefer exact (type + color)
+    if (wantColor && wantType) {
+      const exact = presets.find(
+        (p) => normType(p.material) === wantType && normColor(p.color) === wantColor,
+      );
+      if (exact) return exact.id;
+    }
+    // Color-only match (if e.g. "Generic PLA" matches but we still want the same color)
+    if (wantColor) {
+      const colorMatch = presets.find((p) => normColor(p.color) === wantColor);
+      if (colorMatch) return colorMatch.id;
+    }
+    return null;
+  }
+
+  function addSlot() {
+    if (!previewData) return;
+    previewData.slots = [
+      ...previewData.slots,
+      { slotIndex: previewData.slots.length, spoolPresetId: null, weight: null, detectedColor: null, detectedType: null },
+    ];
+  }
+
+  function removeSlot(index: number) {
+    if (!previewData) return;
+    previewData.slots = previewData.slots
+      .filter((_, i) => i !== index)
+      .map((s, i) => ({ ...s, slotIndex: i }));
+  }
 
   let previewData: PreviewData | null = null;
   let currentFile: File | null = null;  // original File kept for Pi upload
@@ -134,7 +188,9 @@
       let nozzleDiameter: number | null = null;
       let expectedWeight: number | null = null;
       let objectsPerPrint: number = 1;
-      let defaultSpoolPresetId: number | null = null;
+      let detectedColors: string[] = [];
+      let detectedTypes: string[] = [];
+      let detectedWeights: (number | null)[] = [];
       let objectId: number | null = null;
       let printerPresetId: number | null = null;
 
@@ -212,6 +268,21 @@
             plateType = normalizePlateType(raw);
           }
 
+          // Per-slot filament info. Bambu's plate_1.json filament array is the most
+          // authoritative source — each entry has color, type, and used_g.
+          if (Array.isArray(json.filament) && json.filament.length > 0) {
+            const sortedFilaments = [...json.filament].sort(
+              (a, b) => Number(a.id ?? 0) - Number(b.id ?? 0),
+            );
+            detectedColors = sortedFilaments.map((f: any) => String(f.color ?? ''));
+            detectedTypes = sortedFilaments.map((f: any) => String(f.type ?? ''));
+            detectedWeights = sortedFilaments.map((f: any) => {
+              const v = f.used_g ?? f.filament_weight ?? null;
+              const n = v == null ? NaN : Number(v);
+              return isNaN(n) ? null : Math.ceil(n);
+            });
+          }
+
         } catch (e) {
           console.warn(`Could not parse ${path} as JSON:`, e);
         }
@@ -234,6 +305,15 @@
           }
           if (!plateType) {
             plateType = normalizePlateType(json.bed_type ?? json.plate_type ?? null);
+          }
+
+          // Filament slots — arrays whose length determines slot count.
+          // Bambu Studio uses `filament_colour` (hex) + `filament_type` (e.g. "PLA").
+          if (Array.isArray(json.filament_colour)) {
+            detectedColors = json.filament_colour.map((c: any) => String(c ?? ''));
+          }
+          if (Array.isArray(json.filament_type)) {
+            detectedTypes = json.filament_type.map((t: any) => String(t ?? ''));
           }
         } catch (e) {
           console.warn('project_settings.config is not JSON or could not be parsed:', e);
@@ -330,6 +410,27 @@
         if (match) printerPresetId = match.id;
       }
 
+      // Build filament slots — one per detected colour/type. Fall back to a single
+      // empty slot if the .3mf had no filament metadata at all.
+      const slotCount = Math.max(detectedColors.length, detectedTypes.length, detectedWeights.length, 1);
+      const slots: FilamentSlot[] = Array.from({ length: slotCount }, (_, i) => {
+        const color = detectedColors[i] ?? null;
+        const type = detectedTypes[i] ?? null;
+        return {
+          slotIndex: i,
+          spoolPresetId: matchPreset(spoolPresets, type, color),
+          weight: detectedWeights[i] ?? null,
+          detectedColor: color,
+          detectedType: type,
+        };
+      });
+
+      // Single-color fallback: if we only have a total weight (no per-filament
+      // breakdown), drop it onto slot 0 so the user doesn't have to retype it.
+      if (slots.length === 1 && slots[0].weight == null && expectedWeight != null) {
+        slots[0].weight = expectedWeight;
+      }
+
       previewData = {
         name: f.name.replace(/\.3mf$/i, ''),
         thumbnail,
@@ -339,7 +440,7 @@
         nozzleDiameter: nozzleDiameter ?? null,
         expectedWeight: expectedWeight ?? null,
         objectsPerPrint: objectsPerPrint || 1,
-        defaultSpoolPresetId,
+        slots,
         objectId,
         printerPresetId,
         localFileHandlerPath: suggestedLocalPath,
@@ -412,9 +513,12 @@
           estimated_time: previewData.estimatedTime,
           plate_type: previewData.plateType || null,
           nozzle_diameter: previewData.nozzleDiameter,
-          expected_weight: previewData.expectedWeight,
           objects_per_print: previewData.objectsPerPrint,
-          default_spool_preset_id: previewData.defaultSpoolPresetId,
+          slots: previewData.slots.map((s) => ({
+            slot_index: s.slotIndex,
+            spool_preset_id: s.spoolPresetId,
+            weight: s.weight,
+          })),
           object_id: previewData.objectId,
           printer_preset_id: previewData.printerPresetId,
           local_file_handler_path: previewData.localFileHandlerPath,
@@ -512,21 +616,77 @@
         </div>
 
         <div class="grid grid-cols-2 gap-x-3 gap-y-3">
-          <!-- Spool Preset -->
+          <!-- Filament Slots -->
           <div class="col-span-2">
-            <label for="upload-spool" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Spool Preset</label>
-            <select
-              id="upload-spool"
-              bind:value={previewData.defaultSpoolPresetId}
-              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-            >
-              <option value={null}>None</option>
-              {#each spoolPresets as preset (preset.id)}
-                <option value={preset.id}>
-                  {preset.brand} {preset.color} ({preset.material})
-                </option>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                Filament Slots ({previewData.slots.length})
+              </span>
+              <button
+                type="button"
+                onclick={addSlot}
+                class="text-[10px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+              >
+                + Add slot
+              </button>
+            </div>
+            <div class="space-y-1.5">
+              {#each previewData.slots as slot, i (i)}
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 w-5 text-right shrink-0">#{i + 1}</span>
+                  {#if slot.detectedColor}
+                    <span
+                      class="w-3.5 h-3.5 rounded-full border border-zinc-300 dark:border-zinc-600 shrink-0"
+                      style="background:{slot.detectedColor.startsWith('#') ? slot.detectedColor : '#' + slot.detectedColor}"
+                      title={slot.detectedType ? `${slot.detectedType} ${slot.detectedColor}` : slot.detectedColor}
+                    ></span>
+                  {/if}
+                  <select
+                    bind:value={previewData.slots[i].spoolPresetId}
+                    class="flex-1 min-w-0 bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+                  >
+                    <option value={null}>Any spool</option>
+                    {#each spoolPresets as preset (preset.id)}
+                      <option value={preset.id}>
+                        {preset.brand} {preset.color} ({preset.material})
+                      </option>
+                    {/each}
+                  </select>
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={previewData.slots[i].weight ?? ''}
+                      oninput={(e) => {
+                        if (!previewData) return;
+                        const v = parseInt((e.target as HTMLInputElement).value, 10);
+                        previewData.slots[i].weight = isNaN(v) ? null : v;
+                      }}
+                      placeholder="—"
+                      aria-label="Weight for slot {i + 1} (grams)"
+                      class="w-24 bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-2 text-base font-medium text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors text-right tabular-nums"
+                    />
+                    <span class="text-xs text-zinc-400">g</span>
+                  </div>
+                  <button
+                    type="button"
+                    onclick={() => removeSlot(i)}
+                    disabled={previewData.slots.length === 1}
+                    class="text-zinc-400 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
+                    title="Remove slot"
+                    aria-label="Remove slot {i + 1}"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               {/each}
-            </select>
+            </div>
+            <p class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-1">
+              "Any spool" matches any loaded filament. Auto-detected from the .3mf when available.
+            </p>
           </div>
 
           <!-- Est. Time (minutes) -->
@@ -597,22 +757,6 @@
                 class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
               />
               <span class="text-xs text-zinc-400 shrink-0">mm</span>
-            </div>
-          </div>
-
-          <!-- Expected weight -->
-          <div>
-            <label for="upload-weight" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Weight</label>
-            <div class="flex items-center gap-1.5">
-              <input
-                id="upload-weight"
-                type="number"
-                step="0.1"
-                bind:value={previewData.expectedWeight}
-                placeholder="0.0"
-                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-              />
-              <span class="text-xs text-zinc-400 flex-shrink-0">g</span>
             </div>
           </div>
 

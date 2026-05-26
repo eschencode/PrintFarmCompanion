@@ -2,6 +2,7 @@
   import type { PageData } from './$types';
   import type { GridCell, SpoolSuggestion, DashboardPrinter, PiStatus } from '$lib/types';
   import { enhance } from '$app/forms';
+  import { invalidateAll } from '$app/navigation';
   import { formatTime, formatRemainingTime, getElapsedTime, getRemainingTime, getProgress } from '$lib/utils/time';
   import { getActivePrintJob, getLastPrintJob, getCategorizedModules } from '$lib/utils/printerData';
   import { shine } from '$lib/actions/shine';
@@ -292,7 +293,7 @@
   type StartQueueEntry = { printer: any; module: any; enqueuedAt: number; startedAt: number | null };
   let startQueue: StartQueueEntry[] = [];
   let startQueueTimeout: ReturnType<typeof setTimeout> | null = null;
-  $: startingSerials = new Set(startQueue.map(e => e.printer.printer_serial));
+  $: startingPrinterIds = new Set(startQueue.map(e => Number(e.printer.id)));
   $: startQueueTotal = startQueue.length;
 
   const START_QUEUE_KEY = 'printfarm_start_queue';
@@ -362,6 +363,7 @@
         formData.append('printerId', String(printer.id));
         formData.append('moduleId', String(module.id));
         await fetch('?/startPrint', { method: 'POST', body: formData });
+        await invalidateAll();
         setTimeout(advanceStartQueue, 3_000);
       } else if (hasPi) {
         // Pi path: Pi handles file upload and print start.
@@ -374,6 +376,7 @@
         const result = await res.json() as { success: boolean; error?: string };
         if (result.success) {
           startPiPolling(printer.printer_serial);
+          await invalidateAll();
           // Stays in queue — advances on PREPARE→RUNNING or 30s timeout
         } else {
           advanceStartQueue();
@@ -392,6 +395,7 @@
           remotePath: `/cache/${filename}`,
           param: 'Metadata/plate_1.gcode',
         }).catch((e: unknown) => console.error('start_print_direct failed:', e));
+        await invalidateAll();
         setTimeout(advanceStartQueue, 3_000);
       } else {
         const formData = new FormData();
@@ -399,6 +403,7 @@
         formData.append('moduleId', String(module.id));
         const res = await fetch('?/startPrint', { method: 'POST', body: formData });
         if (res.ok && hasLocalHandler) await openFileLocally(module.filename, module.name, printer.id);
+        await invalidateAll();
         setTimeout(advanceStartQueue, 3_000);
       }
     } catch {
@@ -797,12 +802,6 @@
     };
   });
 
-  function getPrinterForPosition(printerId: number | undefined) {
-    if (!printerId) return null;
-    // Use == for type coercion since printerId from JSON might be string
-    return data.printers.find(p => Number(p.id) === Number(printerId));
-  }
-
   // Modal handlers
 
   let suggestedSpools: SpoolSuggestion[] = [];
@@ -950,13 +949,13 @@
     {#each gridLayout as cell, i}
 
       {#if cell.type === 'printer'}
-        {@const printer = getPrinterForPosition(cell.printerId)}
+        {@const printer = cell.printerId ? data.printers.find(p => Number(p.id) === Number(cell.printerId)) : null}
 
         {#if printer}
           <PrinterCard
             printer={printer}
             piLive={piStatusBySerial[printer.printer_serial as string]}
-            liveIsStarting={startingSerials.has(printer.printer_serial as string)}
+            liveIsStarting={startingPrinterIds.has(Number(printer.id))}
             activePrintJobs={data.activePrintJobs}
             spools={data.spools}
             printModules={data.printModules}
@@ -1123,7 +1122,7 @@
     nextPrint={nextPrint}
     nextModule={nextModule}
     quickStartLoading={quickStartLoading}
-    startingSerials={startingSerials}
+    startingPrinterIds={startingPrinterIds}
     onClose={closePrinterModal}
     onLoadSpool={() => { showQuickStart = false; handleLoadSpool(); }}
     onSwitchToManual={() => { showQuickStart = false; }}
@@ -1140,7 +1139,7 @@
     loadedSpool={loadedSpool}
     piLive={piStatusBySerial[selectedPrinter.printer_serial as string]}
     controlLoading={controlLoading}
-    startingSerials={startingSerials}
+    startingPrinterIds={startingPrinterIds}
     now={now}
     printJobs={data.printJobs}
     printModules={data.printModules}
@@ -1177,7 +1176,7 @@
     loadedSpool={loadedSpool}
     categorizedModules={categorizedModules}
     spoolPresets={data.spoolPresets}
-    startingSerials={startingSerials}
+    startingPrinterIds={startingPrinterIds}
     onClose={closeModuleSelector}
     onEnqueue={enqueueStart}
   />

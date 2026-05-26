@@ -15,8 +15,8 @@
   /** Live Pi/MQTT status for this printer — drives real-time progress and temps. */
   export let piLive: PiStatus | undefined;
   export let controlLoading: string | null;
-  /** Set of serials currently being started — disables start buttons. */
-  export let startingSerials: Set<string>;
+  /** Set of printer IDs currently being started — disables start buttons. */
+  export let startingPrinterIds: Set<number>;
   export let now: number;
   export let printJobs: PrintJobWithDetails[];
   export let printModules: PrintModuleFull[];
@@ -321,7 +321,7 @@
     {@const matchingModule = printModules.find((m: any) => m.id === nextPrint.module_id)}
     <button
       type="button"
-      disabled={startingSerials.has(printer.printer_serial ?? '')}
+      disabled={startingPrinterIds.has(Number(printer.id))}
       onclick={() => matchingModule && onEnqueue(matchingModule, printer)}
       class="w-full text-left bg-emerald-500/5 border border-emerald-500/15 rounded-xl p-5 mt-4 hover:bg-emerald-500/10 hover:border-emerald-500/25 transition-all duration-200 disabled:opacity-50"
     >

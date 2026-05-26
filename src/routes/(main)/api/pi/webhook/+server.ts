@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { completePrintJob } from '$lib/server';
+import { completePrintJob, distributeWeightAcrossSlots } from '$lib/server';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
@@ -76,8 +76,14 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         : (job.failure_reason ?? `Pi reported: ${gcode_state ?? 'FAILED'} (error ${error_code ?? 'unknown'})`);
       const actualWeight = isSuccess ? (job.module_weight ?? 0) : 0;
 
-      // completePrintJob handles spool deduction and inventory update
-      await completePrintJob(db, job.id, isSuccess, isSuccess ? { 0: actualWeight } : {}, failureReason);
+      // For multi-spool prints, split the total expected weight proportionally
+      // across the module's slots so each loaded spool gets its share deducted.
+      const usedWeightBySlot =
+        isSuccess && job.module_id
+          ? await distributeWeightAcrossSlots(db, job.module_id, actualWeight)
+          : {};
+
+      await completePrintJob(db, job.id, isSuccess, usedWeightBySlot, failureReason);
     }
   }
 

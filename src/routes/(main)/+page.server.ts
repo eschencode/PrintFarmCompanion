@@ -101,12 +101,22 @@ export const actions: Actions = {
     const failureReason = (formData.get('failureReason') as string | null) || null;
 
     try {
-      // completePrintJob handles spool weight deduction + inventory log internally
+      // Split the reported total across the module's slots so multi-spool
+      // jobs deduct from each loaded spool by its share. Falls back to
+      // {0: total} when the module has no per-slot weights.
+      let usedWeightBySlot: Record<number, number> = {};
+      if (success && actualWeight > 0) {
+        const job = await db.getPrintJobById(database, jobId);
+        usedWeightBySlot = job?.module_id
+          ? await db.distributeWeightAcrossSlots(database, job.module_id, actualWeight)
+          : { 0: actualWeight };
+      }
+
       await db.completePrintJob(
         database,
         jobId,
         success,
-        { 0: actualWeight }, // single-color: all weight on slot 0
+        usedWeightBySlot,
         failureReason,
       );
       return { success: true, message: 'Print job completed' };

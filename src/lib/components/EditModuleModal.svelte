@@ -9,15 +9,24 @@
 
   const dispatch = createEventDispatcher();
 
+  type FilamentSlot = { slotIndex: number; spoolPresetId: number | null; weight: number | null };
+
   // Form state — mirrors the new schema field names
   let name = '';
-  let weight = 0;
   let estimatedTime = 0;
   let objectsPerPrint = 1;
   let nozzleDiameter: number | null = null;
-  let defaultSpoolPresetId: number | null = null;
+  let slots: FilamentSlot[] = [];
   let objectId: number | null = null;
   let printerPresetId: number | null = null;
+
+  function addSlot() {
+    slots = [...slots, { slotIndex: slots.length, spoolPresetId: null, weight: null }];
+  }
+
+  function removeSlot(index: number) {
+    slots = slots.filter((_, i) => i !== index).map((s, i) => ({ ...s, slotIndex: i }));
+  }
 
   let isSaving = false;
   let error = '';
@@ -60,11 +69,20 @@
   // Populate form whenever the modal opens
   $: if (isOpen && module) {
     name = module.name ?? '';
-    weight = module.weight ?? 0;
     estimatedTime = module.expected_time_minutes ?? 0;
     objectsPerPrint = module.objects_per_print ?? 1;
     nozzleDiameter = module.nozzle_diameter ?? null;
-    defaultSpoolPresetId = module.default_spool_preset_id ?? null;
+    // module.slots is preferred (multi-slot); fall back to the legacy single-slot field.
+    const rawSlots = Array.isArray(module.slots) && module.slots.length > 0
+      ? module.slots.map((s: any) => ({
+          slotIndex: s.slot_index,
+          spoolPresetId: s.spool_preset_id ?? null,
+          weight: s.weight ?? null,
+        }))
+      : module.default_spool_preset_id != null
+        ? [{ slotIndex: 0, spoolPresetId: module.default_spool_preset_id, weight: null }]
+        : [{ slotIndex: 0, spoolPresetId: null, weight: null }];
+    slots = rawSlots.sort((a: FilamentSlot, b: FilamentSlot) => a.slotIndex - b.slotIndex);
     objectId = module.object_id ?? null;
     printerPresetId = module.printer_preset_id ?? null;
     error = '';
@@ -88,11 +106,14 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
-          expected_weight: weight,
           estimated_time: estimatedTime,
           objects_per_print: objectsPerPrint,
           nozzle_diameter: nozzleDiameter,
-          default_spool_preset_id: defaultSpoolPresetId,
+          slots: slots.map((s) => ({
+            slot_index: s.slotIndex,
+            spool_preset_id: s.spoolPresetId,
+            weight: s.weight,
+          })),
           object_id: objectId,
           printer_preset_id: printerPresetId,
         }),
@@ -157,11 +178,6 @@
         <!-- Print settings -->
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label for="em-weight" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Weight (g)</label>
-            <input id="em-weight" type="number" bind:value={weight} min="0"
-              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors" />
-          </div>
-          <div>
             <label for="em-time" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">
               Time (min){estimatedTime ? ` — ${formatTime(estimatedTime)}` : ''}
             </label>
@@ -183,16 +199,71 @@
           </div>
         </div>
 
-        <!-- Spool preset -->
+        <!-- Filament slots -->
         <div>
-          <label for="em-spool" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Spool Preset</label>
-          <select id="em-spool" bind:value={defaultSpoolPresetId}
-            class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors">
-            <option value={null}>None</option>
-            {#each spoolPresets as p (p.id)}
-              <option value={p.id}>{p.brand} {p.color} ({p.material})</option>
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+              Filament Slots ({slots.length})
+            </span>
+            <button
+              type="button"
+              onclick={addSlot}
+              class="text-[10px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+            >
+              + Add slot
+            </button>
+          </div>
+          <div class="space-y-1.5">
+            {#each slots as slot, i (i)}
+              {@const preset = slot.spoolPresetId ? spoolPresets.find((p: any) => p.id === slot.spoolPresetId) : null}
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 w-5 text-right shrink-0">#{i + 1}</span>
+                {#if preset?.color}
+                  <span class="w-3.5 h-3.5 rounded-full border border-zinc-300 dark:border-zinc-600 shrink-0" style="background:{preset.color}"></span>
+                {/if}
+                <select
+                  bind:value={slots[i].spoolPresetId}
+                  class="flex-1 min-w-0 bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+                >
+                  <option value={null}>Any spool</option>
+                  {#each spoolPresets as p (p.id)}
+                    <option value={p.id}>{p.brand} {p.color} ({p.material})</option>
+                  {/each}
+                </select>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={slots[i].weight ?? ''}
+                    oninput={(e) => {
+                      const v = parseInt((e.target as HTMLInputElement).value, 10);
+                      slots[i].weight = isNaN(v) ? null : v;
+                    }}
+                    placeholder="—"
+                    aria-label="Weight for slot {i + 1} (grams)"
+                    class="w-24 bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-2 text-base font-medium text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors text-right tabular-nums"
+                  />
+                  <span class="text-xs text-zinc-400">g</span>
+                </div>
+                <button
+                  type="button"
+                  onclick={() => removeSlot(i)}
+                  disabled={slots.length === 1}
+                  class="text-zinc-400 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
+                  title="Remove slot"
+                  aria-label="Remove slot {i + 1}"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             {/each}
-          </select>
+          </div>
+          <p class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-1">
+            "Any spool" matches any loaded filament.
+          </p>
         </div>
 
         <!-- Printer preset -->

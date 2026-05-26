@@ -4,7 +4,7 @@ import { getDb } from '../db';
 import type { PrintJob, PrintJobFull, PrintJobSpool, StartPrintResponse, ServerResponse } from '../types';
 import { getPrinterById, getLoadedSpools } from './printers';
 import { getSpoolById, updateSpoolWeight } from './spools';
-import { getPrintModuleById } from './modules';
+import { getPrintModuleById, getModuleFilamentSlots } from './modules';
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -284,11 +284,55 @@ export async function startPrintJob(
 }
 
 /**
+ * Distribute a single total used-weight number across the module's slots,
+ * proportional to each slot's expected weight. Fallbacks:
+ *  - if no slots have a stored weight, the total lands on slot 0;
+ *  - if total is 0 or negative, returns the per-slot expected weights as-is
+ *    (so spools are still deducted by the planned amount).
+ *
+ * Use this when the user only reports a single combined "actual weight" from
+ * the dashboard's Complete Print form — the schema can still attribute usage
+ * to each spool correctly.
+ */
+export async function distributeWeightAcrossSlots(
+  db: D1Database,
+  moduleId: number,
+  totalUsedWeight: number,
+): Promise<Record<number, number>> {
+  const slots = await getModuleFilamentSlots(db, moduleId);
+  if (slots.length === 0) {
+    return totalUsedWeight > 0 ? { 0: totalUsedWeight } : {};
+  }
+
+  const slotWeights = slots.map((s) => ({
+    slot_index: s.slot_index,
+    weight: typeof s.weight === 'number' && s.weight > 0 ? s.weight : 0,
+  }));
+  const planned = slotWeights.reduce((sum: number, s) => sum + s.weight, 0);
+
+  // No per-slot weights stored — fall back to slot 0 for the whole amount.
+  if (planned === 0) {
+    return totalUsedWeight > 0 ? { [slotWeights[0].slot_index]: totalUsedWeight } : {};
+  }
+
+  // No total reported — deduct exactly the planned amounts per slot.
+  const effectiveTotal = totalUsedWeight > 0 ? totalUsedWeight : planned;
+
+  const out: Record<number, number> = {};
+  for (const s of slotWeights) {
+    if (s.weight === 0) continue;
+    out[s.slot_index] = Math.round((s.weight / planned) * effectiveTotal);
+  }
+  return out;
+}
+
+/**
  * Complete a print job: record used weight per slot, deduct from spools,
  * and (on success) add to inventory.
  *
  * For single-color jobs, pass usedWeightBySlot as `{ 0: totalGrams }`.
- * For multi-color, pass one entry per slot.
+ * For multi-color, pass one entry per slot — or use
+ * `distributeWeightAcrossSlots` to split a single total proportionally.
  */
 export async function completePrintJob(
   db: D1Database,

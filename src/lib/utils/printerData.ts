@@ -72,20 +72,20 @@ export function getCategorizedModules(
     const hasEnoughMaterial =
       loadedSpool.remaining_weight >= (module.weight ?? 0);
 
-    // Check filament slot compatibility: look at slot 0 requirement
+    // Slot 0 spool requirement. spool_preset_id = null on a slot is a wildcard
+    // ("any spool"), so it's treated the same as having no slot at all.
     const slot0 = module.filament_slots?.find((s) => s.slot_index === 0);
+    const slot0RequiresSpecific = slot0 != null && slot0.spool_preset_id !== null;
 
-    if (slot0) {
-      // Module specifies a required filament type — must match loaded spool's preset
-      if (slot0.spool_preset_id !== loadedSpool.preset_id) continue;
-      // Preset matches
+    if (slot0RequiresSpecific) {
+      if (slot0!.spool_preset_id !== loadedSpool.preset_id) continue;
       if (hasEnoughMaterial) {
         categories.compatiblePrintable.push(module);
       } else {
         categories.compatibleInsufficientMaterial.push(module);
       }
     } else {
-      // No filament requirement — any spool works
+      // No requirement OR explicit "any spool" — works with any loaded spool
       if (hasEnoughMaterial) {
         categories.anySpoolPrintable.push(module);
       } else {

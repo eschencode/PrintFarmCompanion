@@ -334,6 +334,9 @@ export const moduleFilamentSlots = sqliteTable(
       () => spoolPresets.id,
       { onDelete: "restrict" },
     ),
+    // Expected filament weight (grams) consumed from this slot per print.
+    // Nullable: legacy modules without per-slot data fall back to module.weight.
+    weight: integer("weight"),
   },
   (t) => [
     primaryKey({ columns: [t.moduleId, t.slotIndex] }),

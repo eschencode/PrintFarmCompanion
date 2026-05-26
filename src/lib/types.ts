@@ -129,11 +129,14 @@ export interface DashboardPrinter extends PrinterFull {
 // PRINT MODULE TYPES
 // ============================================================================
 
-/** Which filament preset is required at a specific slot for a module. */
+/** Which filament preset is required at a specific slot for a module.
+ *  `spool_preset_id = null` means the slot accepts any loaded spool.
+ *  `weight` is expected grams consumed from this slot; null = unknown. */
 export interface ModuleFilamentSlot {
   module_id: number;
   slot_index: number;
-  spool_preset_id: number;
+  spool_preset_id: number | null;
+  weight: number | null;
 }
 
 /** A reusable print template: sliced gcode + metadata. */

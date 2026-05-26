@@ -206,8 +206,7 @@
         >
             {#if liveIsStarting}
                 {@const qPos = startQueue.findIndex(
-                    (e: any) =>
-                        e.printer.printer_serial === printer.printer_serial,
+                    (e: any) => Number(e.printer.id) === Number(printer.id),
                 )}
                 <span class="text-amber-500 dark:text-amber-400">
                     {qPos === 0
@@ -230,8 +229,7 @@
         <!-- Progress Bar for Active Prints -->
         {#if liveIsStarting}
             {@const qPos = startQueue.findIndex(
-                (e: any) =>
-                    e.printer.printer_serial === printer.printer_serial,
+                (e: any) => Number(e.printer.id) === Number(printer.id),
             )}
             <div class="mt-2 px-1">
                 <div

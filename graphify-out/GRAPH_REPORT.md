@@ -1,13 +1,18 @@
-# Graph Report - .  (2026-05-22)
+# Graph Report - PrintFarmCompanion  (2026-05-23)
 
 ## Corpus Check
-- 201 files · ~181,649 words
+- 133 files · ~183,915 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1636 nodes · 2181 edges · 129 communities (117 shown, 12 thin omitted)
+- 1676 nodes · 2238 edges · 122 communities (110 shown, 12 thin omitted)
 - Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 97 edges (avg confidence: 0.82)
-- Token cost: 4,400 input · 1,070 output
+- Token cost: 0 input · 0 output
+
+## Graph Freshness
+- Built from commit: `166063e5`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - [[_COMMUNITY_DB Migration v0 Print Jobs|DB Migration v0: Print Jobs]]
@@ -68,14 +73,11 @@
 - [[_COMMUNITY_Community 55|Community 55]]
 - [[_COMMUNITY_Community 56|Community 56]]
 - [[_COMMUNITY_Community 57|Community 57]]
-- [[_COMMUNITY_Community 58|Community 58]]
 - [[_COMMUNITY_Community 59|Community 59]]
 - [[_COMMUNITY_Community 60|Community 60]]
 - [[_COMMUNITY_Community 61|Community 61]]
 - [[_COMMUNITY_Community 62|Community 62]]
-- [[_COMMUNITY_Community 63|Community 63]]
 - [[_COMMUNITY_Community 64|Community 64]]
-- [[_COMMUNITY_Community 65|Community 65]]
 - [[_COMMUNITY_Community 66|Community 66]]
 - [[_COMMUNITY_Community 67|Community 67]]
 - [[_COMMUNITY_Community 68|Community 68]]
@@ -95,10 +97,8 @@
 - [[_COMMUNITY_Community 82|Community 82]]
 - [[_COMMUNITY_Community 83|Community 83]]
 - [[_COMMUNITY_Community 84|Community 84]]
-- [[_COMMUNITY_Community 85|Community 85]]
 - [[_COMMUNITY_Community 86|Community 86]]
 - [[_COMMUNITY_Community 87|Community 87]]
-- [[_COMMUNITY_Community 88|Community 88]]
 - [[_COMMUNITY_Community 89|Community 89]]
 - [[_COMMUNITY_Community 90|Community 90]]
 - [[_COMMUNITY_Community 91|Community 91]]
@@ -112,11 +112,9 @@
 - [[_COMMUNITY_Community 99|Community 99]]
 - [[_COMMUNITY_Community 100|Community 100]]
 - [[_COMMUNITY_Community 101|Community 101]]
-- [[_COMMUNITY_Community 102|Community 102]]
 - [[_COMMUNITY_Community 103|Community 103]]
 - [[_COMMUNITY_Community 104|Community 104]]
 - [[_COMMUNITY_Community 105|Community 105]]
-- [[_COMMUNITY_Community 106|Community 106]]
 - [[_COMMUNITY_Community 107|Community 107]]
 - [[_COMMUNITY_Community 108|Community 108]]
 - [[_COMMUNITY_Community 109|Community 109]]
@@ -136,8 +134,8 @@
 4. `log()` - 16 edges
 5. `BambuMQTTClient` - 13 edges
 6. `compilerOptions` - 12 edges
-7. `AIContextBuilder` - 11 edges
-8. `String()` - 11 edges
+7. `String()` - 11 edges
+8. `AIContextBuilder` - 11 edges
 9. `created_at` - 11 edges
 10. `columns` - 11 edges
 
@@ -148,17 +146,17 @@
   README.md → docs/database-design.md
 - `Local File Handler (3mf opener)` --conceptually_related_to--> `File Routing Simplification (3-path→1 filename)`  [INFERRED]
   README.md → docs/dashboard-migration-plan.md
-- `for()` --calls--> `number`  [INFERRED]
-  src/lib/components/ZipBulkUpload.svelte → src/routes/(main)/inventory/+page.svelte
 - `SvelteKit App HTML Shell` --references--> `SvelteKit 2.0 + Svelte 5 Frontend`  [INFERRED]
   src/app.html → README.md
+- `Desktop Phase 1 Scaffold` --conceptually_related_to--> `Cloudflare Workers Backend`  [INFERRED]
+  desktop/README.md → README.md
 
 ## Hyperedges (group relationships)
 - **Print Pipeline: Modules → Jobs → Spool Consumption → Inventory** — docs_database_design_print_modules_table, docs_database_design_print_jobs_table, docs_database_design_print_job_spools_table, docs_database_design_inventory_log_table [EXTRACTED 1.00]
 - **SaaS Migration Phase Sequence (0→1→2→3→4)** — docs_saas_migration_plan_phase0_drizzle, docs_saas_migration_plan_phase1_schema_cleanup, docs_saas_migration_plan_phase2_better_auth, docs_saas_migration_plan_phase3_tenancy [EXTRACTED 1.00]
 - **Pi Bridge Runtime Stack (FastAPI + Bambu MQTT + Cloudflare Tunnel)** — pi_readme_fastapi_server, pi_readme_bambu_client, pi_readme_cloudflare_tunnel [EXTRACTED 1.00]
 
-## Communities (129 total, 12 thin omitted)
+## Communities (122 total, 12 thin omitted)
 
 ### Community 0 - "DB Migration v0: Print Jobs"
 Cohesion: 0.05
@@ -169,8 +167,8 @@ Cohesion: 0.05
 Nodes (43): print_jobs_module_id_print_modules_id_fk, print_jobs_printer_id_printers_id_fk, columns, isUnique, name, columns, isUnique, name (+35 more)
 
 ### Community 2 - "Dashboard & Printer Types"
-Cohesion: 0.06
-Nodes (29): actions, D1Result, DashboardPrinter, GridCell, InventoryChangeType, InventoryLog, MaterialUsage, NewPrinter (+21 more)
+Cohesion: 0.07
+Nodes (23): D1Result, LoadSpoolResponse, MaterialUsage, ModuleFilamentSlot, NewPrinter, NewPrintModule, NewSpool, NewSpoolPreset (+15 more)
 
 ### Community 3 - "DB Migration v0: Inventory Log"
 Cohesion: 0.05
@@ -198,11 +196,11 @@ Nodes (38): expected_end_time, external_task_id, failure_reason, printer_id, sta
 
 ### Community 9 - "App Dependencies & Build Config"
 Cohesion: 0.06
-Nodes (24): dependencies, drizzle-orm, echarts, @tauri-apps/api, $lib/components/stats/ModuleBreakdown.svelte, $lib/components/stats/TimeRangeSelector.svelte, categoryPercentage, colorPercentage (+16 more)
+Nodes (35): getAllPrintJobsForStats(), PrintJobStatsRow, $lib/components/stats/ModuleBreakdown.svelte, $lib/components/stats/TimeRangeSelector.svelte, categoryPercentage, colorPercentage, modulePercentage, subcategoryPercentage (+27 more)
 
 ### Community 10 - "Core Print Job Types"
-Cohesion: 0.13
-Nodes (30): getDb(), GridPreset, NewGridPreset, PrintJob, PrintJobSpool, StartPrintResponse, POST(), createGridPreset() (+22 more)
+Cohesion: 0.14
+Nodes (30): getDb(), GridPreset, NewGridPreset, ServerResponse, createGridPreset(), deleteGridPreset(), getAllGridPresets(), getDefaultGridPreset() (+22 more)
 
 ### Community 11 - "DB Schema v0: Print Job Spools"
 Cohesion: 0.07
@@ -221,12 +219,12 @@ Cohesion: 0.07
 Nodes (30): print_job_spools_print_job_id_slot_index_pk, print_job_spools_print_job_id_print_jobs_id_fk, print_job_spools_spool_id_spools_id_fk, columns, isUnique, name, idx_print_job_spools_spool, checkConstraints (+22 more)
 
 ### Community 15 - "Printer Control API"
-Cohesion: 0.11
-Nodes (14): POST(), AppDB, @sveltejs/kit, GET(), POST(), DELETE(), GET(), PATCH() (+6 more)
+Cohesion: 0.09
+Nodes (18): POST(), AppDB, @sveltejs/kit, GET(), POST(), DELETE(), GET(), PATCH() (+10 more)
 
 ### Community 16 - "Module Upload & Edit UI"
-Cohesion: 0.09
-Nodes (23): v, key, reader, val, value, for(), k, reader (+15 more)
+Cohesion: 0.07
+Nodes (28): v, key, reader, val, value, k, reader, v (+20 more)
 
 ### Community 17 - "App State Stores"
 Cohesion: 0.07
@@ -237,8 +235,8 @@ Cohesion: 0.12
 Nodes (10): GET(), String(), ShopifyClient, ShopifyLineItem, ShopifyOrder, ShopifyOrdersResponse, ShopifySyncService, SkuMapping (+2 more)
 
 ### Community 19 - "B2B Sales Flow"
-Cohesion: 0.08
-Nodes (21): activeSummary, directSummary, iKey, setSummary, totalItems, visibleDirectItems, $app/navigation, allKeys (+13 more)
+Cohesion: 0.12
+Nodes (13): allKeys, count, discrepancies, iKey, reviewKeys, t, totalGain, totalLoss (+5 more)
 
 ### Community 20 - "Community 20"
 Cohesion: 0.08
@@ -249,36 +247,36 @@ Cohesion: 0.10
 Nodes (19): cancel_print(), _idle_watchdog(), pause_print(), _poll_idle_printer(), Print Farm Companion — Pi Bridge Server Runs on the Raspberry Pi, exposed via Cl, Receive a .gcode.3mf file from CF Workers and save it to disk.     Returns the l, Connect, publish a single MQTT command, then disconnect., Send MQTT stop command to the printer. (+11 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.11
-Nodes (22): Printer, PrinterLoadedSpool, PrinterPreset, PrinterQueuedJob, PrinterSecrets, completePrinterQueuedJob(), createPrinter(), createPrinterPreset() (+14 more)
+Cohesion: 0.06
+Nodes (41): gridPresets, inventoryLog, moduleFilamentSlots, objects, platePresets, printerLoadedSpools, printerPresets, printerQueuedJobs (+33 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.09
 Nodes (22): devDependencies, drizzle-kit, eslint, @eslint/compat, @eslint/js, eslint-plugin-svelte, globals, svelte-check (+14 more)
 
 ### Community 24 - "Community 24"
-Cohesion: 0.13
-Nodes (18): actions, getSetDefinitions(), load(), SetComponent, SetDefinition, actions, load(), createObject() (+10 more)
+Cohesion: 0.08
+Nodes (40): actions, getSetDefinitions(), load(), SetComponent, SetDefinition, actions, load(), actions (+32 more)
 
 ### Community 25 - "Community 25"
 Cohesion: 0.13
 Nodes (12): BambuDirectManager, build_mqtt_client(), float_field(), int_field(), merge_status(), PrinterConn, PrinterConnectionEvent, PrinterStatusEvent (+4 more)
 
 ### Community 26 - "Community 26"
-Cohesion: 0.17
-Nodes (19): actions, getSetDefinitions(), getUnitWeights(), load(), SetComponent, SetDefinition, UnitWeight, addPrintedStock() (+11 more)
+Cohesion: 0.07
+Nodes (26): 1. Multi-spool support landed (printers now have configurable slot_count), 2. Dashboard UI for multi-spool, 3. Joined queries now return properly nested data, 4. Stats page rewrite (was lying with zeros), 5. Pi endpoints and webhook fixed, 6. Shopify sync rewired around the removed `shopify_sync` table, 7. Modules page field renames, 8. Migration 0003 fixed (+18 more)
 
 ### Community 27 - "Community 27"
-Cohesion: 0.13
-Nodes (14): AIRecommendationContext, InventoryPriority, ModuleContext, ObjectWithVelocity, PrioritizedInventory, PrioritizedObjectItem, SpoolSuggestion, Confidence (+6 more)
+Cohesion: 0.14
+Nodes (13): AIRecommendationContext, InventoryPriority, ModuleContext, ObjectWithVelocity, PrioritizedInventory, PrioritizedObjectItem, SpoolSuggestion, Confidence (+5 more)
 
 ### Community 28 - "Community 28"
-Cohesion: 0.10
-Nodes (16): @tauri-apps/api/event, [], formData, getActivePrintJob(), getLoadedSpool(), hasPending, { imagePath }, module (+8 more)
+Cohesion: 0.09
+Nodes (23): failureReasons, selectedPreset, @tauri-apps/api/event, [], formData, hasPending, { imagePath }, module (+15 more)
 
 ### Community 29 - "Community 29"
-Cohesion: 0.16
-Nodes (14): GET(), PATCH(), number, AIRecommendationService, generateAndSaveSuggestedQueue(), getSuggestedPrintQueue(), prioritizeInventoryFromContext(), emptyPrioritized() (+6 more)
+Cohesion: 0.18
+Nodes (12): GET(), for(), number, RISK_THRESHOLDS, AIRecommendationService, generateAndSaveSuggestedQueue(), getSuggestedPrintQueue(), prioritizeInventoryFromContext() (+4 more)
 
 ### Community 30 - "Community 30"
 Cohesion: 0.11
@@ -290,19 +288,19 @@ Nodes (12): ImplicitFTP_TLS, _path_candidates(), Bambu Lab printer client — FT
 
 ### Community 32 - "Community 32"
 Cohesion: 0.12
-Nodes (14): failureReasons, cells, selectedPreset, $app/forms, filtered, search, $lib/components/dashboard/ConnectionStatusIndicator.svelte, $lib/components/dashboard/FailureReasonModal.svelte (+6 more)
+Nodes (8): cells, $app/forms, filtered, search, actions, ./$types, ./$types, ./$types
 
 ### Community 33 - "Community 33"
 Cohesion: 0.13
 Nodes (16): _find_gcode_param(), Inspect the .3mf zip archive and return the internal gcode path for the MQTT par, Read filament_sequence.json from the .3mf archive.     Returns a list of filamen, _read_filament_info(), get_logs(), log(), LogEntry, Structured in-memory log buffer for the Pi bridge server. Stores log entries in (+8 more)
 
 ### Community 34 - "Community 34"
-Cohesion: 0.11
-Nodes (17): gridPresets, inventoryLog, moduleFilamentSlots, objects, platePresets, printerLoadedSpools, printerPresets, printerQueuedJobs (+9 more)
+Cohesion: 0.14
+Nodes (9): DashboardPrinter, PrinterFull, PrintJobFull, PrintModuleFull, SpoolWithPreset, actions, ./$types, CategorizedModules (+1 more)
 
 ### Community 35 - "Community 35"
-Cohesion: 0.17
-Nodes (14): LoadSpoolResponse, Spool, SpoolPreset, setLoadedSpool(), unloadSpool(), createSpool(), createSpoolPreset(), deleteSpoolPreset() (+6 more)
+Cohesion: 0.15
+Nodes (16): load(), getAllPrintModules(), getAllPrinterPresets(), loadExistingSpoolIntoSlot(), setLoadedSpool(), unloadSpool(), createSpool(), createSpoolPreset() (+8 more)
 
 ### Community 36 - "Community 36"
 Cohesion: 0.21
@@ -341,24 +339,20 @@ Cohesion: 0.15
 Nodes (13): dimension_x, dimension_y, autoincrement, name, notNull, primaryKey, type, autoincrement (+5 more)
 
 ### Community 45 - "Community 45"
-Cohesion: 0.19
-Nodes (11): ModuleFilamentSlot, PrintModule, ServerResponse, load(), createPrintModule(), deletePrintModule(), getAllPrintModules(), setModuleFilamentSlots() (+3 more)
+Cohesion: 0.22
+Nodes (8): activeSummary, directSummary, iKey, setSummary, totalItems, visibleDirectItems, $app/navigation, ./$types
 
 ### Community 46 - "Community 46"
-Cohesion: 0.15
-Nodes (12): activePrintForDot, compatModules, qPos, slot0, $lib/components/dashboard/ModuleSelectorModal.svelte, $lib/components/dashboard/PrinterCard.svelte, $lib/components/dashboard/PrinterDetailModal.svelte, $lib/actions/shine (+4 more)
-
-### Community 47 - "Community 47"
-Cohesion: 0.36
-Nodes (8): actions, load(), GET(), buildFailureAnalysis(), buildModuleBreakdown(), buildSpoolUsage(), computeUtilization(), SpoolUsageEntry
+Cohesion: 0.20
+Nodes (8): activePrintForDot, compatModules, qPos, slot0, slots, $lib/actions/shine, $lib/server, $lib/utils/printerImage
 
 ### Community 48 - "Community 48"
-Cohesion: 0.18
-Nodes (11): checkConstraints, compositePrimaryKeys, foreignKeys, indexes, name, uniqueConstraints, columns, isUnique (+3 more)
+Cohesion: 0.04
+Nodes (48): dialect, checkConstraints, compositePrimaryKeys, foreignKeys, indexes, name, uniqueConstraints, id (+40 more)
 
 ### Community 49 - "Community 49"
-Cohesion: 0.18
-Nodes (11): uniq_plate_presets_name, checkConstraints, compositePrimaryKeys, foreignKeys, indexes, name, uniqueConstraints, plate_presets (+3 more)
+Cohesion: 0.50
+Nodes (4): getActivePrintJob(), getLoadedSpool(), return(), getCategorizedModules()
 
 ### Community 50 - "Community 50"
 Cohesion: 0.18
@@ -392,10 +386,6 @@ Nodes (9): Dashboard Migration Plan, Dead Type Imports (PrintJobExtended, getLoa
 Cohesion: 0.25
 Nodes (9): Database Design Document, Presets vs Instances Pattern, printer_loaded_spools Table, printer_presets Table, printer_secrets Table, printers Table, Single Source of Truth Design Principle, spool_presets Table (+1 more)
 
-### Community 58 - "Community 58"
-Cohesion: 0.22
-Nodes (9): columns, isUnique, name, idx_objects_category, uniq_objects_sku, indexes, columns, isUnique (+1 more)
-
 ### Community 59 - "Community 59"
 Cohesion: 0.22
 Nodes (9): columns, isUnique, name, idx_objects_category, uniq_objects_sku, indexes, columns, isUnique (+1 more)
@@ -412,17 +402,9 @@ Nodes (8): name, optionalDependencies, lightningcss-linux-x64-gnu, @rollup/rollu
 Cohesion: 0.28
 Nodes (8): actions, getSetDefinitions(), getUnitWeights(), load(), SetComponent, SetDefinition, UnitWeight, ./$types
 
-### Community 63 - "Community 63"
-Cohesion: 0.36
-Nodes (6): formatTimeAgo(), formatTime(), getElapsedTime(), getElapsedTimeMinutes(), getProgress(), getRemainingTime()
-
 ### Community 64 - "Community 64"
 Cohesion: 0.25
 Nodes (8): name, weight, autoincrement, name, notNull, primaryKey, type, columns
-
-### Community 65 - "Community 65"
-Cohesion: 0.25
-Nodes (7): dialect, id, prevId, name, tables, print_modules, version
 
 ### Community 66 - "Community 66"
 Cohesion: 0.25
@@ -433,8 +415,8 @@ Cohesion: 0.29
 Nodes (4): product(), stockBadge(), ./+page.server, ./$types
 
 ### Community 69 - "Community 69"
-Cohesion: 0.29
-Nodes (7): autoincrement, name, notNull, primaryKey, type, category, columns
+Cohesion: 0.15
+Nodes (13): autoincrement, name, notNull, primaryKey, type, category, last_count_date, autoincrement (+5 more)
 
 ### Community 70 - "Community 70"
 Cohesion: 0.29
@@ -496,10 +478,6 @@ Nodes (6): Bambu Client (FTPS + MQTT), Cloudflare Tunnel (cloudflared), FastAPI 
 Cohesion: 0.40
 Nodes (5): CATEGORY_COLORS, CategoryColor, getCategoryColor(), hashString(), UNCATEGORIZED_COLOR
 
-### Community 85 - "Community 85"
-Cohesion: 0.33
-Nodes (6): last_count_date, autoincrement, name, notNull, primaryKey, type
-
 ### Community 86 - "Community 86"
 Cohesion: 0.33
 Nodes (6): last_count_discrepancy, autoincrement, name, notNull, primaryKey, type
@@ -507,10 +485,6 @@ Nodes (6): last_count_discrepancy, autoincrement, name, notNull, primaryKey, typ
 ### Community 87 - "Community 87"
 Cohesion: 0.33
 Nodes (6): sku, autoincrement, name, notNull, primaryKey, type
-
-### Community 88 - "Community 88"
-Cohesion: 0.33
-Nodes (6): checkConstraints, compositePrimaryKeys, foreignKeys, name, uniqueConstraints, objects
 
 ### Community 89 - "Community 89"
 Cohesion: 0.33
@@ -553,8 +527,8 @@ Cohesion: 0.47
 Nodes (3): generate_token(), run(), SidecarHandle
 
 ### Community 99 - "Community 99"
-Cohesion: 0.33
-Nodes (3): $lib/components/settings/AutoQueueSection.svelte, $lib/stores/autoQueueStore, ./$types
+Cohesion: 0.15
+Nodes (10): @tauri-apps/api/core, $lib/components/settings/AutoQueueSection.svelte, $lib/components/settings/ConnectionsSection.svelte, $lib/assets/favicon.ico, $lib/stores/autoQueueStore, $lib/stores/connectionToggles, $lib/stores/desktop, $lib/stores/fileHandler (+2 more)
 
 ### Community 100 - "Community 100"
 Cohesion: 0.33
@@ -572,10 +546,6 @@ Nodes (4): Apple Touch Icon (Cowboy Emoji), App Favicon 16x16 (Cowboy Emoji), Ap
 Cohesion: 0.50
 Nodes (3): dialect, entries, version
 
-### Community 106 - "Community 106"
-Cohesion: 0.50
-Nodes (4): columns, isUnique, name, idx_objects_stock
-
 ### Community 107 - "Community 107"
 Cohesion: 0.50
 Nodes (4): columns, isUnique, name, idx_objects_stock
@@ -585,24 +555,24 @@ Cohesion: 0.50
 Nodes (4): get_printers(), Return unique printers seen in logs., get_log_printers(), Return list of unique printers seen in the log buffer.
 
 ## Knowledge Gaps
-- **871 isolated node(s):** `config`, `name`, `private`, `version`, `type` (+866 more)
+- **899 isolated node(s):** `1. Multi-spool support landed (printers now have configurable slot_count)`, `2. Dashboard UI for multi-spool`, `3. Joined queries now return properly nested data`, `4. Stats page rewrite (was lying with zeros)`, `5. Pi endpoints and webhook fixed` (+894 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **12 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `getDb()` connect `Core Print Job Types` to `Community 35`, `Community 68`, `Community 45`, `Printer Control API`, `Community 47`, `Shopify & B2B Integration`, `Community 22`, `Community 24`, `Community 26`, `Community 27`, `Community 29`, `Community 62`?**
-  _High betweenness centrality (0.044) - this node is a cross-community bridge._
+- **Why does `getDb()` connect `Core Print Job Types` to `Community 35`, `Community 68`, `App Dependencies & Build Config`, `Printer Control API`, `Shopify & B2B Integration`, `Community 22`, `Community 24`, `Community 27`, `Community 29`, `Community 62`?**
+  _High betweenness centrality (0.042) - this node is a cross-community bridge._
 - **Why does `tables` connect `Community 60` to `DB Migration v1: Print Jobs`, `DB Migration v1: Inventory Log`, `DB Schema v1: Module Filament Slots`, `DB Schema v1: Print Job Spools`, `Community 50`, `Community 51`, `Community 94`?**
-  _High betweenness centrality (0.028) - this node is a cross-community bridge._
-- **Why does `columns` connect `DB Schema v1: Print Job Columns` to `DB Migration v1: Print Jobs`, `DB Schema v1: Filament Slot Columns`, `Community 78`, `Community 81`, `Community 95`?**
-  _High betweenness centrality (0.020) - this node is a cross-community bridge._
-- **What connects `config`, `name`, `private` to the rest of the system?**
-  _904 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
+- **Why does `devDependencies` connect `Community 23` to `Module Upload & Edit UI`, `Community 61`?**
+  _High betweenness centrality (0.022) - this node is a cross-community bridge._
+- **What connects `1. Multi-spool support landed (printers now have configurable slot_count)`, `2. Dashboard UI for multi-spool`, `3. Joined queries now return properly nested data` to the rest of the system?**
+  _932 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `DB Migration v0: Print Jobs` be split into smaller, more focused modules?**
   _Cohesion score 0.046511627906976744 - nodes in this community are weakly interconnected._
 - **Should `DB Migration v1: Print Jobs` be split into smaller, more focused modules?**
   _Cohesion score 0.046511627906976744 - nodes in this community are weakly interconnected._
 - **Should `Dashboard & Printer Types` be split into smaller, more focused modules?**
-  _Cohesion score 0.05853658536585366 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07407407407407407 - nodes in this community are weakly interconnected._

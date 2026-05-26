@@ -8,26 +8,48 @@
   export let data: PageData;
 
   // Decorate raw modules with derived display fields that no longer exist
-  // as columns in the new schema (printer_model_name, spool_preset_name, etc.).
+  // as columns in the new schema (printer_model_name, slot summaries, etc.).
   function decorateModule(m: any) {
     const printerModelName =
       m.printer_preset_brand && m.printer_preset_model
         ? `${m.printer_preset_brand} ${m.printer_preset_model}`
         : null;
 
-    const presetFromList = m.default_spool_preset_id
-      ? data.spoolPresets?.find((p: any) => p.id === m.default_spool_preset_id)
-      : null;
-    const spoolPresetName = presetFromList
-      ? `${presetFromList.brand} ${presetFromList.material}${presetFromList.color ? ' ' + presetFromList.color : ''}`
-      : null;
-    const spoolPresetColor = presetFromList?.color ?? null;
+    // Build a chip per slot. spool_preset_id === null = "Any spool" wildcard.
+    const presetsList = data.spoolPresets ?? [];
+    const rawSlots = Array.isArray(m.slots) && m.slots.length > 0
+      ? m.slots
+      : m.default_spool_preset_id != null
+        ? [{ slot_index: 0, spool_preset_id: m.default_spool_preset_id }]
+        : [];
+
+    const slot_chips = rawSlots
+      .slice()
+      .sort((a: any, b: any) => a.slot_index - b.slot_index)
+      .map((s: any) => {
+        const weight = typeof s.weight === 'number' ? s.weight : null;
+        if (s.spool_preset_id == null) {
+          return { name: 'Any spool', color: null as string | null, isAny: true, weight };
+        }
+        const p = presetsList.find((pp: any) => pp.id === s.spool_preset_id);
+        return p
+          ? {
+              name: `${p.brand} ${p.material}${p.color ? ' ' + p.color : ''}`,
+              color: p.color ?? null,
+              isAny: false,
+              weight,
+            }
+          : { name: 'Unknown spool', color: null, isAny: false, weight };
+      });
+
+    // Filter key: list of preset display names (or "Any spool"). Used for chip filtering.
+    const slot_filter_keys: string[] = slot_chips.map((c: any) => c.name);
 
     return {
       ...m,
       printer_model_name: printerModelName,
-      spool_preset_name: spoolPresetName,
-      spool_preset_color: spoolPresetColor,
+      slot_chips,
+      slot_filter_keys,
       plate_type: m.plate_preset_name ?? null,
     };
   }
@@ -65,11 +87,13 @@
 
   $: allPresets = (() => {
     const seen = new Set<string>();
-    return modules
-      .filter((m: any) => m.spool_preset_name)
-      .map((m: any) => m.spool_preset_name as string)
-      .filter(name => { if (seen.has(name)) return false; seen.add(name); return true; })
-      .sort((a, b) => a.localeCompare(b));
+    const names: string[] = [];
+    for (const m of modules) {
+      for (const k of (m.slot_filter_keys ?? []) as string[]) {
+        if (!seen.has(k)) { seen.add(k); names.push(k); }
+      }
+    }
+    return names.sort((a, b) => a.localeCompare(b));
   })();
 
   // ── Filtered + grouped modules ──────────────────────────────────────────────
@@ -81,7 +105,7 @@
       if (filterModel !== '__none__' && modelKey !== filterModel) return false;
     }
     if (filterPlate !== 'all' && m.plate_type !== filterPlate) return false;
-    if (filterPreset !== 'all' && (m.spool_preset_name ?? '') !== filterPreset) return false;
+    if (filterPreset !== 'all' && !((m.slot_filter_keys ?? []) as string[]).includes(filterPreset)) return false;
     return true;
   });
 
@@ -395,14 +419,16 @@
                 </div>
 
                 <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                  {#if module.spool_preset_name}
+                  {#each (module.slot_chips ?? []) as chip}
                     <span class="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      {#if module.spool_preset_color}
-                        <span class="w-2.5 h-2.5 rounded-full border border-zinc-300 dark:border-zinc-600 shrink-0" style="background:{module.spool_preset_color}"></span>
+                      {#if chip.color}
+                        <span class="w-2.5 h-2.5 rounded-full border border-zinc-300 dark:border-zinc-600 shrink-0" style="background:{chip.color}"></span>
+                      {:else if chip.isAny}
+                        <span class="w-2.5 h-2.5 rounded-full border border-dashed border-zinc-400 dark:border-zinc-500 shrink-0"></span>
                       {/if}
-                      {module.spool_preset_name}
+                      {chip.name}{#if chip.weight != null}<span class="text-zinc-400 dark:text-zinc-500 ml-1">{chip.weight}g</span>{/if}
                     </span>
-                  {/if}
+                  {/each}
                   {#if module.weight}
                     <span class="text-xs text-zinc-400 dark:text-zinc-500">{module.weight}g</span>
                   {/if}

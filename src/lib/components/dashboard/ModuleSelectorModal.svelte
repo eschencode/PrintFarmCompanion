@@ -16,8 +16,8 @@
     anySpoolInsufficientMaterial: PrintModuleFull[];
   };
   export let spoolPresets: SpoolPreset[];
-  /** Set of printer serials currently being started — disables the Start button. */
-  export let startingSerials: Set<string>;
+  /** Set of printer IDs currently being started — disables the Start button. */
+  export let startingPrinterIds: Set<number>;
   export let onClose: () => void;
   export let onEnqueue: (module: PrintModuleFull, printer: DashboardPrinter) => void;
 
@@ -386,7 +386,7 @@
             {@const selectedModule = allModules.find((m: any) => m.id === selectedModuleId)}
             <button
               type="button"
-              disabled={startingSerials.has(printer.printer_serial ?? '')}
+              disabled={startingPrinterIds.has(Number(printer.id))}
               onclick={() => selectedModule && onEnqueue(selectedModule, printer)}
               class="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium disabled:opacity-50"
             >

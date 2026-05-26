@@ -3,6 +3,58 @@ import type { RequestHandler } from './$types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
+type SlotInput = {
+  slot_index: number;
+  spool_preset_id: number | null;
+  weight: number | null;
+};
+
+/**
+ * Normalize the slot payload. Accepts either the new `slots: [{slot_index, spool_preset_id, weight}]`
+ * array or the legacy single `default_spool_preset_id`. Returns null when the caller
+ * sent nothing slot-related (so PATCH knows to leave slots untouched).
+ */
+function normalizeSlots(body: Record<string, unknown>): SlotInput[] | null {
+  if (Array.isArray(body.slots)) {
+    return (body.slots as any[])
+      .filter((s) => s && typeof s.slot_index === 'number')
+      .map((s) => ({
+        slot_index: s.slot_index,
+        spool_preset_id:
+          s.spool_preset_id === undefined || s.spool_preset_id === null
+            ? null
+            : Number(s.spool_preset_id),
+        weight:
+          s.weight === undefined || s.weight === null || s.weight === ''
+            ? null
+            : Number(s.weight),
+      }));
+  }
+  if ('default_spool_preset_id' in body) {
+    const id = body.default_spool_preset_id;
+    return [{
+      slot_index: 0,
+      spool_preset_id: id == null ? null : Number(id as number),
+      weight: null,
+    }];
+  }
+  return null;
+}
+
+async function writeSlots(
+  drizzleDb: ReturnType<typeof getDb>,
+  moduleId: number | string,
+  slots: SlotInput[],
+) {
+  await drizzleDb.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${moduleId}`);
+  for (const s of slots) {
+    await drizzleDb.run(sql`
+      INSERT INTO module_filament_slots (module_id, slot_index, spool_preset_id, weight)
+      VALUES (${moduleId}, ${s.slot_index}, ${s.spool_preset_id}, ${s.weight})
+    `);
+  }
+}
+
 export const POST: RequestHandler = async ({ request, platform }) => {
   const db = platform?.env?.DB;
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
@@ -18,10 +70,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   const {
     name, file_name, thumbnail,
     estimated_time, nozzle_diameter,
-    expected_weight, default_spool_preset_id,
+    expected_weight,
     objects_per_print, object_id, printer_preset_id,
     local_file_handler_path, pi_file_path,
-    plate_preset_id,
   } = body;
 
   if (!name || !file_name) {
@@ -49,12 +100,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
     const moduleId = result.meta.last_row_id as number;
 
-    // Save slot 0 spool preset if provided
-    if (default_spool_preset_id && moduleId) {
-      await drizzleDb.run(sql`
-        INSERT OR REPLACE INTO module_filament_slots (module_id, slot_index, spool_preset_id)
-        VALUES (${moduleId}, 0, ${default_spool_preset_id})
-      `);
+    const slots = normalizeSlots(body);
+    if (slots && slots.length > 0 && moduleId) {
+      await writeSlots(drizzleDb, moduleId, slots);
     }
 
     return json({ success: true, data: { id: moduleId, name } });
@@ -88,17 +136,47 @@ export const GET: RequestHandler = async ({ platform, url }) => {
     const result = await drizzleDb.all(sql`
       SELECT pm.*,
              pp.brand || ' ' || pp.model as printer_model_name,
-             mfs.spool_preset_id as default_spool_preset_id,
-             sp.material as spool_preset_material, sp.color as spool_preset_color, sp.brand as spool_preset_brand,
+             mfs0.spool_preset_id as default_spool_preset_id,
+             sp0.material as spool_preset_material, sp0.color as spool_preset_color, sp0.brand as spool_preset_brand,
              o.id as object_id, o.name as object_name
       FROM print_modules pm
       LEFT JOIN printer_presets pp ON pm.printer_preset_id = pp.id
-      LEFT JOIN module_filament_slots mfs ON pm.id = mfs.module_id AND mfs.slot_index = 0
-      LEFT JOIN spool_presets sp ON mfs.spool_preset_id = sp.id
+      LEFT JOIN module_filament_slots mfs0 ON pm.id = mfs0.module_id AND mfs0.slot_index = 0
+      LEFT JOIN spool_presets sp0 ON mfs0.spool_preset_id = sp0.id
       LEFT JOIN objects o ON pm.object_id = o.id
       ORDER BY pm.id DESC
     `);
-    return json({ success: true, data: result ?? [] });
+
+    // Fetch all slots for all modules in one query, then attach.
+    const slotRows = await drizzleDb.all<{
+      module_id: number;
+      slot_index: number;
+      spool_preset_id: number | null;
+      weight: number | null;
+      preset_brand: string | null;
+      preset_material: string | null;
+      preset_color: string | null;
+    }>(sql`
+      SELECT mfs.module_id, mfs.slot_index, mfs.spool_preset_id, mfs.weight,
+             sp.brand as preset_brand, sp.material as preset_material, sp.color as preset_color
+      FROM module_filament_slots mfs
+      LEFT JOIN spool_presets sp ON mfs.spool_preset_id = sp.id
+      ORDER BY mfs.module_id, mfs.slot_index
+    `);
+
+    const slotsByModule = new Map<number, any[]>();
+    for (const s of slotRows ?? []) {
+      const arr = slotsByModule.get(s.module_id) ?? [];
+      arr.push(s);
+      slotsByModule.set(s.module_id, arr);
+    }
+
+    const modules = (result ?? []).map((m: any) => ({
+      ...m,
+      slots: slotsByModule.get(m.id) ?? [],
+    }));
+
+    return json({ success: true, data: modules });
   } catch (e) {
     console.error('Failed to fetch print modules:', e);
     return json({ success: false, error: 'Failed to fetch modules' }, { status: 500 });
@@ -128,8 +206,8 @@ export const PATCH: RequestHandler = async ({ url, request, platform }) => {
 
   const {
     name, estimated_time, nozzle_diameter, expected_weight,
-    default_spool_preset_id, objects_per_print, object_id,
-    printer_preset_id, plate_preset_id,
+    objects_per_print, object_id,
+    printer_preset_id,
   } = body;
 
   if (!name) return json({ success: false, error: 'name is required' }, { status: 400 });
@@ -152,15 +230,9 @@ export const PATCH: RequestHandler = async ({ url, request, platform }) => {
       WHERE id = ${id}
     `);
 
-    if (default_spool_preset_id !== undefined) {
-      if (default_spool_preset_id) {
-        await drizzleDb.run(sql`
-          INSERT OR REPLACE INTO module_filament_slots (module_id, slot_index, spool_preset_id)
-          VALUES (${id}, 0, ${default_spool_preset_id})
-        `);
-      } else {
-        await drizzleDb.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${id} AND slot_index = 0`);
-      }
+    const slots = normalizeSlots(body);
+    if (slots !== null) {
+      await writeSlots(drizzleDb, id, slots);
     }
 
     return json({ success: true });
