@@ -1,8 +1,6 @@
 <script lang="ts">
-  import type { GridPreset } from '$lib/types';
-
   /** Fixed bottom-center nav shown when multiple grid presets exist. */
-  export let allGrids: GridPreset[];
+  export let allGrids: { name: string }[];
   export let currentGridIndex: number;
   export let onPrev: () => void;
   export let onNext: () => void;

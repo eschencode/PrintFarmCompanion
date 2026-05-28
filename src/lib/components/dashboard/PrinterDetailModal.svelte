@@ -90,7 +90,7 @@
       <!-- Conditional Content Based on Status -->
       {#if printer.status === 'printing' && activePrintJob}
         <!-- PRINTING STATUS MENU -->
-        {@const displayProgress = piLive?.progress ?? ((activePrintJob.progress ?? 0) > 0 ? (activePrintJob.progress ?? 0) : getProgress(activePrintJob.start_time, activePrintJob.expected_time_minutes ?? 0, now))}
+        {@const displayProgress = piLive?.progress ?? ((activePrintJob.progress ?? 0) > 0 ? (activePrintJob.progress ?? 0) : getProgress(activePrintJob.start_time ?? 0, activePrintJob.expected_time_minutes ?? 0, now))}
         <div class="space-y-5">
           <!-- Module Name -->
           <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
@@ -114,11 +114,11 @@
               ></div>
             </div>
             <div class="flex justify-between text-xs text-zinc-400 dark:text-zinc-600 mt-3 tabular-nums">
-              <span>{getElapsedTime(activePrintJob.start_time, now)} elapsed</span>
+              <span>{getElapsedTime(activePrintJob.start_time ?? 0, now)} elapsed</span>
               {#if (piLive?.total_layer_num ?? 0) > 0}
                 <span>Layer {piLive?.layer_num} / {piLive?.total_layer_num}</span>
               {:else}
-                <span>{getRemainingTime(activePrintJob.start_time, activePrintJob.expected_time_minutes ?? 0, now)} remaining</span>
+                <span>{getRemainingTime(activePrintJob.start_time ?? 0, activePrintJob.expected_time_minutes ?? 0, now)} remaining</span>
               {/if}
             </div>
           </div>
@@ -163,7 +163,7 @@
             </div>
             <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22]">
               <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1.5 tracking-wide uppercase">Remaining</p>
-              <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{getRemainingTime(activePrintJob.start_time, activePrintJob.expected_time_minutes ?? 0, now)}</p>
+              <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{getRemainingTime(activePrintJob.start_time ?? 0, activePrintJob.expected_time_minutes ?? 0, now)}</p>
             </div>
           </div>
 

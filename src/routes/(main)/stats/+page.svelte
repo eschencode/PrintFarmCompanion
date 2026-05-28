@@ -66,7 +66,7 @@
   // Chart element references
   let printHistoryChart: HTMLDivElement;
   let materialUsageChart: HTMLDivElement;
-  let utilizationStackedChartEl: HTMLDivElement;
+  let utilizationStackedChartEl!: HTMLDivElement;
   let utilizationPieChartEl!: HTMLDivElement;
   let utilizationStackedChart: echarts.ECharts | undefined;
   let utilizationPieChart: echarts.ECharts | undefined;
@@ -198,7 +198,7 @@
   $: currentSpoolUsage = $selectedTimeRange === 'custom'
     ? (activeStats?.spoolUsage ?? [])
     : (data.stats as any).spoolUsage?.[$selectedTimeRange] ?? [];
-  $: currentSets = data.stats.setCosts?.[$selectedTimeRange] || {};
+  $: currentSets = (data.stats as any).setCosts?.[$selectedTimeRange] || {};
   $: totalPrintsInRange = Object.values(currentBreakdown).reduce((sum, cat) => sum + (cat?.total || 0), 0);
   $: totalObjectsInRange = Object.values(currentBreakdown).reduce((sum, cat) => sum + (cat?.totalObjects || 0), 0);
 
@@ -390,7 +390,7 @@
           xAxis: {
             type: 'value',
             axisLine: { lineStyle: { color: axisColor } },
-            axisLabel: { color: newTextColor, formatter: '{value}h' },
+            axisLabel: { color: textColor, formatter: '{value}h' },
             splitLine: { lineStyle: { color: gridColor } }
           },
           yAxis: {

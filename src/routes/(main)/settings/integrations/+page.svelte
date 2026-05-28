@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PageData, ActionData } from './$types';
-  import { enhance } from '$app/forms';
+  import { enhance, applyAction, deserialize } from '$app/forms';
 
   export let data: PageData;
   export let form: ActionData;
@@ -88,6 +88,22 @@
   // ── Inline inventory item creator ───────────────────────────────────────────
   let showNewInventoryItem = false;
   let newInvName = '';
+
+  // Submitted via fetch (not a nested <form>, which is invalid inside the set editor form).
+  async function createInventoryItem() {
+    if (!newInvName.trim()) return;
+    const formData = new FormData();
+    formData.set('name', newInvName);
+    const response = await fetch('?/addInventoryItem', { method: 'POST', body: formData });
+    const result = deserialize(await response.text());
+    if (result.type === 'success') {
+      (data.inventoryItems as any[]).push({ name: newInvName, in_stock: 0 });
+      data.inventoryItems = [...(data.inventoryItems as any[])];
+      newInvName = '';
+      showNewInventoryItem = false;
+    }
+    await applyAction(result);
+  }
 
   // ── Shopify test result ─────────────────────────────────────────────────────
   let testingShopify = false;
@@ -533,24 +549,9 @@
                   <input id="newInvName" type="text" bind:value={newInvName} placeholder="Widget Black XL" class="w-full h-8 bg-white dark:bg-[#111] border border-zinc-200 dark:border-[#262626] rounded-md px-2.5 text-xs text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 transition-colors"/>
                 </div>
                 <div class="flex gap-2">
-                  <form method="POST" action="?/addInventoryItem"
-                    use:enhance={({ formData }) => {
-                      formData.set('name', newInvName);
-                      return async ({ result, update }) => {
-                        if (result.type === 'success') {
-                          (data.inventoryItems as any[]).push({ name: newInvName, in_stock: 0 });
-                          data.inventoryItems = [...(data.inventoryItems as any[])];
-                          newInvName = '';
-                          showNewInventoryItem = false;
-                        }
-                        await update({ reset: false });
-                      };
-                    }}
-                  >
-                    <button type="submit" disabled={!newInvName.trim()} class="h-7 px-3 rounded-md text-[11px] font-medium bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                      Create
-                    </button>
-                  </form>
+                  <button type="button" onclick={createInventoryItem} disabled={!newInvName.trim()} class="h-7 px-3 rounded-md text-[11px] font-medium bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    Create
+                  </button>
                   <button type="button" onclick={() => { showNewInventoryItem = false; newInvName = ''; }} class="h-7 px-3 rounded-md text-[11px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
                     Cancel
                   </button>

@@ -125,6 +125,23 @@ export interface DashboardPrinter extends PrinterFull {
   loaded_spool: SpoolWithPreset | null;
   // Derived from active print_jobs — not stored in DB
   status: 'printing' | 'idle' | 'inactive';
+  // Advisory next-up queue, fetched client-side from /api/ai-recommendations.
+  suggested_queue?: SuggestedQueueItem[];
+}
+
+/**
+ * Advisory print-queue item as attached to DashboardPrinter at runtime.
+ * Mirrors the recommendation service's SuggestedPrintQueueItem, plus a
+ * client-only `status` used to mark items already printed ('DONE').
+ */
+export interface SuggestedQueueItem {
+  module_id: number;
+  module_name: string;
+  object_name?: string;
+  priority: InventoryPriority;
+  weight_of_print: number;
+  spool_weight_after_print: number;
+  status?: string;
 }
 
 // ============================================================================
@@ -312,7 +329,7 @@ export interface ShopifyOrder {
 // ============================================================================
 
 export interface GridCell {
-  type: 'printer' | 'stats' | 'settings' | 'spools' | 'storage' | 'empty' | 'inventory' | 'products';
+  type: 'printer' | 'stats' | 'settings' | 'spools' | 'empty' | 'inventory' | 'products';
   printerId?: number;
 }
 

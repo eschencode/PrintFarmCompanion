@@ -4,6 +4,6 @@ import * as db from '$lib/server';
 export const load: PageServerLoad = async ({ platform }) => {
   const database = platform?.env?.DB;
   if (!database) return { printers: [] };
-  const printers = await db.getAllPrinters(database);
+  const printers = await db.getAllPrintersFull(database);
   return { printers };
 };

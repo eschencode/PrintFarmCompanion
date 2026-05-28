@@ -18,7 +18,6 @@
     export let piLive: PiStatus | undefined;
     export let liveIsStarting: boolean;
     export let activePrintJobs: PrintJobFull[];
-    export let spools: unknown[]; // kept for API compat, use printer.loaded_spool directly
     export let printModules: PrintModuleFull[];
     /** Full start queue — used to compute this printer's queue position. */
     export let startQueue: any[]; // complex queue entry shape not yet in types.ts
