@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { PageData } from './$types';
-  import type { GridCell, SpoolSuggestion, Printer, PiStatus } from '$lib/types';
+  import type { GridCell, SpoolSuggestion, DashboardPrinter, PiStatus } from '$lib/types';
   import { enhance } from '$app/forms';
+  import { invalidateAll } from '$app/navigation';
   import { formatTime, formatRemainingTime, getElapsedTime, getRemainingTime, getProgress } from '$lib/utils/time';
-  import { getActivePrintJob, getLoadedSpool, getLastPrintJob, getCategorizedModules } from '$lib/utils/printerData';
+  import { getActivePrintJob, getLastPrintJob, getCategorizedModules } from '$lib/utils/printerData';
   import { shine } from '$lib/actions/shine';
   import ConnectionStatusIndicator from '$lib/components/dashboard/ConnectionStatusIndicator.svelte';
   import AutoQueueToast from '$lib/components/dashboard/AutoQueueToast.svelte';
@@ -26,7 +27,7 @@
 
   export let data: PageData;
 
-  let selectedPrinter: Printer | null = null;
+  let selectedPrinter: DashboardPrinter | null = null;
 
   // Success animation
   type Particle = { id: number; x: number; y: number; delay: number; drift: number; rotate: number; scale: number };
@@ -35,6 +36,7 @@
   let particleCounter = 0;
 
   let showSpoolSelector: boolean = false;
+  let spoolTargetSlotIndex: number = 0;
   let showModuleSelector: boolean = false;
   let showFailureReasonModal: boolean = false;
 
@@ -291,7 +293,7 @@
   type StartQueueEntry = { printer: any; module: any; enqueuedAt: number; startedAt: number | null };
   let startQueue: StartQueueEntry[] = [];
   let startQueueTimeout: ReturnType<typeof setTimeout> | null = null;
-  $: startingSerials = new Set(startQueue.map(e => e.printer.printer_serial));
+  $: startingPrinterIds = new Set(startQueue.map(e => Number(e.printer.id)));
   $: startQueueTotal = startQueue.length;
 
   const START_QUEUE_KEY = 'printfarm_start_queue';
@@ -349,8 +351,8 @@
     saveStartQueue();
     const { module, printer } = startQueue[0];
     startQueueTimeout = setTimeout(advanceStartQueue, 120_000);
-    const hasPi = module.file_stored_on_pi && printer.printer_ip && printer.printer_serial && printer.printer_access_code;
-    const hasLocalHandler = module.local_file_handler_path && fileHandlerState.connected;
+    const hasPi = !!(printer.printer_ip && printer.printer_serial && printer.printer_access_code);
+    const hasLocalHandler = !!(module.filename && fileHandlerState.connected);
     const transport = effectiveTransport(printer);
     const hasDirect = transport === 'direct' && directConnected.has(printer.printer_serial ?? '');
     try {
@@ -361,6 +363,7 @@
         formData.append('printerId', String(printer.id));
         formData.append('moduleId', String(module.id));
         await fetch('?/startPrint', { method: 'POST', body: formData });
+        await invalidateAll();
         setTimeout(advanceStartQueue, 3_000);
       } else if (hasPi) {
         // Pi path: Pi handles file upload and print start.
@@ -373,31 +376,34 @@
         const result = await res.json() as { success: boolean; error?: string };
         if (result.success) {
           startPiPolling(printer.printer_serial);
+          await invalidateAll();
           // Stays in queue — advances on PREPARE→RUNNING or 30s timeout
         } else {
           advanceStartQueue();
         }
-      } else if (hasDirect && module.local_file_handler_path) {
+      } else if (hasDirect && module.filename) {
         // Direct mode with local file: register job in DB then send MQTT print command.
         // The file must already be on the printer SD card at /sdcard/cache/<filename>.
         const formData = new FormData();
         formData.append('printerId', String(printer.id));
         formData.append('moduleId', String(module.id));
         await fetch('?/startPrint', { method: 'POST', body: formData });
-        const filename = (module.local_file_handler_path as string).split('/').pop() ?? '';
+        const filename = (module.filename as string).split('/').pop() ?? '';
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('start_print_direct', {
           serial: printer.printer_serial,
           remotePath: `/cache/${filename}`,
           param: 'Metadata/plate_1.gcode',
         }).catch((e: unknown) => console.error('start_print_direct failed:', e));
+        await invalidateAll();
         setTimeout(advanceStartQueue, 3_000);
       } else {
         const formData = new FormData();
         formData.append('printerId', String(printer.id));
         formData.append('moduleId', String(module.id));
         const res = await fetch('?/startPrint', { method: 'POST', body: formData });
-        if (res.ok && hasLocalHandler) await openFileLocally(module.local_file_handler_path, module.name, printer.id);
+        if (res.ok && hasLocalHandler) await openFileLocally(module.filename, module.name, printer.id);
+        await invalidateAll();
         setTimeout(advanceStartQueue, 3_000);
       }
     } catch {
@@ -460,7 +466,7 @@
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(broken ? { action: 'broken' } : { action: 'repaired' }),
     });
-    printer.status = broken ? 'BROKEN' : 'IDLE';
+    printer.status = broken ? 'inactive' : 'idle';
     if (selectedPrinter?.id === printer.id) selectedPrinter = { ...printer };
     controlLoading = null;
   }
@@ -481,7 +487,7 @@
     if (!nextItem) { setTimeout(() => window.location.reload(), 2000); return; }
 
     const nextModule = (data.printModules as any[]).find((m: any) => m.id === nextItem.module_id);
-    if (!nextModule?.file_stored_on_pi || !printer.printer_ip) {
+    if (!nextModule?.filename || !printer.printer_ip) {
       setTimeout(() => window.location.reload(), 2000);
       return;
     }
@@ -586,7 +592,7 @@
             }
           }
           sessionStorage.setItem('printSuccessAnim', JSON.stringify({
-            imagePath: job?.module_image_path ?? null,
+            imagePath: (job as any)?.module_thumbnail ?? null,
           }));
         } catch (e) {
           console.error('Failed to refresh suggested queue:', e);
@@ -796,12 +802,6 @@
     };
   });
 
-  function getPrinterForPosition(printerId: number | undefined) {
-    if (!printerId) return null;
-    // Use == for type coercion since printerId from JSON might be string
-    return data.printers.find(p => Number(p.id) === Number(printerId));
-  }
-
   // Modal handlers
 
   let suggestedSpools: SpoolSuggestion[] = [];
@@ -848,6 +848,7 @@
   function closeSpoolSelector() {
     showSpoolSelector = false;
     spoolInitialPresetId = null;
+    spoolTargetSlotIndex = 0;
   }
 
   // enhance callback for SpoolSelectorModal — closes over selectedPrinter and closePrinterModal
@@ -871,7 +872,7 @@
   };
 
   async function handleStartPrint() {
-    if (!selectedPrinter?.loaded_spool_id) {
+    if (!selectedPrinter?.loaded_spool) {
       alert('Please load a spool first');
       return;
     }
@@ -948,13 +949,13 @@
     {#each gridLayout as cell, i}
 
       {#if cell.type === 'printer'}
-        {@const printer = getPrinterForPosition(cell.printerId)}
+        {@const printer = cell.printerId ? data.printers.find(p => Number(p.id) === Number(cell.printerId)) : null}
 
         {#if printer}
           <PrinterCard
             printer={printer}
             piLive={piStatusBySerial[printer.printer_serial as string]}
-            liveIsStarting={startingSerials.has(printer.printer_serial as string)}
+            liveIsStarting={startingPrinterIds.has(Number(printer.id))}
             activePrintJobs={data.activePrintJobs}
             spools={data.spools}
             printModules={data.printModules}
@@ -1112,7 +1113,7 @@
 <!-- Printer Detail Modal -->
 <!-- ── Quick Start Modal ─────────────────────────────────────────────────── -->
 {#if selectedPrinter && showQuickStart && !showSpoolSelector && !showModuleSelector}
-  {@const loadedSpool = getLoadedSpool(selectedPrinter.loaded_spool_id, data.spools)}
+  {@const loadedSpool = selectedPrinter.loaded_spool}
   {@const nextPrint = !quickStartLoading && selectedPrinter.suggested_queue ? (selectedPrinter.suggested_queue as any[]).find((i: any) => i.status !== 'DONE') : null}
   {@const nextModule = nextPrint ? (data.printModules as any[]).find((m: any) => m.id === nextPrint.module_id) : null}
   <QuickStartModal
@@ -1121,7 +1122,7 @@
     nextPrint={nextPrint}
     nextModule={nextModule}
     quickStartLoading={quickStartLoading}
-    startingSerials={startingSerials}
+    startingPrinterIds={startingPrinterIds}
     onClose={closePrinterModal}
     onLoadSpool={() => { showQuickStart = false; handleLoadSpool(); }}
     onSwitchToManual={() => { showQuickStart = false; }}
@@ -1131,14 +1132,14 @@
 
 {#if selectedPrinter && !showSpoolSelector && !showModuleSelector && !showQuickStart}
   {@const activePrintJob = getActivePrintJob(selectedPrinter.id, data.activePrintJobs)}
-  {@const loadedSpool = getLoadedSpool(selectedPrinter.loaded_spool_id, data.spools)}
+  {@const loadedSpool = selectedPrinter.loaded_spool}
   <PrinterDetailModal
     printer={selectedPrinter}
     activePrintJob={activePrintJob}
     loadedSpool={loadedSpool}
     piLive={piStatusBySerial[selectedPrinter.printer_serial as string]}
     controlLoading={controlLoading}
-    startingSerials={startingSerials}
+    startingPrinterIds={startingPrinterIds}
     now={now}
     printJobs={data.printJobs}
     printModules={data.printModules}
@@ -1159,21 +1160,23 @@
     printer={selectedPrinter}
     orderedSpoolPresets={orderedSpoolPresets}
     spoolPresets={data.spoolPresets}
+    spools={data.spools}
     initialPresetId={spoolInitialPresetId}
+    initialSlotIndex={spoolTargetSlotIndex}
     onClose={closeSpoolSelector}
     loadSpoolEnhance={loadSpoolEnhance}
   />
 {/if}
 
 {#if selectedPrinter && showModuleSelector}
-  {@const loadedSpool = getLoadedSpool(selectedPrinter.loaded_spool_id, data.spools)}
+  {@const loadedSpool = selectedPrinter.loaded_spool}
   {@const categorizedModules = getCategorizedModules(selectedPrinter, loadedSpool, data.printModules)}
   <ModuleSelectorModal
     printer={selectedPrinter}
     loadedSpool={loadedSpool}
     categorizedModules={categorizedModules}
     spoolPresets={data.spoolPresets}
-    startingSerials={startingSerials}
+    startingPrinterIds={startingPrinterIds}
     onClose={closeModuleSelector}
     onEnqueue={enqueueStart}
   />
@@ -1183,7 +1186,7 @@
 {#if selectedPrinter && showFailureReasonModal}
   <FailureReasonModal
     activePrintJob={getActivePrintJob(selectedPrinter.id, data.activePrintJobs)}
-    loadedSpool={getLoadedSpool(selectedPrinter.loaded_spool_id, data.spools)}
+    loadedSpool={selectedPrinter.loaded_spool}
     onClose={closeFailureReasonModal}
     completePrintEnhance={completePrintFailureEnhance}
   />

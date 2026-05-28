@@ -102,17 +102,17 @@ export const actions: Actions = {
 
     // Create the preset
     const result = await db.createSpoolPreset(database, {
-      name,
       brand,
       material,
-      color,
+      color: color ?? '',
       defaultWeight,
-      cost
+      cost: cost ?? undefined
     });
 
     // Set initial stock if provided
-    if (result.success && result.presetId && initialStock > 0) {
-      await db.setStorageCount(database, result.presetId, initialStock);
+    const newPresetId = (result.data as { id?: number } | undefined)?.id;
+    if (result.success && newPresetId && initialStock > 0) {
+      await db.setStorageCount(database, newPresetId, initialStock);
     }
 
     return result;

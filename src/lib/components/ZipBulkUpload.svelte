@@ -5,8 +5,30 @@
 
   const dispatch = createEventDispatcher<{ done: void }>();
 
-  export const spoolPresets: any[] = [];
+  export let spoolPresets: any[] = [];
   export const printerModels: any[] = [];
+
+  // Same logic as ThreeMfUpload.matchPreset — kept inline to avoid a shared helper file.
+  function matchPreset(presets: any[], type: string | null, color: string | null): number | null {
+    if (!presets?.length) return null;
+    const normColor = (c: string | null | undefined) =>
+      (c ?? '').replace(/^#/, '').toLowerCase().slice(0, 6);
+    const normType = (t: string | null | undefined) => (t ?? '').toLowerCase().trim();
+    const presetColor = (p: any) => normColor(p.color_hex ?? p.color);
+    const wantColor = normColor(color);
+    const wantType = normType(type);
+    if (wantColor && wantType) {
+      const exact = presets.find(
+        (p) => normType(p.material) === wantType && presetColor(p) === wantColor,
+      );
+      if (exact) return exact.id;
+    }
+    if (wantColor) {
+      const c = presets.find((p) => presetColor(p) === wantColor);
+      if (c) return c.id;
+    }
+    return null;
+  }
 
   let isDragging = false;
   let fileInput: HTMLInputElement;
@@ -25,7 +47,8 @@
     nozzleDiameter: number | null;
     plateType: string | null;
     objectsPerPrint: number;
-    defaultSpoolPresetId: number | null;
+    /** Auto-detected slots. Sent to the API as-is on upload. */
+    slots: { slot_index: number; spool_preset_id: number | null; weight: number | null }[];
     printerModel: string | null;
     state: EntryState;
     errorMsg: string | null;
@@ -75,6 +98,25 @@
         const blob = await zip.files[key].async('blob');
         const meta = await extractMeta(blob);
         const baseName = key.split('/').pop()!;
+        const slotCount = Math.max(
+          meta.detectedColors.length,
+          meta.detectedTypes.length,
+          meta.detectedWeights.length,
+          1,
+        );
+        const slots = Array.from({ length: slotCount }, (_, i) => ({
+          slot_index: i,
+          spool_preset_id: matchPreset(
+            spoolPresets,
+            meta.detectedTypes[i] ?? null,
+            meta.detectedColors[i] ?? null,
+          ),
+          weight: meta.detectedWeights[i] ?? null,
+        }));
+        // Single-color fallback: if only total weight known, attribute it to slot 0.
+        if (slots.length === 1 && slots[0].weight == null && meta.expectedWeight != null) {
+          slots[0].weight = meta.expectedWeight;
+        }
         parsed.push({
           fileName: baseName,
           name: baseName.replace(/\.3mf$/i, ''),
@@ -85,7 +127,7 @@
           nozzleDiameter: meta.nozzleDiameter,
           plateType: meta.plateType,
           objectsPerPrint: meta.objectsPerPrint,
-          defaultSpoolPresetId: null,
+          slots,
           printerModel: null,
           state: 'pending',
           errorMsg: null,
@@ -108,6 +150,9 @@
     let nozzleDiameter: number | null = null;
     let plateType: string | null = null;
     let objectsPerPrint = 1;
+    let detectedColors: string[] = [];
+    let detectedTypes: string[] = [];
+    let detectedWeights: (number | null)[] = [];
 
     try {
       const inner = await JSZip.loadAsync(blob);
@@ -144,6 +189,19 @@
           if (json.objects_per_print != null) { const v = parseInt(json.objects_per_print, 10); if (!isNaN(v) && v > 0) objectsPerPrint = v; }
           else if (Array.isArray(json.objects) && json.objects.length > 0) objectsPerPrint = json.objects.length;
           if (!plateType) plateType = normalizePlateType(json.bed_type ?? json.plate_type ?? json.bed_type_preset ?? null);
+
+          if (Array.isArray(json.filament) && json.filament.length > 0) {
+            const sortedFilaments = [...json.filament].sort(
+              (a, b) => Number(a.id ?? 0) - Number(b.id ?? 0),
+            );
+            detectedColors = sortedFilaments.map((f: any) => String(f.color ?? ''));
+            detectedTypes = sortedFilaments.map((f: any) => String(f.type ?? ''));
+            detectedWeights = sortedFilaments.map((f: any) => {
+              const v = f.used_g ?? f.filament_weight ?? null;
+              const n = v == null ? NaN : Number(v);
+              return isNaN(n) ? null : Math.ceil(n);
+            });
+          }
         } catch { /* skip */ }
         break;
       }
@@ -159,6 +217,12 @@
           }
           if (!plateType) {
             plateType = normalizePlateType(json.bed_type ?? json.plate_type ?? json.bed_type_preset ?? null);
+          }
+          if (Array.isArray(json.filament_colour)) {
+            detectedColors = json.filament_colour.map((c: any) => String(c ?? ''));
+          }
+          if (Array.isArray(json.filament_type)) {
+            detectedTypes = json.filament_type.map((t: any) => String(t ?? ''));
           }
         } catch { /* skip */ }
       }
@@ -192,7 +256,7 @@
     if (estimatedTime !== null) estimatedTime = Math.round(estimatedTime / 60);
     if (expectedWeight !== null) expectedWeight = Math.ceil(expectedWeight);
 
-    return { thumbnail, estimatedTime, expectedWeight, nozzleDiameter, plateType, objectsPerPrint };
+    return { thumbnail, estimatedTime, expectedWeight, nozzleDiameter, plateType, objectsPerPrint, detectedColors, detectedTypes, detectedWeights };
   }
 
   // ── Batch upload ─────────────────────────────────────────────────────────────
@@ -234,9 +298,8 @@
             estimated_time: entry.estimatedTime,
             plate_type: entry.plateType,
             nozzle_diameter: entry.nozzleDiameter,
-            expected_weight: entry.expectedWeight,
             objects_per_print: entry.objectsPerPrint,
-            default_spool_preset_id: entry.defaultSpoolPresetId || null,
+            slots: entry.slots,
             printer_model: entry.printerModel || null,
             pi_file_path: piFilePath,
             file_stored_on_pi: fileStoredOnPi,

@@ -1,282 +1,351 @@
-/**
- * Printer Model - Represents a printer model preset (e.g., P1S, H2S)
- */
-export interface PrinterModel {
+// ============================================================================
+// CATALOG TYPES (hybrid scope — global + per-workspace in Phase 3)
+// ============================================================================
+
+/** Printer model catalog row (P1S, H2S, custom DIY, ...) */
+export interface PrinterPreset {
   id: number;
-  name: string;
-  description: string | null;
-  build_volume_x: number | null;
-  build_volume_y: number | null;
-  build_volume_z: number | null;
+  model: string;
+  brand: string;
+  dimension_x: number | null;
+  dimension_y: number | null;
+  dimension_z: number | null;
+  /** Path on the device where gcode files are stored. Same for all printers of this model. */
+  device_file_path: string;
   created_at: number;
+  updated_at: number;
 }
 
-/**
- * Spool - Represents a physical spool of filament
- */
+/** Build plate catalog row (engineering plate, cool plate, ...) */
+export interface PlatePreset {
+  id: number;
+  name: string;
+  dimension_x: number | null;
+  dimension_y: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+// ============================================================================
+// FILAMENT TYPES
+// ============================================================================
+
+/** A filament type in the user's library. Template for physical spools. */
+export interface SpoolPreset {
+  id: number;
+  color: string;
+  /** Hex value for UI swatches/gauges (e.g. "#1a1a1a"). Null = fall back to `color`. */
+  color_hex: string | null;
+  brand: string;
+  material: string; // PLA, PETG, ABS, ...
+  default_weight: number; // nominal weight in grams
+  cost: number; // cents
+  /** Count of unopened spools in storage (not yet opened into a `spools` row). */
+  in_storage: number;
+  created_at: number;
+  updated_at: number;
+}
+
+/** A physical roll of filament that has been opened and is being tracked. */
 export interface Spool {
   id: number;
   preset_id: number | null;
-  brand: string;
-  material: string;
-  color: string | null;
+  /** Actual weight when first added. May differ from preset.default_weight. */
   initial_weight: number;
   remaining_weight: number;
-  cost: number | null;
+  created_at: number;
+  updated_at: number;
 }
+
+/** Spool with its preset data joined in — for display. */
+export interface SpoolWithPreset extends Spool {
+  preset?: SpoolPreset | null;
+}
+
+// ============================================================================
+// PRINTER TYPES
+// ============================================================================
+
+/** A physical machine. Loaded spools are in printer_loaded_spools (per-slot). */
+export interface Printer {
+  id: number;
+  name: string;
+  printer_preset_id: number;
+  loaded_plate_id: number | null;
+  loaded_nozzle_diameter: number | null;
+  /** Number of filament slots. 1 = single-colour, 4 = AMS, etc. */
+  slot_count: number;
+  /** false = decommissioned. Row kept so historical print_jobs still resolve. */
+  active: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+/** Which spool is loaded in which slot of a printer right now. */
+export interface PrinterLoadedSpool {
+  printer_id: number;
+  slot_index: number;
+  spool_id: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+/** Printer secrets — IP, serial, access code, transport preference. Kept separate for future encryption. */
+export interface PrinterSecrets {
+  id: number;
+  printer_id: number;
+  printer_ip: string | null;
+  serial: string | null;
+  access_code: string | null;
+  transport: TransportMode;
+  created_at: number;
+  updated_at: number;
+}
+
+/** Printer with all related data joined for dashboard display. */
+export interface PrinterFull extends Printer {
+  preset?: PrinterPreset | null;
+  loaded_plate?: PlatePreset | null;
+  loaded_spools?: (PrinterLoadedSpool & { spool: SpoolWithPreset | null })[];
+  secrets?: PrinterSecrets | null;
+}
+
+/**
+ * Dashboard-ready printer — PrinterFull with secrets and status flattened onto
+ * the object so UI components can access printer_serial, printer_ip, etc. directly
+ * without digging into nested objects. Built in the page load function.
+ */
+export interface DashboardPrinter extends PrinterFull {
+  // Flattened from PrinterSecrets
+  printer_serial: string | null;
+  printer_ip: string | null;
+  printer_access_code: string | null;
+  transport: TransportMode;
+  // Convenience: slot-0 spool (the primary loaded spool for single-color printers)
+  loaded_spool: SpoolWithPreset | null;
+  // Derived from active print_jobs — not stored in DB
+  status: 'printing' | 'idle' | 'inactive';
+}
+
+// ============================================================================
+// PRINT MODULE TYPES
+// ============================================================================
+
+/** Which filament preset is required at a specific slot for a module.
+ *  `spool_preset_id = null` means the slot accepts any loaded spool.
+ *  `weight` is expected grams consumed from this slot; null = unknown. */
+export interface ModuleFilamentSlot {
+  module_id: number;
+  slot_index: number;
+  spool_preset_id: number | null;
+  weight: number | null;
+}
+
+/** A reusable print template: sliced gcode + metadata. */
+export interface PrintModule {
+  id: number;
+  name: string;
+  /** Total expected filament across all slots (grams). */
+  weight: number;
+  expected_time_minutes: number;
+  objects_per_print: number;
+  plate_preset_id: number;
+  printer_preset_id: number;
+  /** Nullable: test/one-off prints don't need to track an object. */
+  object_id: number | null;
+  nozzle_diameter: number | null;
+  filename: string;
+  thumbnail: string | null;
+  /** false = soft-deleted. Kept so historical jobs still resolve the module name. */
+  active: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+/** Module with related data joined for display. */
+export interface PrintModuleFull extends PrintModule {
+  printer_preset?: PrinterPreset | null;
+  plate_preset?: PlatePreset | null;
+  object?: ObjectItem | null;
+  filament_slots?: (ModuleFilamentSlot & { preset?: SpoolPreset | null })[];
+  /** Spool preset required at slot 0 — joined from module_filament_slots. */
+  default_spool_preset_id?: number | null;
+}
+
+// ============================================================================
+// PRINT JOB TYPES
+// ============================================================================
+
+export type PrintJobStatus =
+  | 'queued'
+  | 'printing'
+  | 'print_finished'
+  | 'paused'
+  | 'failed'
+  | 'failed_confirmed'
+  | 'successful';
+
+/** A single print execution — historical record. */
+export interface PrintJob {
+  id: number;
+  module_id: number | null;
+  printer_id: number | null;
+  /** UUID from the Pi. Used to reconcile prints started outside the app. */
+  external_task_id: string | null;
+  start_time: number | null;
+  expected_end_time: number | null;
+  status: PrintJobStatus;
+  failure_reason: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+/** Which spool was used in which slot for a job, and how many grams were consumed. */
+export interface PrintJobSpool {
+  print_job_id: number;
+  slot_index: number;
+  spool_id: number | null;
+  /** Null until the job completes and reports final usage. */
+  used_weight: number | null;
+}
+
+/** Print job with related data joined for display. */
+export interface PrintJobFull extends PrintJob {
+  module?: PrintModule | null;
+  printer?: Printer | null;
+  spools?: (PrintJobSpool & { spool?: SpoolWithPreset | null })[];
+}
+
+/**
+ * PrintJob as returned by getActivePrintJobs / getAllPrintJobs —
+ * includes ad-hoc columns from SQL joins (module + printer aliases).
+ */
+export interface PrintJobWithDetails extends PrintJob {
+  module_name?: string | null;
+  module_weight?: number | null;
+  module_thumbnail?: string | null;
+  expected_time_minutes?: number | null;
+  objects_per_print?: number | null;
+  printer_name?: string | null;
+  printer_serial?: string | null;
+  /** Optional client-side field set when the Pi reports live progress. */
+  progress?: number | null;
+}
+
+// ============================================================================
+// QUEUE TYPES
+// ============================================================================
+
+/** An entry in a printer's advisory recommended-next-up list. */
+export interface PrinterQueuedJob {
+  id: number;
+  printer_id: number;
+  module_id: number;
+  reason: string;
+  sort_order: number;
+  is_completed: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+// ============================================================================
+// INVENTORY / OBJECTS TYPES
+// ============================================================================
+
+/** A finished product produced by the farm. Single source of truth for stock. */
+export interface ObjectItem {
+  id: number;
+  /** Unique display name. "SKU" only lives in shopify_sku_mapping.shopify_sku. */
+  name: string;
+  in_stock: number;
+  min_threshold: number;
+  last_count_date: number | null;
+  last_count_discrepancy: number | null;
+  category: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export type InventoryChangeType =
+  | '+ printed'
+  | '+ stock count'
+  | '- stock count'
+  | '- sold b2c'
+  | '- sold b2b';
+
+/** One entry in the append-only audit trail of stock changes. */
+export interface InventoryLog {
+  id: number;
+  object_id: number;
+  change_type: InventoryChangeType;
+  quantity: number;
+  /** Links "+ printed" entries back to the job that produced them. */
+  print_job_id: number | null;
+  created_at: number;
+}
+
+// ============================================================================
+// SHOPIFY TYPES
+// ============================================================================
+
+export interface ShopifySkuMapping {
+  id: number;
+  shopify_sku: string;
+  object_id: number;
+  quantity: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ShopifyOrder {
+  id: number;
+  order_id: string;
+  order_number: string | null;
+  processed_at: number | null;
+  total_items: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+// ============================================================================
+// GRID / DASHBOARD TYPES
+// ============================================================================
+
+export interface GridCell {
+  type: 'printer' | 'stats' | 'settings' | 'spools' | 'storage' | 'empty' | 'inventory' | 'products';
+  printerId?: number;
+}
+
+export interface GridPreset {
+  id: number;
+  name: string;
+  is_default: boolean;
+  rows: number;
+  cols: number;
+  /** JSON-serialized GridCell[]. Parse with JSON.parse(grid_config). */
+  grid_config: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface NewGridPreset {
+  name: string;
+  is_default?: boolean;
+  rows: number;
+  cols: number;
+  grid_config: GridCell[];
+}
+
+// ============================================================================
+// PI / LIVE STATUS TYPES (not persisted — live MQTT data)
+// ============================================================================
 
 /** How a printer sends print commands and receives status updates. */
 export type TransportMode = 'auto' | 'direct' | 'pi';
 
 /**
- * Printer - Represents a 3D printer
- */
-export interface Printer {
-  id: number;
-  name: string;
-  model: string | null;
-  printer_model_id: number | null;
-  printer_model_name?: string | null;
-  status: string; // 'WAITING' | 'IDLE' | 'PRINTING' | etc.
-  loaded_spool_id: number | null;
-  suggested_queue?: SuggestedPrintQueueItem[];
-  total_hours: number;
-  // Bambu Lab LAN credentials — required for Pi bridge printing
-  printer_ip: string | null;
-  printer_serial: string | null;
-  printer_access_code: string | null;
-  // Transport preference ('auto' | 'direct' | 'pi'). Defaults to 'auto'.
-  transport: TransportMode;
-}
-
-/**
- * Print Module - Represents a reusable print configuration.
- * Supports two print systems independently:
- *   - Local file handler: uses local_file_handler_path to open .3mf in Bambu Studio locally
- *   - Pi bridge: uses pi_file_path + file_stored_on_pi for automated printing via Raspberry Pi
- */
-export interface PrintModule {
-  id: number;
-  name: string;
-  // Workflow fields (optional until configured)
-  expected_weight: number | null;
-  expected_time: number | null;
-  objects_per_print: number;
-  default_spool_preset_id: number | null;
-  inventory_slug: string | null;
-  printer_model?: string | null;
-  printer_model_id?: number | null;
-  printer_model_name?: string | null;
-  // Local file handler system
-  local_file_handler_path: string | null;
-  image_path: string | null;
-  // .3mf upload metadata
-  file_name: string | null;
-  thumbnail: string | null;
-  filament_type: string | null;
-  filament_color: string | null;
-  plate_type: string | null;
-  nozzle_diameter: number | null;
-  // Pi bridge system
-  pi_file_path: string | null;
-  file_stored_on_pi: number; // 0 or 1
-  // Recommendation flag — 0 = saved but excluded from queue/AI suggestions
-  active: number; // 0 or 1, default 1
-}
-
-/**
- * Print Job - Represents a single print execution
- */
-export interface PrintJob {
-  id: number;
-  name: string;
-  module_id: number | null;
-  printer_id: number | null;
-  spool_id: number | null;
-  start_time: number;
-  end_time: number | null;
-  status: 'printing' | 'success' | 'failed'; 
-  failure_reason: string | null;
-  planned_weight: number;
-  actual_weight: number | null;
-  waste_weight: number;
-}
-
-/**
- * Spool Preset - Template for common spool configurations
- */
-export interface SpoolPreset {
-  id: number;
-  name: string;
-  brand: string;
-  material: string;
-  color: string | null;
-  default_weight: number;
-  cost: number | null;
-  storage_count: number;
-}
-
-/**
- * Extended Print Job - Includes joined data from related tables
- * Used for display purposes when querying with JOINs
- */
-export interface PrintJobExtended extends PrintJob {
-  printer_name?: string;
-  module_name?: string;
-  module_image_path?: string | null;
-  expected_weight?: number;
-  expected_time?: number;
-  /** Live progress percentage (0–100) reported by the Pi/MQTT bridge. */
-  progress?: number;
-  printer_serial?: string | null;
-  printer_loaded_spool_id?: number | null;
-  // Spool information
-  spool_brand?: string;
-  spool_material?: string;
-  spool_color?: string | null;
-}
-
-/**
- * Printer with Spool - Includes loaded spool information
- */
-export interface PrinterWithSpool extends Printer {
-  spool?: Spool | null;
-}
-
-/**
- * Statistics - Aggregated data for dashboard
- */
-export interface PrintStatistics {
-  total_prints: number;
-  successful_prints: number;
-  failed_prints: number;
-  total_print_time: number; // in minutes
-  total_material_used: number; // in grams
-  success_rate: number; // percentage
-}
-
-/**
- * Printer Statistics - Per-printer aggregated data
- */
-export interface PrinterStatistics extends PrintStatistics {
-  printer_id: number;
-  printer_name: string;
-}
-
-/**
- * Material Usage - Track material consumption by type
- */
-export interface MaterialUsage {
-  brand: string;
-  material: string;
-  color: string | null;
-  total_used: number; // in grams
-  print_count: number;
-  average_per_print: number;
-}
-
-/**
- * Database Query Result wrapper
- */
-export interface D1Result<T = unknown> {
-  results?: T[];
-  success: boolean;
-  meta: {
-    changed_db?: boolean;
-    changes?: number;
-    duration?: number;
-    last_row_id?: number;
-    rows_read?: number;
-    rows_written?: number;
-    size_after?: number;
-  };
-  error?: string;
-}
-
-/**
- * Type guards for runtime type checking
- */
-export function isPrintJob(obj: any): obj is PrintJob {
-  return (
-    typeof obj === 'object' &&
-    obj !== null &&
-    typeof obj.id === 'number' &&
-    typeof obj.name === 'string' &&
-    typeof obj.planned_weight === 'number'
-  );
-}
-
-export function isSpool(obj: any): obj is Spool {
-  return (
-    typeof obj === 'object' &&
-    obj !== null &&
-    typeof obj.id === 'number' &&
-    typeof obj.brand === 'string' &&
-    typeof obj.remaining_weight === 'number'
-  );
-}
-
-export function isPrinter(obj: any): obj is Printer {
-  return (
-    typeof obj === 'object' &&
-    obj !== null &&
-    typeof obj.id === 'number' &&
-    typeof obj.name === 'string' &&
-    typeof obj.status === 'string'
-  );
-}
-
-/**
- * Helper type for form data
- */
-export interface NewSpool {
-  preset_id?: number | null;
-  brand: string;
-  material: string;
-  color?: string | null;
-  initial_weight: number;
-  remaining_weight: number;
-  cost?: number | null;
-}
-
-export interface NewPrintModule {
-  name: string;
-  expected_weight?: number | null;
-  expected_time?: number | null;
-  objects_per_print?: number;
-  default_spool_preset_id?: number | null;
-  local_file_handler_path?: string | null;
-  image_path?: string | null;
-  file_name?: string | null;
-  thumbnail?: string | null;
-  filament_type?: string | null;
-  filament_color?: string | null;
-  plate_type?: string | null;
-  nozzle_diameter?: number | null;
-  pi_file_path?: string | null;
-}
-
-export interface NewSpoolPreset {
-  name: string;
-  brand: string;
-  material: string;
-  color?: string | null;
-  default_weight: number;
-  cost?: number | null;
-}
-
-/**
- * New Printer - For creating printers
- */
-export interface NewPrinter {
-  name: string;
-  model?: string | null;
-  printer_model_id?: number | null;
-}
-
-/**
  * Live status snapshot for one printer, received via Pi polling or Tauri MQTT events.
- * Keyed by printer_serial in the dashboard's piStatusBySerial map.
+ * Keyed by printer serial in the dashboard's piStatusBySerial map.
  */
 export interface PiStatus {
   gcode_state: string;
@@ -293,61 +362,127 @@ export interface PiStatus {
   gcode_file?: string | null;
 }
 
-/**
- * Grid Cell - Represents a single cell in the 3x3 grid
- */
-export interface GridCell {
-  type: 'printer' | 'stats' | 'settings' | 'spools' | 'storage' | 'empty' | 'inventory' | 'products';
-  printerId?: number;
-}
+// ============================================================================
+// ANALYTICS / RECOMMENDATION TYPES
+// ============================================================================
 
-/**
- * Grid Preset - Represents a saved grid configuration with configurable dimensions
- */
-export interface GridPreset {
+export type InventoryPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW';
+
+export interface ObjectWithVelocity {
   id: number;
   name: string;
-  is_default: number; // 0 or 1
-  grid_config: string; // JSON stringified GridCell[]
-  rows: number;
-  cols: number;
-  created_at: number;
+  in_stock: number;
+  min_threshold: number;
+  daily_velocity: number;
+  days_until_stockout: number;
+  stockout_risk: number;
+  confidence: 'high' | 'medium' | 'low';
+  days_with_sales: number;
 }
 
-/**
- * New Grid Preset - For creating grid presets
- */
-export interface NewGridPreset {
-  name: string;
-  is_default?: boolean;
-  grid_config: GridCell[];
-  rows: number;
-  cols: number;
+export interface SalesVelocity {
+  object_id: number;
+  daily_velocity: number;
 }
 
-/**
- * Enum-like types for better type safety
- */
-export type PrinterStatus = 'WAITING' | 'IDLE' | 'PRINTING' | 'ERROR' | 'MAINTENANCE' | 'BROKEN';
+export interface AIRecommendationContext {
+  adjustedInventory: ObjectWithVelocity[];
+  salesVelocity: SalesVelocity[];
+}
 
-/**
- * Printer Downtime — one event per repair period.
- * ended_at is NULL while the printer is still broken.
- */
-export interface PrinterDowntime {
+export interface PrioritizedObjectItem {
   id: number;
+  name: string;
+  in_stock: number;
+  min_threshold: number;
+  daily_velocity: number;
+  days_until_stockout: number;
+  stockout_risk: number;
+  confidence: 'high' | 'medium' | 'low';
+  priority: InventoryPriority;
+}
+
+export interface PrioritizedInventory {
+  CRITICAL: PrioritizedObjectItem[];
+  HIGH: PrioritizedObjectItem[];
+  MEDIUM: PrioritizedObjectItem[];
+  LOW: PrioritizedObjectItem[];
+  VERY_LOW: PrioritizedObjectItem[];
+}
+
+export interface SpoolSuggestion {
+  preset_id: number;
+  priority: InventoryPriority;
+  object_name: string;
+  in_stock: number;
+  daily_velocity: number;
+  days_until_stockout: number;
+  module_id: number;
+  module_name: string;
+  reason: string;
+}
+
+export interface ModuleContext {
+  id: number;
+  name: string;
+  object_id: number | null;
+  /** Name of the linked object (joined from objects.name). */
+  object_name: string | null;
+  weight: number;
+  expected_time_minutes: number;
+  objects_per_print: number;
+  printer_preset_id: number;
+  /** Spool preset required at slot 0 (joined from module_filament_slots). */
+  spool_preset_id: number | null;
+}
+
+// ============================================================================
+// STATISTICS TYPES
+// ============================================================================
+
+export interface PrintStatistics {
+  total_prints: number;
+  successful_prints: number;
+  failed_prints: number;
+  total_print_time: number; // minutes
+  total_material_used: number; // grams
+  success_rate: number; // percentage
+}
+
+export interface PrinterStatistics extends PrintStatistics {
   printer_id: number;
-  started_at: number;   // unix ms
-  ended_at: number | null;
-  note: string | null;
+  printer_name: string;
 }
 
-export type PrintResult = 'SUCCESS' | 'FAILED' | 'IN_PROGRESS';
+export interface MaterialUsage {
+  brand: string;
+  material: string;
+  color: string;
+  total_used: number; // grams
+  print_count: number;
+  average_per_print: number;
+}
 
-/**
- * Response types for server functions
- */
-export interface ServerResponse<T = any> {
+// ============================================================================
+// SERVER RESPONSE TYPES
+// ============================================================================
+
+export interface D1Result<T = unknown> {
+  results?: T[];
+  success: boolean;
+  meta: {
+    changed_db?: boolean;
+    changes?: number;
+    duration?: number;
+    last_row_id?: number;
+    rows_read?: number;
+    rows_written?: number;
+    size_after?: number;
+  };
+  error?: string;
+}
+
+export interface ServerResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
@@ -356,7 +491,7 @@ export interface ServerResponse<T = any> {
 
 export interface LoadSpoolResponse extends ServerResponse {
   needsUnload?: boolean;
-  currentSpool?: Spool;
+  currentSpool?: Spool | null;
   spoolId?: number;
   printerId?: number;
 }
@@ -368,129 +503,72 @@ export interface StartPrintResponse extends ServerResponse {
   lowMaterial?: boolean;
 }
 
-/**
- * Helper to get print job status
- */
-export function getPrintJobStatus(job: PrintJob): 'printing' | 'success' | 'failed' {
-  return job.status;
+// ============================================================================
+// FORM / INPUT TYPES
+// ============================================================================
+
+export interface NewSpool {
+  preset_id?: number | null;
+  initial_weight: number;
+  remaining_weight: number;
 }
 
-
-// Inventory types
-export interface InventoryItem {
-  id: number;
+export interface NewPrintModule {
   name: string;
-  slug: string;  // Unique text identifier
-  sku: string | null;
-  description: string | null;
-  image_path: string | null;
-  stock_count: number;
-  min_threshold: number;
-  total_added: number;
-  total_sold: number;
-  total_sold_b2c: number;
-  total_sold_b2b: number;
-  total_removed_manually: number;
-  last_count_date: number | null;
-  last_count_expected: number | null;
-  last_count_actual: number | null;
-  category: string;
+  weight: number;
+  expected_time_minutes: number;
+  objects_per_print?: number;
+  plate_preset_id: number;
+  printer_preset_id: number;
+  object_id?: number | null;
+  nozzle_diameter?: number | null;
+  filename: string;
+  thumbnail?: string | null;
 }
 
-export type InventoryChangeType = 'add' | 'remove' | 'sold_b2c' | 'sold_b2b' | 'defect' | 'count_adjust';
-
-export interface InventoryLog {
-  id: number;
-  inventory_id: number;
-  change_type: InventoryChangeType;
-  quantity: number;
-  reason: string | null;
-  created_at: number;
+export interface NewSpoolPreset {
+  color: string;
+  brand: string;
+  material: string;
+  default_weight: number;
+  cost?: number;
+  in_storage?: number;
 }
 
-export interface InventoryWithVelocity {
-  slug: string;
+export interface NewPrinter {
   name: string;
-  stock_count: number;
-  min_threshold: number;
-  daily_velocity: number;
-  days_until_stockout: number;
-  stockout_risk: number;
-  confidence: 'high' | 'medium' | 'low';
-  days_with_sales: number;
+  printer_preset_id: number;
+  slot_count?: number;
 }
 
+// ============================================================================
+// TYPE GUARDS
+// ============================================================================
 
-
-export interface ModuleContext {
-  id: number;
-  name: string;
-  inventory_slug: string | null;
-  expected_weight: number;
-  expected_time: number;
-  objects_per_print: number;
-  preset_id: number | null;
-  preset_name: string | null;
-  printer_model: string | null;
-  printer_model_id: number | null;
+export function isPrintJob(obj: unknown): obj is PrintJob {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof (obj as PrintJob).id === 'number' &&
+    typeof (obj as PrintJob).status === 'string'
+  );
 }
 
-
-
-export interface SuggestedPrintQueueItem {
-  module_id: number;
-  module_name: string;
-  status: string;
-  inventory_slug: string;
-  priority: InventoryPriority;
-  weight_of_print: number;
-  spool_weight_after_print:number;
+export function isSpool(obj: unknown): obj is Spool {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof (obj as Spool).id === 'number' &&
+    typeof (obj as Spool).remaining_weight === 'number'
+  );
 }
 
-
-
-export interface SalesVelocity {
-  slug: string;
-  daily_velocity: number;
-}
-
-export interface AIRecommendationContext {
-  adjustedInventory: InventoryWithVelocity[];
-  salesVelocity: SalesVelocity[];
-}
-
-export type InventoryPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW';
-
-export interface SpoolSuggestion {
-  preset_id: number;
-  preset_name: string;
-  priority: InventoryPriority;
-  inventory_slug: string;
-  inventory_name: string;
-  stock_count: number;
-  daily_velocity: number;
-  days_until_stockout: number;
-  module_id: number;
-  module_name: string;
-  reason: string;
-}
-
-export interface PrioritizedInventoryItem {
-  slug: string;
-  name: string;
-  stock_count: number;
-  min_threshold: number;
-  daily_velocity: number;
-  days_until_stockout: number;
-  stockout_risk: number;
-  confidence: 'high' | 'medium' | 'low';
-  priority: InventoryPriority;
-}
-
-export interface PrioritizedInventory {
-  CRITICAL: PrioritizedInventoryItem[];
-  HIGH: PrioritizedInventoryItem[];
-  MEDIUM: PrioritizedInventoryItem[];
-  LOW: PrioritizedInventoryItem[];
-  VERY_LOW: PrioritizedInventoryItem[];
+export function isPrinter(obj: unknown): obj is Printer {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof (obj as Printer).id === 'number' &&
+    typeof (obj as Printer).name === 'string' &&
+    typeof (obj as Printer).printer_preset_id === 'number'
+  );
 }

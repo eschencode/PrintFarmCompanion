@@ -1,14 +1,18 @@
 import type { PageServerLoad } from './$types';
-import { getAllPrintModules, getAllPrinters } from '$lib/server';
+import { getAllPrintModules, getAllPrinters, getAllSpoolPresets, getAllPrinterPresets } from '$lib/server';
+import { getAllObjects } from '$lib/inventory_handler';
 
 export const load: PageServerLoad = async ({ platform }) => {
   const db = platform?.env?.DB;
-  if (!db) return { modules: [], printers: [] };
+  if (!db) return { modules: [], printers: [], spoolPresets: [], printerPresets: [], objects: [] };
 
-  const [modules, printers] = await Promise.all([
+  const [modules, printers, spoolPresets, printerPresets, objects] = await Promise.all([
     getAllPrintModules(db),
     getAllPrinters(db),
+    getAllSpoolPresets(db),
+    getAllPrinterPresets(db),
+    getAllObjects(db),
   ]);
 
-  return { modules, printers };
+  return { modules, printers, spoolPresets, printerPresets, objects };
 };

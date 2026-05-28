@@ -14,12 +14,12 @@ export const actions: Actions = {
     if (!database) return { success: false, error: 'Database not available' };
     const formData = await request.formData();
     return db.createSpoolPreset(database, {
-      name: formData.get('name') as string,
       brand: formData.get('brand') as string,
       material: formData.get('material') as string,
-      color: (formData.get('color') as string) || null,
+      color: (formData.get('color') as string) || '',
+      colorHex: (formData.get('colorHex') as string) || null,
       defaultWeight: Number(formData.get('defaultWeight')),
-      cost: Number(formData.get('cost')) || null,
+      cost: Number(formData.get('cost')) || undefined,
     });
   },
 
@@ -28,12 +28,12 @@ export const actions: Actions = {
     if (!database) return { success: false, error: 'Database not available' };
     const formData = await request.formData();
     return db.updateSpoolPreset(database, Number(formData.get('presetId')), {
-      name: formData.get('name') as string,
       brand: formData.get('brand') as string,
       material: formData.get('material') as string,
-      color: (formData.get('color') as string) || null,
+      color: (formData.get('color') as string) || '',
+      colorHex: (formData.get('colorHex') as string) || null,
       defaultWeight: Number(formData.get('defaultWeight')),
-      cost: Number(formData.get('cost')) || null,
+      cost: Number(formData.get('cost')) || undefined,
     });
   },
 

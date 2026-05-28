@@ -5,8 +5,8 @@ export const load: PageServerLoad = async ({ platform }) => {
   const database = platform?.env?.DB;
   if (!database) return { printers: [], printerModels: [] };
   const [printers, printerModels] = await Promise.all([
-    db.getAllPrinters(database),
-    db.getAllPrinterModels(database),
+    db.getAllPrintersFull(database),
+    db.getAllPrinterPresets(database),
   ]);
   return { printers, printerModels };
 };
@@ -18,10 +18,12 @@ export const actions: Actions = {
     const formData = await request.formData();
     return db.createPrinter(database, {
       name: formData.get('name') as string,
-      printerModelId: Number(formData.get('printerModelId')) || null,
+      printerPresetId: Number(formData.get('printerPresetId')) || Number(formData.get('printerModelId')),
+      slotCount: Number(formData.get('slotCount')) || 1,
+    }, {
       printerIp: (formData.get('printerIp') as string) || null,
-      printerSerial: (formData.get('printerSerial') as string) || null,
-      printerAccessCode: (formData.get('printerAccessCode') as string) || null,
+      serial: (formData.get('printerSerial') as string) || null,
+      accessCode: (formData.get('printerAccessCode') as string) || null,
     });
   },
 
@@ -29,13 +31,19 @@ export const actions: Actions = {
     const database = platform?.env?.DB;
     if (!database) return { success: false, error: 'Database not available' };
     const formData = await request.formData();
-    return db.updatePrinter(database, Number(formData.get('printerId')), {
+    const printerId = Number(formData.get('printerId'));
+    const result = await db.updatePrinter(database, printerId, {
       name: formData.get('name') as string,
-      printerModelId: Number(formData.get('printerModelId')) || null,
-      printerIp: (formData.get('printerIp') as string) || null,
-      printerSerial: (formData.get('printerSerial') as string) || null,
-      printerAccessCode: (formData.get('printerAccessCode') as string) || null,
+      printerPresetId: Number(formData.get('printerPresetId')) || Number(formData.get('printerModelId')) || undefined,
+      slotCount: Number(formData.get('slotCount')) || undefined,
     });
+    if (!result.success) return result;
+    await db.upsertPrinterSecrets(database, printerId, {
+      printerIp: (formData.get('printerIp') as string) || null,
+      serial: (formData.get('printerSerial') as string) || null,
+      accessCode: (formData.get('printerAccessCode') as string) || null,
+    });
+    return { success: true };
   },
 
   deletePrinter: async ({ platform, request }) => {
@@ -49,12 +57,13 @@ export const actions: Actions = {
     const database = platform?.env?.DB;
     if (!database) return { success: false, error: 'Database not available' };
     const formData = await request.formData();
-    return db.createPrinterModel(database, {
-      name: formData.get('name') as string,
-      description: (formData.get('description') as string) || null,
-      buildVolumeX: Number(formData.get('buildVolumeX')) || null,
-      buildVolumeY: Number(formData.get('buildVolumeY')) || null,
-      buildVolumeZ: Number(formData.get('buildVolumeZ')) || null,
+    return db.createPrinterPreset(database, {
+      model: formData.get('name') as string,
+      brand: (formData.get('brand') as string) || '',
+      dimensionX: Number(formData.get('buildVolumeX')) || null,
+      dimensionY: Number(formData.get('buildVolumeY')) || null,
+      dimensionZ: Number(formData.get('buildVolumeZ')) || null,
+      deviceFilePath: (formData.get('deviceFilePath') as string) || '/',
     });
   },
 
@@ -62,12 +71,11 @@ export const actions: Actions = {
     const database = platform?.env?.DB;
     if (!database) return { success: false, error: 'Database not available' };
     const formData = await request.formData();
-    return db.updatePrinterModel(database, Number(formData.get('modelId')), {
-      name: formData.get('name') as string,
-      description: (formData.get('description') as string) || null,
-      buildVolumeX: Number(formData.get('buildVolumeX')) || null,
-      buildVolumeY: Number(formData.get('buildVolumeY')) || null,
-      buildVolumeZ: Number(formData.get('buildVolumeZ')) || null,
+    return db.updatePrinterPreset(database, Number(formData.get('modelId')), {
+      model: formData.get('name') as string,
+      dimensionX: Number(formData.get('buildVolumeX')) || null,
+      dimensionY: Number(formData.get('buildVolumeY')) || null,
+      dimensionZ: Number(formData.get('buildVolumeZ')) || null,
     });
   },
 
@@ -75,6 +83,6 @@ export const actions: Actions = {
     const database = platform?.env?.DB;
     if (!database) return { success: false, error: 'Database not available' };
     const formData = await request.formData();
-    return db.deletePrinterModel(database, Number(formData.get('modelId')));
+    return db.deletePrinterPreset(database, Number(formData.get('modelId')));
   },
 };

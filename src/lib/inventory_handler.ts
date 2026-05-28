@@ -1,185 +1,190 @@
 import type { D1Database } from '@cloudflare/workers-types';
-import type {
-  InventoryItem,
-  InventoryLog,
-  InventoryChangeType,
-  ServerResponse
-} from './types';
+import type { ObjectItem, InventoryLog, InventoryChangeType, ServerResponse } from './types';
+import { sql } from 'drizzle-orm';
+import { getDb } from './db';
 
-// ============ GETTERS ============
+// ─── Getters ──────────────────────────────────────────────────────────────────
 
-// Get all inventory items
-export async function getAllInventoryItems(db: D1Database): Promise<InventoryItem[]> {
-  const result = await db.prepare('SELECT * FROM inventory ORDER BY name ASC').all();
-  return (result.results || []) as unknown as  InventoryItem[];
+export async function getAllObjects(db: D1Database): Promise<ObjectItem[]> {
+  const drizzleDb = getDb(db);
+  const rows = await drizzleDb.all<ObjectItem>(sql`SELECT * FROM objects ORDER BY name ASC`);
+  return (rows ?? []) as unknown as ObjectItem[];
 }
 
-// Get single inventory item by ID
-export async function getInventoryItemById(db: D1Database, id: number): Promise<InventoryItem | null> {
-  const result = await db.prepare('SELECT * FROM inventory WHERE id = ?').bind(id).first();
-  return result as InventoryItem | null;
+export async function getObjectById(db: D1Database, id: number): Promise<ObjectItem | null> {
+  const drizzleDb = getDb(db);
+  const result = await drizzleDb.get<ObjectItem>(sql`SELECT * FROM objects WHERE id = ${id}`);
+  return result ?? null;
 }
 
-// Get inventory item by SKU (for Shopify sync)
-export async function getInventoryItemBySku(db: D1Database, sku: string): Promise<InventoryItem | null> {
-  const result = await db.prepare('SELECT * FROM inventory WHERE sku = ?').bind(sku).first();
-  return result as InventoryItem | null;
+export async function getObjectByName(db: D1Database, name: string): Promise<ObjectItem | null> {
+  const drizzleDb = getDb(db);
+  const result = await drizzleDb.get<ObjectItem>(sql`SELECT * FROM objects WHERE name = ${name}`);
+  return result ?? null;
 }
 
-// Get inventory item by slug
-export async function getInventoryItemBySlug(db: D1Database, slug: string): Promise<InventoryItem | null> {
-  const result = await db.prepare('SELECT * FROM inventory WHERE slug = ?').bind(slug).first();
-  return result as unknown as InventoryItem | null;
+export async function getLowStockObjects(db: D1Database): Promise<ObjectItem[]> {
+  const drizzleDb = getDb(db);
+  const rows = await drizzleDb.all<ObjectItem>(sql`
+    SELECT * FROM objects
+    WHERE in_stock < min_threshold
+    ORDER BY (min_threshold - in_stock) DESC
+  `);
+  return (rows ?? []) as unknown as ObjectItem[];
 }
 
-// Get low stock items (below threshold)
-export async function getLowStockItems(db: D1Database): Promise<InventoryItem[]> {
-  const result = await db.prepare(`
-    SELECT * FROM inventory 
-    WHERE stock_count < min_threshold 
-    ORDER BY (min_threshold - stock_count) DESC
-  `).all();
-  return (result.results || []) as unknown as InventoryItem[];
+export async function getInventoryLogs(
+  db: D1Database,
+  objectId: number,
+  limit = 50,
+): Promise<InventoryLog[]> {
+  const drizzleDb = getDb(db);
+  const rows = await drizzleDb.all<InventoryLog>(sql`
+    SELECT * FROM inventory_log
+    WHERE object_id = ${objectId}
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `);
+  return (rows ?? []) as unknown as InventoryLog[];
 }
 
-// Get inventory logs for an item
-export async function getInventoryLogs(db: D1Database, inventoryId: number, limit = 50): Promise<InventoryLog[]> {
-  const result = await db.prepare(`
-    SELECT * FROM inventory_log 
-    WHERE inventory_id = ? 
-    ORDER BY created_at DESC 
-    LIMIT ?
-  `).bind(inventoryId, limit).all();
-  return (result.results || []) as unknown as  InventoryLog[];
-}
-
-// Get all recent inventory logs
-export async function getAllRecentLogs(db: D1Database, limit = 100): Promise<(InventoryLog & { item_name: string })[]> {
-  const result = await db.prepare(`
-    SELECT il.*, i.name as item_name
+export async function getAllRecentLogs(
+  db: D1Database,
+  limit = 100,
+): Promise<(InventoryLog & { object_name: string })[]> {
+  const drizzleDb = getDb(db);
+  const rows = await drizzleDb.all<InventoryLog & { object_name: string }>(sql`
+    SELECT il.*, o.name as object_name
     FROM inventory_log il
-    JOIN inventory i ON il.inventory_id = i.id
-    ORDER BY il.created_at DESC 
-    LIMIT ?
-  `).bind(limit).all();
-  return (result.results || []) as unknown as (InventoryLog & { item_name: string })[];
+    JOIN objects o ON il.object_id = o.id
+    ORDER BY il.created_at DESC
+    LIMIT ${limit}
+  `);
+  return (rows ?? []) as unknown as (InventoryLog & { object_name: string })[];
 }
 
-// ============ SETTERS / MUTATIONS ============
+// ─── Create / Update / Delete ─────────────────────────────────────────────────
 
-// Create new inventory item
-export async function createInventoryItem(db: D1Database, item: {
-  name: string;
-  slug: string;
-  sku?: string | null;
-  description?: string | null;
-  image_path?: string | null;
-  stock_count?: number;
-  min_threshold?: number;
-}): Promise<ServerResponse> {
+export async function createObject(
+  db: D1Database,
+  item: {
+    name: string;
+    inStock?: number;
+    minThreshold?: number;
+    category?: string | null;
+  },
+): Promise<ServerResponse> {
+  const drizzleDb = getDb(db);
   try {
-    const result = await db.prepare(`
-      INSERT INTO inventory (name, slug, sku, description, image_path, stock_count, min_threshold)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(
-      item.name,
-      item.slug,
-      item.sku ?? null,
-      item.description ?? null,
-      item.image_path ?? null,
-      item.stock_count ?? 0,
-      item.min_threshold ?? 5
-    ).run();
-
+    const now = Math.floor(Date.now() / 1000);
+    const result = await drizzleDb.run(sql`
+      INSERT INTO objects (name, in_stock, min_threshold, category, created_at, updated_at)
+      VALUES (
+        ${item.name},
+        ${item.inStock ?? 0}, ${item.minThreshold ?? 0},
+        ${item.category ?? null}, ${now}, ${now}
+      )
+    `);
     return {
       success: true,
-      message: `Inventory item "${item.name}" created`,
-      data: { id: result.meta.last_row_id, slug: item.slug }
+      message: `Object "${item.name}" created`,
+      data: { id: result.meta.last_row_id },
     };
   } catch (error) {
-    console.error('Error creating inventory item:', error);
-    return { success: false, error: 'Failed to create inventory item' };
+    console.error('Error creating object:', error);
+    return { success: false, error: 'Failed to create object (name may already exist)' };
   }
 }
 
-// Update inventory item details
-export async function updateInventoryItem(db: D1Database, id: number, item: {
-  name?: string;
-  sku?: string | null;
-  description?: string | null;
-  image_path?: string | null;
-  min_threshold?: number;
-}): Promise<ServerResponse> {
+export async function updateObject(
+  db: D1Database,
+  id: number,
+  item: {
+    name?: string;
+    minThreshold?: number;
+    category?: string | null;
+  },
+): Promise<ServerResponse> {
+  const drizzleDb = getDb(db);
   try {
-    const updates: string[] = [];
-    const values: unknown[] = [];
+    const updates: ReturnType<typeof sql>[] = [];
+    if (item.name !== undefined) updates.push(sql`name = ${item.name}`);
+    if (item.minThreshold !== undefined) updates.push(sql`min_threshold = ${item.minThreshold}`);
+    if (item.category !== undefined) updates.push(sql`category = ${item.category}`);
+    if (updates.length === 0) return { success: false, error: 'No updates provided' };
 
-    if (item.name !== undefined) {
-      updates.push('name = ?');
-      values.push(item.name);
-    }
-    if (item.sku !== undefined) {
-      updates.push('sku = ?');
-      values.push(item.sku);
-    }
-    if (item.description !== undefined) {
-      updates.push('description = ?');
-      values.push(item.description);
-    }
-    if (item.image_path !== undefined) {
-      updates.push('image_path = ?');
-      values.push(item.image_path);
-    }
-    if (item.min_threshold !== undefined) {
-      updates.push('min_threshold = ?');
-      values.push(item.min_threshold);
-    }
-
-    if (updates.length === 0) {
-      return { success: false, error: 'No updates provided' };
-    }
-
-    values.push(id);
-
-    await db.prepare(`UPDATE inventory SET ${updates.join(', ')} WHERE id = ?`)
-      .bind(...values).run();
-
-    return { success: true, message: 'Inventory item updated' };
+    await drizzleDb.run(
+      sql`UPDATE objects SET ${sql.join(updates, sql`, `)}, updated_at = ${Math.floor(Date.now() / 1000)} WHERE id = ${id}`,
+    );
+    return { success: true, message: 'Object updated' };
   } catch (error) {
-    console.error('Error updating inventory item:', error);
-    return { success: false, error: 'Failed to update inventory item' };
+    console.error('Error updating object:', error);
+    return { success: false, error: 'Failed to update object' };
   }
 }
 
-// Delete inventory item
-export async function deleteInventoryItem(db: D1Database, id: number): Promise<ServerResponse> {
+/**
+ * Delete an object.
+ * Blocked if inventory_log rows exist — the audit trail is the source of truth.
+ * Archive instead by changing the category to e.g. "archived".
+ */
+export async function deleteObject(db: D1Database, id: number): Promise<ServerResponse> {
+  const drizzleDb = getDb(db);
   try {
-    // Delete logs first (foreign key constraint)
-    await db.prepare('DELETE FROM inventory_log WHERE inventory_id = ?').bind(id).run();
-    
-    // Delete the item
-    await db.prepare('DELETE FROM inventory WHERE id = ?').bind(id).run();
+    const logCount = await drizzleDb.get<{ count: number }>(
+      sql`SELECT COUNT(*) as count FROM inventory_log WHERE object_id = ${id}`,
+    );
+    if ((logCount?.count ?? 0) > 0) {
+      return {
+        success: false,
+        error:
+          'Cannot delete: this object has inventory history. ' +
+          'Change its category to archive it instead.',
+      };
+    }
 
-    return { success: true, message: 'Inventory item deleted' };
+    await drizzleDb.run(sql`DELETE FROM shopify_sku_mapping WHERE object_id = ${id}`);
+    await drizzleDb.run(sql`DELETE FROM objects WHERE id = ${id}`);
+
+    return { success: true, message: 'Object deleted' };
   } catch (error) {
-    console.error('Error deleting inventory item:', error);
-    return { success: false, error: 'Failed to delete inventory item' };
+    console.error('Error deleting object:', error);
+    return { success: false, error: 'Failed to delete object' };
   }
 }
 
-// ============ STOCK ADJUSTMENTS ============
+// ─── Stock Adjustments ────────────────────────────────────────────────────────
 
-// Add stock (e.g., after printing)
-export async function addStock(db: D1Database, id: number, quantity: number, reason?: string): Promise<ServerResponse> {
+export async function addPrintedStock(
+  db: D1Database,
+  objectId: number,
+  quantity: number,
+  printJobId?: number | null,
+): Promise<ServerResponse> {
+  const drizzleDb = getDb(db);
   try {
-    await db.prepare(`
-      UPDATE inventory 
-      SET stock_count = stock_count + ?, total_added = total_added + ?
-      WHERE id = ?
-    `).bind(quantity, quantity, id).run();
+    const now = Math.floor(Date.now() / 1000);
+    await drizzleDb.run(sql`
+      UPDATE objects
+      SET in_stock = in_stock + ${quantity}, updated_at = ${now}
+      WHERE id = ${objectId}
+    `);
+    await logInventoryChange(db, objectId, '+ printed', quantity, printJobId ?? null);
+    return { success: true, message: `Added ${quantity} to stock (printed)` };
+  } catch (error) {
+    console.error('Error adding printed stock:', error);
+    return { success: false, error: 'Failed to add stock' };
+  }
+}
 
-    await logInventoryChange(db, id, 'add', quantity, reason ?? 'Stock added');
-
+export async function addStock(db: D1Database, objectId: number, quantity: number): Promise<ServerResponse> {
+  const drizzleDb = getDb(db);
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    await drizzleDb.run(sql`
+      UPDATE objects SET in_stock = in_stock + ${quantity}, updated_at = ${now} WHERE id = ${objectId}
+    `);
+    await logInventoryChange(db, objectId, '+ stock count', quantity);
     return { success: true, message: `Added ${quantity} to stock` };
   } catch (error) {
     console.error('Error adding stock:', error);
@@ -187,17 +192,16 @@ export async function addStock(db: D1Database, id: number, quantity: number, rea
   }
 }
 
-// Remove stock manually
-export async function removeStock(db: D1Database, id: number, quantity: number, reason?: string): Promise<ServerResponse> {
+export async function removeStock(db: D1Database, objectId: number, quantity: number): Promise<ServerResponse> {
+  const drizzleDb = getDb(db);
   try {
-    await db.prepare(`
-      UPDATE inventory 
-      SET stock_count = MAX(0, stock_count - ?), total_removed_manually = total_removed_manually + ?
-      WHERE id = ?
-    `).bind(quantity, quantity, id).run();
-
-    await logInventoryChange(db, id, 'remove', -quantity, reason ?? 'Stock removed manually');
-
+    const now = Math.floor(Date.now() / 1000);
+    await drizzleDb.run(sql`
+      UPDATE objects
+      SET in_stock = MAX(0, in_stock - ${quantity}), updated_at = ${now}
+      WHERE id = ${objectId}
+    `);
+    await logInventoryChange(db, objectId, '- stock count', quantity);
     return { success: true, message: `Removed ${quantity} from stock` };
   } catch (error) {
     console.error('Error removing stock:', error);
@@ -205,19 +209,16 @@ export async function removeStock(db: D1Database, id: number, quantity: number, 
   }
 }
 
-// Record sale (B2C)
-export async function recordSaleB2C(db: D1Database, id: number, quantity: number, reason?: string): Promise<ServerResponse> {
+export async function recordSaleB2C(db: D1Database, objectId: number, quantity: number): Promise<ServerResponse> {
+  const drizzleDb = getDb(db);
   try {
-    await db.prepare(`
-      UPDATE inventory 
-      SET stock_count = MAX(0, stock_count - ?), 
-          total_sold = total_sold + ?,
-          total_sold_b2c = total_sold_b2c + ?
-      WHERE id = ?
-    `).bind(quantity, quantity, quantity, id).run();
-
-    await logInventoryChange(db, id, 'sold_b2c', -quantity, reason ?? 'Sold B2C');
-
+    const now = Math.floor(Date.now() / 1000);
+    await drizzleDb.run(sql`
+      UPDATE objects
+      SET in_stock = MAX(0, in_stock - ${quantity}), updated_at = ${now}
+      WHERE id = ${objectId}
+    `);
+    await logInventoryChange(db, objectId, '- sold b2c', quantity);
     return { success: true, message: `Recorded ${quantity} B2C sale(s)` };
   } catch (error) {
     console.error('Error recording B2C sale:', error);
@@ -225,19 +226,16 @@ export async function recordSaleB2C(db: D1Database, id: number, quantity: number
   }
 }
 
-// Record sale (B2B)
-export async function recordSaleB2B(db: D1Database, id: number, quantity: number, reason?: string): Promise<ServerResponse> {
+export async function recordSaleB2B(db: D1Database, objectId: number, quantity: number): Promise<ServerResponse> {
+  const drizzleDb = getDb(db);
   try {
-    await db.prepare(`
-      UPDATE inventory 
-      SET stock_count = MAX(0, stock_count - ?), 
-          total_sold = total_sold + ?,
-          total_sold_b2b = total_sold_b2b + ?
-      WHERE id = ?
-    `).bind(quantity, quantity, quantity, id).run();
-
-    await logInventoryChange(db, id, 'sold_b2b', -quantity, reason ?? 'Sold B2B');
-
+    const now = Math.floor(Date.now() / 1000);
+    await drizzleDb.run(sql`
+      UPDATE objects
+      SET in_stock = MAX(0, in_stock - ${quantity}), updated_at = ${now}
+      WHERE id = ${objectId}
+    `);
+    await logInventoryChange(db, objectId, '- sold b2b', quantity);
     return { success: true, message: `Recorded ${quantity} B2B sale(s)` };
   } catch (error) {
     console.error('Error recording B2B sale:', error);
@@ -245,39 +243,36 @@ export async function recordSaleB2B(db: D1Database, id: number, quantity: number
   }
 }
 
-// Manual count adjustment
-export async function performManualCount(db: D1Database, id: number, actualCount: number, reason?: string): Promise<ServerResponse> {
+export async function performManualCount(
+  db: D1Database,
+  objectId: number,
+  actualCount: number,
+): Promise<ServerResponse> {
+  const drizzleDb = getDb(db);
   try {
-    // Get current expected count
-    const item = await getInventoryItemById(db, id);
-    if (!item) {
-      return { success: false, error: 'Inventory item not found' };
-    }
+    const object = await getObjectById(db, objectId);
+    if (!object) return { success: false, error: 'Object not found' };
 
-    const expectedCount = item.stock_count;
-    const difference = actualCount - expectedCount;
+    const expected = object.in_stock;
+    const discrepancy = actualCount - expected;
+    const now = Math.floor(Date.now() / 1000);
 
-    await db.prepare(`
-      UPDATE inventory 
-      SET stock_count = ?,
-          last_count_date = ?,
-          last_count_expected = ?,
-          last_count_actual = ?
-      WHERE id = ?
-    `).bind(actualCount, Date.now(), expectedCount, actualCount, id).run();
+    await drizzleDb.run(sql`
+      UPDATE objects
+      SET in_stock             = ${actualCount},
+          last_count_date      = ${now},
+          last_count_discrepancy = ${discrepancy},
+          updated_at           = ${now}
+      WHERE id = ${objectId}
+    `);
 
-    await logInventoryChange(
-      db, 
-      id, 
-      'count_adjust', 
-      difference, 
-      reason ?? `Manual count: expected ${expectedCount}, found ${actualCount}`
-    );
+    const changeType: InventoryChangeType = discrepancy >= 0 ? '+ stock count' : '- stock count';
+    await logInventoryChange(db, objectId, changeType, Math.abs(discrepancy));
 
-    return { 
-      success: true, 
-      message: `Stock adjusted from ${expectedCount} to ${actualCount} (${difference >= 0 ? '+' : ''}${difference})`,
-      data: { difference, expectedCount, actualCount }
+    return {
+      success: true,
+      message: `Count adjusted from ${expected} → ${actualCount} (${discrepancy >= 0 ? '+' : ''}${discrepancy})`,
+      data: { discrepancy, expected, actual: actualCount },
     };
   } catch (error) {
     console.error('Error performing manual count:', error);
@@ -285,77 +280,19 @@ export async function performManualCount(db: D1Database, id: number, actualCount
   }
 }
 
-// Set stock to specific value (without logging as count_adjust)
-export async function setStock(db: D1Database, id: number, count: number): Promise<ServerResponse> {
-  try {
-    await db.prepare('UPDATE inventory SET stock_count = ? WHERE id = ?')
-      .bind(Math.max(0, count), id).run();
+// ─── Internal log writer ──────────────────────────────────────────────────────
 
-    return { success: true, message: 'Stock count set' };
-  } catch (error) {
-    console.error('Error setting stock:', error);
-    return { success: false, error: 'Failed to set stock' };
-  }
-}
-
-// ============ LOGGING ============
-
-// Log an inventory change
 async function logInventoryChange(
-  db: D1Database, 
-  inventoryId: number, 
-  changeType: InventoryChangeType, 
-  quantity: number, 
-  reason?: string
+  db: D1Database,
+  objectId: number,
+  changeType: InventoryChangeType,
+  quantity: number,
+  printJobId: number | null = null,
 ): Promise<void> {
-  await db.prepare(`
-    INSERT INTO inventory_log (inventory_id, change_type, quantity, reason)
-    VALUES (?, ?, ?, ?)
-  `).bind(inventoryId, changeType, quantity, reason ?? null).run();
-}
-
-// Add stock by slug (for use after print completion)
-export async function addStockBySlug(db: D1Database, slug: string, quantity: number, reason?: string): Promise<ServerResponse> {
-  try {
-    const item = await getInventoryItemBySlug(db, slug);
-    if (!item) {
-      console.warn(`Inventory item with slug "${slug}" not found - skipping stock update`);
-      return { success: false, error: `Inventory item with slug "${slug}" not found` };
-    }
-
-    return await addStock(db, item.id, quantity, reason);
-  } catch (error) {
-    console.error('Error adding stock by slug:', error);
-    return { success: false, error: 'Failed to add stock' };
-  }
-}
-
-// Perform manual count by slug (for bulk stock count sessions)
-export async function performManualCountBySlug(db: D1Database, slug: string, actualCount: number, reason?: string): Promise<ServerResponse> {
-  try {
-    const item = await getInventoryItemBySlug(db, slug);
-    if (!item) {
-      console.warn(`Inventory item with slug "${slug}" not found - skipping count`);
-      return { success: false, error: `Item with slug "${slug}" not found` };
-    }
-    return await performManualCount(db, item.id, actualCount, reason);
-  } catch (error) {
-    console.error('Error performing manual count by slug:', error);
-    return { success: false, error: 'Failed to perform manual count' };
-  }
-}
-
-// Record B2B sale by slug
-export async function recordSaleB2BBySlug(db: D1Database, slug: string, quantity: number, reason?: string): Promise<ServerResponse> {
-  try {
-    const item = await getInventoryItemBySlug(db, slug);
-    if (!item) {
-      console.warn(`Inventory item with slug "${slug}" not found - skipping B2B sale`);
-      return { success: false, error: `Inventory item with slug "${slug}" not found` };
-    }
-    return await recordSaleB2B(db, item.id, quantity, reason);
-  } catch (error) {
-    console.error('Error recording B2B sale by slug:', error);
-    return { success: false, error: 'Failed to record B2B sale' };
-  }
+  const drizzleDb = getDb(db);
+  const now = Math.floor(Date.now() / 1000);
+  await drizzleDb.run(sql`
+    INSERT INTO inventory_log (object_id, change_type, quantity, print_job_id, created_at)
+    VALUES (${objectId}, ${changeType}, ${Math.abs(quantity)}, ${printJobId}, ${now})
+  `);
 }

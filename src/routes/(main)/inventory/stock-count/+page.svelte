@@ -1,12 +1,11 @@
 <script lang="ts">
   import type { PageData } from './$types';
-  import type { InventoryItem } from '$lib/types';
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
 
-  interface SetComponent { inventory_slug: string; quantity: number; }
-  interface SetDefinition { sku: string; label: string; components: SetComponent[]; }
-  interface UnitWeight { slug: string; name: string; weight_per_unit: number; }
+  interface SetComponent { object_id: number; quantity: number; }
+  interface SetDefinition { shopify_sku: string; label: string; components: SetComponent[]; }
+  interface UnitWeight { id: number; name: string; weight_per_unit: number; }
 
   let { data }: { data: PageData } = $props();
 
@@ -15,7 +14,7 @@
   let submitting = $state(false);
   let successMessage = $state('');
 
-  // Counting state
+  // Counting state — sets keyed by shopify_sku, weight/direct keyed by String(item.id)
   let countSetCounts = $state<Record<string, number>>({});
   let countWeightInputs = $state<Record<string, number>>({});
   let countDirectCounts = $state<Record<string, number>>({});
@@ -25,17 +24,15 @@
   let weightSearch = $state('');
   let directSearch = $state('');
 
-  // Baseline = current stock from server
+  // Baseline = current stock from server, keyed by String(item.id)
   const baseline = $derived(
-    Object.fromEntries(
-      (data.items || []).filter(i => i.slug).map(i => [i.slug as string, i.stock_count])
-    )
+    Object.fromEntries((data.items || []).map(i => [String(i.id), i.in_stock]))
   );
 
   // Filtered lists
   const visibleSets = $derived(
     (data.setDefinitions || []).filter(s =>
-      !setSearch || s.label.toLowerCase().includes(setSearch.toLowerCase()) || s.sku.toLowerCase().includes(setSearch.toLowerCase())
+      !setSearch || s.label.toLowerCase().includes(setSearch.toLowerCase()) || s.shopify_sku.toLowerCase().includes(setSearch.toLowerCase())
     )
   );
 
@@ -46,67 +43,61 @@
   );
 
   const visibleDirectItems = $derived(
-    (data.items || [])
-      .filter(i => {
-        const n = i.name.toLowerCase();
-        const s = i.slug?.toLowerCase() || '';
-        return !(n.includes('vase shrunk') || s.includes('vase-shrunk'));
-      })
-      .filter(i =>
-        !directSearch || i.name.toLowerCase().includes(directSearch.toLowerCase()) || i.slug?.toLowerCase().includes(directSearch.toLowerCase())
-      )
+    (data.items || []).filter(i =>
+      !directSearch || i.name.toLowerCase().includes(directSearch.toLowerCase())
+    )
   );
 
-  // Combined counted totals across all methods
+  // Combined counted totals across all methods, keyed by String(object_id)
   const totals = $derived(() => {
     const t: Record<string, number> = {};
     for (const set of (data.setDefinitions || [])) {
-      const n = countSetCounts[set.sku] || 0;
+      const n = countSetCounts[set.shopify_sku] || 0;
       if (n <= 0) continue;
       for (const comp of set.components) {
-        t[comp.inventory_slug] = (t[comp.inventory_slug] || 0) + comp.quantity * n;
+        const k = String(comp.object_id);
+        t[k] = (t[k] || 0) + comp.quantity * n;
       }
     }
-    for (const [slug, weight] of Object.entries(countWeightInputs)) {
-      const uw = (data.unitWeights || []).find(w => w.slug === slug);
+    for (const [idKey, weight] of Object.entries(countWeightInputs)) {
+      const uw = (data.unitWeights || []).find(w => String(w.id) === idKey);
       if (!uw || weight <= 0) continue;
       const count = Math.floor(weight / uw.weight_per_unit);
-      if (count > 0) t[slug] = (t[slug] || 0) + count;
+      if (count > 0) t[idKey] = (t[idKey] || 0) + count;
     }
-    for (const [slug, count] of Object.entries(countDirectCounts)) {
-      if (count > 0) t[slug] = (t[slug] || 0) + count;
+    for (const [idKey, count] of Object.entries(countDirectCounts)) {
+      if (count > 0) t[idKey] = (t[idKey] || 0) + count;
     }
     return t;
   });
 
-  function getCountedItems() { return totals(); }
-
-  function getWeightCount(slug: string): number {
-    const weight = countWeightInputs[slug] || 0;
-    const uw = (data.unitWeights || []).find(w => w.slug === slug);
+  function getWeightCount(idKey: string): number {
+    const weight = countWeightInputs[idKey] || 0;
+    const uw = (data.unitWeights || []).find(w => String(w.id) === idKey);
     if (!uw || uw.weight_per_unit <= 0 || weight <= 0) return 0;
     return Math.floor(weight / uw.weight_per_unit);
   }
 
-  function getItemName(slug: string): string {
-    return (data.items || []).find(i => i.slug === slug)?.name || slug;
+  function getItemName(idKey: string): string {
+    const id = parseInt(idKey);
+    return (data.items || []).find(i => i.id === id)?.name || idKey;
   }
 
-  const reviewSlugs = $derived(() => {
+  const reviewKeys = $derived(() => {
     const t = totals();
     return [...new Set([...Object.keys(baseline), ...Object.keys(t)])].filter(
-      slug => (baseline[slug] || 0) > 0 || (t[slug] || 0) > 0
+      k => (baseline[k] || 0) > 0 || (t[k] || 0) > 0
     );
   });
 
   const totalLoss = $derived(() =>
-    reviewSlugs().reduce((s, slug) => s + Math.min(0, (totals()[slug] || 0) - (baseline[slug] || 0)), 0)
+    reviewKeys().reduce((s, k) => s + Math.min(0, (totals()[k] || 0) - (baseline[k] || 0)), 0)
   );
   const totalGain = $derived(() =>
-    reviewSlugs().reduce((s, slug) => s + Math.max(0, (totals()[slug] || 0) - (baseline[slug] || 0)), 0)
+    reviewKeys().reduce((s, k) => s + Math.max(0, (totals()[k] || 0) - (baseline[k] || 0)), 0)
   );
   const discrepancies = $derived(() =>
-    reviewSlugs().filter(slug => (totals()[slug] || 0) !== (baseline[slug] || 0))
+    reviewKeys().filter(k => (totals()[k] || 0) !== (baseline[k] || 0))
   );
 
   const inputCls = 'w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50';
@@ -146,7 +137,7 @@
         >{label}</button>
       {/each}
       {#if Object.keys(totals()).length > 0}
-        <span class="ml-auto text-xs text-zinc-500 pb-2">{Object.keys(totals()).length} items counted</span>
+        <span class="ml-auto text-xs text-zinc-500 pb-2">{Object.keys(totals()).length} item{Object.keys(totals()).length === 1 ? '' : 's'} counted</span>
       {/if}
     </div>
 
@@ -162,22 +153,22 @@
               <div class="flex items-center gap-3 px-4 py-3 border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#111111] hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
                 <div class="flex-1 min-w-0">
                   <p class="text-sm font-medium text-zinc-900 dark:text-zinc-50 truncate">{set.label}</p>
-                  <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">{set.components.map(c => `${c.quantity}× ${getItemName(c.inventory_slug)}`).join(' + ')}</p>
+                  <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">{set.components.map(c => `${c.quantity}× ${getItemName(String(c.object_id))}`).join(' + ')}</p>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
                   <button
-                    onclick={() => { countSetCounts[set.sku] = Math.max(0, (countSetCounts[set.sku] || 0) - 1); countSetCounts = { ...countSetCounts }; }}
-                    disabled={(countSetCounts[set.sku] || 0) === 0}
+                    onclick={() => { countSetCounts[set.shopify_sku] = Math.max(0, (countSetCounts[set.shopify_sku] || 0) - 1); countSetCounts = { ...countSetCounts }; }}
+                    disabled={(countSetCounts[set.shopify_sku] || 0) === 0}
                     class={minusBtnCls}
                   >−</button>
                   <input
                     type="number" min="0"
-                    value={countSetCounts[set.sku] || 0}
-                    oninput={(e) => { countSetCounts[set.sku] = parseInt((e.target as HTMLInputElement).value) || 0; countSetCounts = { ...countSetCounts }; }}
+                    value={countSetCounts[set.shopify_sku] || 0}
+                    oninput={(e) => { countSetCounts[set.shopify_sku] = parseInt((e.target as HTMLInputElement).value) || 0; countSetCounts = { ...countSetCounts }; }}
                     class={stepperInputCls}
                   />
                   <button
-                    onclick={() => { countSetCounts[set.sku] = (countSetCounts[set.sku] || 0) + 1; countSetCounts = { ...countSetCounts }; }}
+                    onclick={() => { countSetCounts[set.shopify_sku] = (countSetCounts[set.shopify_sku] || 0) + 1; countSetCounts = { ...countSetCounts }; }}
                     class={plusBtnCls}
                   >+</button>
                 </div>
@@ -199,7 +190,8 @@
         {:else}
           <div class="space-y-2">
             {#each visibleWeightItems as w}
-              {@const count = getWeightCount(w.slug)}
+              {@const wKey = String(w.id)}
+              {@const count = getWeightCount(wKey)}
               <div class="flex items-center gap-3 px-4 py-3 border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#111111] hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
                 <div class="flex-1 min-w-0">
                   <p class="text-sm font-medium text-zinc-900 dark:text-zinc-50 truncate">{w.name}</p>
@@ -209,8 +201,8 @@
                   <div class="relative">
                     <input
                       type="number" min="0" step="1" placeholder="0"
-                      value={countWeightInputs[w.slug] || ''}
-                      oninput={(e) => { countWeightInputs[w.slug] = parseFloat((e.target as HTMLInputElement).value) || 0; countWeightInputs = { ...countWeightInputs }; }}
+                      value={countWeightInputs[wKey] || ''}
+                      oninput={(e) => { countWeightInputs[wKey] = parseFloat((e.target as HTMLInputElement).value) || 0; countWeightInputs = { ...countWeightInputs }; }}
                       class="w-24 bg-zinc-100 dark:bg-zinc-700 border border-zinc-200 dark:border-zinc-600 rounded-sm px-2 py-1.5 text-right text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 pr-6"
                     />
                     <span class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-zinc-400">g</span>
@@ -236,9 +228,9 @@
         {:else}
           <div class="space-y-1.5">
             {#each visibleDirectItems as item}
-              {@const slug = item.slug || ''}
-              {@const expected = baseline[slug] ?? item.stock_count}
-              {@const counted = countDirectCounts[slug] || 0}
+              {@const iKey = String(item.id)}
+              {@const expected = baseline[iKey] ?? item.in_stock}
+              {@const counted = countDirectCounts[iKey] || 0}
               <div class="flex items-center gap-3 px-4 py-2.5 border border-zinc-200 dark:border-[#262626] rounded-lg bg-white dark:bg-[#111111] hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
                 <div class="flex-1 min-w-0">
                   <p class="text-sm text-zinc-900 dark:text-zinc-50 truncate">{item.name}</p>
@@ -246,18 +238,18 @@
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
                   <button
-                    onclick={() => { countDirectCounts[slug] = Math.max(0, (countDirectCounts[slug] || 0) - 1); countDirectCounts = { ...countDirectCounts }; }}
-                    disabled={(countDirectCounts[slug] || 0) === 0}
+                    onclick={() => { countDirectCounts[iKey] = Math.max(0, (countDirectCounts[iKey] || 0) - 1); countDirectCounts = { ...countDirectCounts }; }}
+                    disabled={(countDirectCounts[iKey] || 0) === 0}
                     class={minusBtnCls}
                   >−</button>
                   <input
                     type="number" min="0"
-                    value={countDirectCounts[slug] || 0}
-                    oninput={(e) => { countDirectCounts[slug] = parseInt((e.target as HTMLInputElement).value) || 0; countDirectCounts = { ...countDirectCounts }; }}
+                    value={countDirectCounts[iKey] || 0}
+                    oninput={(e) => { countDirectCounts[iKey] = parseInt((e.target as HTMLInputElement).value) || 0; countDirectCounts = { ...countDirectCounts }; }}
                     class={stepperInputCls}
                   />
                   <button
-                    onclick={() => { countDirectCounts[slug] = (countDirectCounts[slug] || 0) + 1; countDirectCounts = { ...countDirectCounts }; }}
+                    onclick={() => { countDirectCounts[iKey] = (countDirectCounts[iKey] || 0) + 1; countDirectCounts = { ...countDirectCounts }; }}
                     class={plusBtnCls}
                   >+</button>
                 </div>
@@ -269,10 +261,10 @@
 
     <!-- REVIEW TAB -->
     {:else if activeTab === 'review'}
-      {@const allSlugs = reviewSlugs()}
+      {@const allKeys = reviewKeys()}
       {@const t = totals()}
 
-      {#if allSlugs.length === 0}
+      {#if allKeys.length === 0}
         <div class="text-center py-16">
           <p class="text-zinc-500 text-sm">No items counted yet.</p>
           <p class="text-zinc-400 dark:text-zinc-600 text-xs mt-1">Use the Sets, Weight, or Direct tabs to enter counts first.</p>
@@ -282,7 +274,7 @@
         <!-- Summary strip -->
         <div class="grid grid-cols-3 gap-3 mb-6">
           <div class="p-4 border border-zinc-200 dark:border-[#262626] rounded-lg text-center">
-            <p class="text-2xl font-medium text-zinc-900 dark:text-zinc-50">{allSlugs.length}</p>
+            <p class="text-2xl font-medium text-zinc-900 dark:text-zinc-50">{allKeys.length}</p>
             <p class="text-xs text-zinc-500 mt-1">items reviewed</p>
           </div>
           <div class="p-4 border border-red-100 dark:border-red-900 rounded-lg text-center bg-red-50 dark:bg-red-950">
@@ -307,12 +299,12 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {#each allSlugs.sort((a, b) => getItemName(a).localeCompare(getItemName(b))) as slug}
-                {@const expected = baseline[slug] || 0}
-                {@const counted = t[slug] || 0}
+              {#each allKeys.sort((a, b) => getItemName(a).localeCompare(getItemName(b))) as k}
+                {@const expected = baseline[k] || 0}
+                {@const counted = t[k] || 0}
                 {@const delta = counted - expected}
                 <tr class="{delta < 0 ? 'bg-red-50 dark:bg-red-950' : delta > 0 ? 'bg-green-50 dark:bg-green-950' : ''}">
-                  <td class="px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{getItemName(slug)}</td>
+                  <td class="px-4 py-2.5 text-zinc-700 dark:text-zinc-300">{getItemName(k)}</td>
                   <td class="px-4 py-2.5 text-right text-zinc-400 dark:text-zinc-500">{expected}</td>
                   <td class="px-4 py-2.5 text-right text-zinc-700 dark:text-zinc-300">{counted}</td>
                   <td class="px-4 py-2.5 text-right font-medium {delta < 0 ? 'text-red-600 dark:text-red-400' : delta > 0 ? 'text-green-600 dark:text-green-400' : 'text-zinc-400 dark:text-zinc-500'}">
@@ -329,6 +321,7 @@
           <p class="text-xs text-zinc-500">
             {#if discrepancies().length > 0}
               {discrepancies().length} discrepanc{discrepancies().length === 1 ? 'y' : 'ies'} found — applying will update stock values.
+
             {:else}
               Everything matches — no discrepancies found.
             {/if}
@@ -352,13 +345,13 @@
                 };
               }}
             >
-              <input type="hidden" name="entries" value={JSON.stringify(allSlugs.map(slug => ({ slug, count: t[slug] || 0 })))} />
+              <input type="hidden" name="entries" value={JSON.stringify(allKeys.map(k => ({ id: parseInt(k), count: t[k] || 0 })))} />
               <button
                 type="submit"
-                disabled={submitting || allSlugs.length === 0}
+                disabled={submitting || allKeys.length === 0}
                 class="px-5 py-2 bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:bg-zinc-200 dark:disabled:bg-zinc-700 disabled:text-zinc-400 disabled:cursor-not-allowed text-white dark:text-zinc-900 rounded-md text-sm font-medium transition-colors"
               >
-                {submitting ? 'Applying…' : `Apply Count (${allSlugs.length} items)`}
+                {submitting ? 'Applying…' : `Apply Count (${allKeys.length} items)`}
               </button>
             </form>
           </div>

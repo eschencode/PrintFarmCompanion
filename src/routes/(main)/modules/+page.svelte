@@ -4,10 +4,58 @@
   import ZipBulkUpload from '$lib/components/ZipBulkUpload.svelte';
   import EditModuleModal from '$lib/components/EditModuleModal.svelte';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
+  import { resolveSpoolColor } from '$lib/utils/spoolColor';
 
   export let data: PageData;
 
-  let modules: any[] = data.modules;
+  // Decorate raw modules with derived display fields that no longer exist
+  // as columns in the new schema (printer_model_name, slot summaries, etc.).
+  function decorateModule(m: any) {
+    const printerModelName =
+      m.printer_preset_brand && m.printer_preset_model
+        ? `${m.printer_preset_brand} ${m.printer_preset_model}`
+        : null;
+
+    // Build a chip per slot. spool_preset_id === null = "Any spool" wildcard.
+    const presetsList = data.spoolPresets ?? [];
+    const rawSlots = Array.isArray(m.slots) && m.slots.length > 0
+      ? m.slots
+      : m.default_spool_preset_id != null
+        ? [{ slot_index: 0, spool_preset_id: m.default_spool_preset_id }]
+        : [];
+
+    const slot_chips = rawSlots
+      .slice()
+      .sort((a: any, b: any) => a.slot_index - b.slot_index)
+      .map((s: any) => {
+        const weight = typeof s.weight === 'number' ? s.weight : null;
+        if (s.spool_preset_id == null) {
+          return { name: 'Any spool', color: null as string | null, isAny: true, weight };
+        }
+        const p = presetsList.find((pp: any) => pp.id === s.spool_preset_id);
+        return p
+          ? {
+              name: `${p.brand} ${p.material}${p.color ? ' ' + p.color : ''}`,
+              color: resolveSpoolColor(p),
+              isAny: false,
+              weight,
+            }
+          : { name: 'Unknown spool', color: null, isAny: false, weight };
+      });
+
+    // Filter key: list of preset display names (or "Any spool"). Used for chip filtering.
+    const slot_filter_keys: string[] = slot_chips.map((c: any) => c.name);
+
+    return {
+      ...m,
+      printer_model_name: printerModelName,
+      slot_chips,
+      slot_filter_keys,
+      plate_type: m.plate_preset_name ?? null,
+    };
+  }
+
+  let modules: any[] = (data.modules ?? []).map(decorateModule);
   let showUpload = false;
   let showZipUpload = false;
   let editingModule: any = null;
@@ -40,11 +88,13 @@
 
   $: allPresets = (() => {
     const seen = new Set<string>();
-    return modules
-      .filter((m: any) => m.spool_preset_name)
-      .map((m: any) => m.spool_preset_name as string)
-      .filter(name => { if (seen.has(name)) return false; seen.add(name); return true; })
-      .sort((a, b) => a.localeCompare(b));
+    const names: string[] = [];
+    for (const m of modules) {
+      for (const k of (m.slot_filter_keys ?? []) as string[]) {
+        if (!seen.has(k)) { seen.add(k); names.push(k); }
+      }
+    }
+    return names.sort((a, b) => a.localeCompare(b));
   })();
 
   // ── Filtered + grouped modules ──────────────────────────────────────────────
@@ -56,7 +106,7 @@
       if (filterModel !== '__none__' && modelKey !== filterModel) return false;
     }
     if (filterPlate !== 'all' && m.plate_type !== filterPlate) return false;
-    if (filterPreset !== 'all' && (m.spool_preset_name ?? '') !== filterPreset) return false;
+    if (filterPreset !== 'all' && !((m.slot_filter_keys ?? []) as string[]).includes(filterPreset)) return false;
     return true;
   });
 
@@ -76,38 +126,10 @@
   $: activeCount = modules.filter((m: any) => m.active).length;
   $: inactiveCount = modules.filter((m: any) => !m.active).length;
 
-  // ── Load auxiliary data (presets etc.) ─────────────────────────────────────
-  let spoolPresets: any[] = [];
-  let printerModels: any[] = [];
-  let inventoryItems: any[] = [];
-  let dataLoaded = false;
-
-  async function loadData() {
-    try {
-      const [presetsRes, modelsRes, inventoryRes] = await Promise.all([
-        fetch('/api/print-modules?presets=true'),
-        fetch('/api/printer-models'),
-        fetch('/api/inventory')
-      ]);
-      if (presetsRes.ok) {
-        const r = await presetsRes.json() as any;
-        if (r.success) spoolPresets = r.data;
-      }
-      if (modelsRes.ok) {
-        const r = await modelsRes.json() as any;
-        if (r.success) printerModels = r.data;
-      }
-      if (inventoryRes.ok) {
-        const r = await inventoryRes.json() as any;
-        if (r.success) inventoryItems = r.data.map((i: any) => ({ slug: i.slug, name: i.name }));
-      }
-      dataLoaded = true;
-    } catch (e) {
-      dataLoaded = true;
-    }
-  }
-
-  $: if (typeof window !== 'undefined' && !dataLoaded) loadData();
+  // ── Auxiliary data from server load ────────────────────────────────────────
+  $: spoolPresets = data.spoolPresets ?? [];
+  $: printerModels = data.printerPresets ?? [];
+  $: inventoryItems = (data.objects ?? []).map((o: any) => ({ id: o.id, name: o.name }));
 
   function formatTime(minutes: number | null): string {
     if (!minutes) return '—';
@@ -120,7 +142,7 @@
   async function reloadModules() {
     const res = await fetch('/api/print-modules');
     const result = await res.json() as any;
-    if (result.success) modules = result.data;
+    if (result.success) modules = (result.data ?? []).map(decorateModule);
   }
 
   async function handleUploaded() {
@@ -365,17 +387,10 @@
               <div class="h-36 bg-zinc-100 dark:bg-[#1a1a1a] flex items-center justify-center overflow-hidden relative">
                 {#if module.thumbnail}
                   <img src={module.thumbnail} alt={module.name} class="w-full h-full object-cover" />
-                {:else if module.image_path}
-                  <img src={module.image_path} alt={module.name} class="w-full h-full object-cover" />
                 {:else}
                   <svg class="w-10 h-10 text-zinc-300 dark:text-zinc-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
                     <path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
                   </svg>
-                {/if}
-
-                <!-- Pi badge -->
-                {#if module.file_stored_on_pi}
-                  <div class="absolute top-2 right-2 bg-emerald-500/90 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded-full">Pi</div>
                 {/if}
 
                 <!-- Inactive badge -->
@@ -405,19 +420,21 @@
                 </div>
 
                 <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                  {#if module.spool_preset_name}
+                  {#each (module.slot_chips ?? []) as chip}
                     <span class="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      {#if module.spool_preset_color}
-                        <span class="w-2.5 h-2.5 rounded-full border border-zinc-300 dark:border-zinc-600 shrink-0" style="background:{module.spool_preset_color}"></span>
+                      {#if chip.color}
+                        <span class="w-2.5 h-2.5 rounded-full border border-zinc-300 dark:border-zinc-600 shrink-0" style="background:{chip.color}"></span>
+                      {:else if chip.isAny}
+                        <span class="w-2.5 h-2.5 rounded-full border border-dashed border-zinc-400 dark:border-zinc-500 shrink-0"></span>
                       {/if}
-                      {module.spool_preset_name}
+                      {chip.name}{#if chip.weight != null}<span class="text-zinc-400 dark:text-zinc-500 ml-1">{chip.weight}g</span>{/if}
                     </span>
+                  {/each}
+                  {#if module.weight}
+                    <span class="text-xs text-zinc-400 dark:text-zinc-500">{module.weight}g</span>
                   {/if}
-                  {#if module.expected_weight}
-                    <span class="text-xs text-zinc-400 dark:text-zinc-500">{module.expected_weight}g</span>
-                  {/if}
-                  {#if module.expected_time}
-                    <span class="text-xs text-zinc-400 dark:text-zinc-500">{formatTime(module.expected_time)}</span>
+                  {#if module.expected_time_minutes}
+                    <span class="text-xs text-zinc-400 dark:text-zinc-500">{formatTime(module.expected_time_minutes)}</span>
                   {/if}
                   {#if module.plate_type}
                     <span class="text-xs text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{module.plate_type}</span>
@@ -427,16 +444,12 @@
                   {/if}
                 </div>
 
-                <!-- File source indicators -->
+                <!-- File indicator -->
                 <div class="mt-2 flex gap-1.5">
-                  {#if module.local_file_handler_path}
-                    <span class="text-[9px] font-medium px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">Local</span>
-                  {/if}
-                  {#if module.pi_file_path}
-                    <span class="text-[9px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">Pi</span>
-                  {/if}
-                  {#if module.file_name && !module.local_file_handler_path && !module.pi_file_path}
-                    <span class="text-[9px] font-medium px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">.3mf</span>
+                  {#if module.filename}
+                    <span class="text-[9px] font-medium px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 truncate max-w-full" title={module.filename}>
+                      {module.filename.split('/').pop()}
+                    </span>
                   {/if}
                 </div>
               </div>

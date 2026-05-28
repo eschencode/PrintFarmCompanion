@@ -1,17 +1,20 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
-import { getAllInventoryItems, createInventoryItem } from '$lib/inventory_handler';
+import { getAllObjects, createObject } from '$lib/inventory_handler';
 import { ShopifyClient, ShopifySyncService } from '$lib/shopify';
 import { fail } from '@sveltejs/kit';
+import { sql } from 'drizzle-orm';
+import { getDb } from '$lib/db';
 
 export const load: PageServerLoad = async ({ platform }) => {
   const database = platform?.env?.DB;
   if (!database) return { shopifyConfigured: false, shopifySyncState: null, shopifyRecentOrders: [], skuMappings: [], inventoryItems: [], spoolPresets: [] };
 
+  const drizzleDb = getDb(database);
   const shopifyConfigured = !!(platform?.env?.SHOPIFY_STORE_DOMAIN && platform?.env?.SHOPIFY_ACCESS_TOKEN);
 
   let shopifySyncState = null;
-  let shopifyRecentOrders: { shopify_order_id: string; shopify_order_number: string; processed_at: number; total_items: number }[] = [];
+  let shopifyRecentOrders: { order_id: string; order_number: string; processed_at: number; total_items: number }[] = [];
 
   if (shopifyConfigured) {
     try {
@@ -24,11 +27,14 @@ export const load: PageServerLoad = async ({ platform }) => {
     }
   }
 
-  const skuMappingsRaw = await database
-    .prepare('SELECT id, shopify_sku, inventory_slug, quantity, source_type, spool_preset_id FROM shopify_sku_mapping ORDER BY shopify_sku, inventory_slug')
-    .all();
-  const skuMappings = (skuMappingsRaw.results || []) as { id: number; shopify_sku: string; inventory_slug: string; quantity: number; source_type: string; spool_preset_id: number | null }[];
-  const inventoryItems = await getAllInventoryItems(database);
+  const skuMappingsRaw = await drizzleDb.all(
+    sql`SELECT sm.id, sm.shopify_sku, sm.object_id, sm.quantity, o.name as object_name
+        FROM shopify_sku_mapping sm
+        LEFT JOIN objects o ON sm.object_id = o.id
+        ORDER BY sm.shopify_sku, o.name`
+  );
+  const skuMappings = (skuMappingsRaw || []) as { id: number; shopify_sku: string; object_id: number; quantity: number; object_name: string }[];
+  const inventoryItems = await getAllObjects(database);
   const spoolPresets = await db.getAllSpoolPresets(database);
 
   return { shopifyConfigured, shopifySyncState, shopifyRecentOrders, skuMappings, inventoryItems, spoolPresets };
@@ -60,19 +66,23 @@ export const actions: Actions = {
   saveSkuSet: async ({ platform, request }) => {
     const database = platform?.env?.DB;
     if (!database) return fail(400, { error: 'Database not available' });
+    const drizzleDb = getDb(database);
     const form = await request.formData();
     const shopifySku = (form.get('shopifySku') as string).trim();
     const originalSku = ((form.get('originalSku') as string) || '').trim();
     if (!shopifySku) return fail(400, { error: 'Shopify SKU is required' });
-    let items: { source_type: string; inventory_slug: string; spool_preset_id: number | null; quantity: number }[];
+    let items: { object_id: number; quantity: number }[];
     try { items = JSON.parse(form.get('items') as string); }
     catch { return fail(400, { error: 'Invalid items data' }); }
     if (items.length === 0) return fail(400, { error: 'At least one item is required' });
     try {
-      if (originalSku) await database.prepare('DELETE FROM shopify_sku_mapping WHERE shopify_sku = ?').bind(originalSku).run();
+      if (originalSku) await drizzleDb.run(sql`DELETE FROM shopify_sku_mapping WHERE shopify_sku = ${originalSku}`);
       for (const item of items) {
-        await database.prepare('INSERT INTO shopify_sku_mapping (shopify_sku, inventory_slug, quantity, source_type, spool_preset_id) VALUES (?, ?, ?, ?, ?)')
-          .bind(shopifySku, item.inventory_slug || '', item.quantity, item.source_type, item.spool_preset_id).run();
+        await drizzleDb.run(sql`
+          INSERT INTO shopify_sku_mapping (shopify_sku, object_id, quantity)
+          VALUES (${shopifySku}, ${item.object_id}, ${item.quantity})
+          ON CONFLICT (shopify_sku, object_id) DO UPDATE SET quantity = excluded.quantity
+        `);
       }
       return { success: true };
     } catch (err) { return fail(400, { error: `Failed to save set: ${err}` }); }
@@ -81,10 +91,11 @@ export const actions: Actions = {
   deleteSkuSet: async ({ platform, request }) => {
     const database = platform?.env?.DB;
     if (!database) return fail(400, { error: 'Database not available' });
+    const drizzleDb = getDb(database);
     const form = await request.formData();
     const shopifySku = (form.get('shopifySku') as string).trim();
     try {
-      await database.prepare('DELETE FROM shopify_sku_mapping WHERE shopify_sku = ?').bind(shopifySku).run();
+      await drizzleDb.run(sql`DELETE FROM shopify_sku_mapping WHERE shopify_sku = ${shopifySku}`);
       return { success: true };
     } catch (err) { return fail(400, { error: `Failed to delete set: ${err}` }); }
   },
@@ -93,9 +104,8 @@ export const actions: Actions = {
     const database = platform?.env?.DB;
     if (!database) return fail(400, { error: 'Database not available' });
     const form = await request.formData();
-    const name = (form.get('name') as string).trim();
-    const slug = (form.get('slug') as string).trim();
-    if (!name || !slug) return fail(400, { error: 'Name and slug are required' });
-    return createInventoryItem(database, { name, slug });
+    const name = (form.get('name') as string | null)?.trim();
+    if (!name) return fail(400, { error: 'Name is required' });
+    return createObject(database, { name });
   },
 };

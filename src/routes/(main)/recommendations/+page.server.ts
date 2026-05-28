@@ -1,17 +1,17 @@
 import type { PageServerLoad } from './$types';
-import { AIContextBuilder } from '$lib/ai/context-builder';
+import { AIContextBuilder } from '$lib/recomendation/context-builder';
 import {
   AIRecommendationService,
   prioritizeInventoryFromContext,
   getSuggestedPrintQueue
-} from '$lib/ai';
+} from '$lib/recomendation';
 import {
   FORECAST_LOOKBACK_DAYS,
   FORECAST_HORIZON_DAYS,
   FORECAST_TRIALS,
   RISK_THRESHOLDS
-} from '$lib/ai/forecast';
-import { getAllPrinters, getSpoolById } from '$lib/server';
+} from '$lib/recomendation/forecast';
+import { getAllPrinters, getLoadedSpools, getSpoolById } from '$lib/server';
 
 export const load: PageServerLoad = async ({ platform, url }) => {
   const db = platform?.env?.DB;
@@ -33,12 +33,7 @@ export const load: PageServerLoad = async ({ platform, url }) => {
   const printerIdRaw = url.searchParams.get('printerId');
   const selectedPrinterId = printerIdRaw ? Number(printerIdRaw) : null;
 
-  const printers = (await getAllPrinters(db)) as Array<{
-    id: number;
-    name: string;
-    loaded_spool_id: number | null;
-    printer_model_name: string | null;
-  }>;
+  const printers = await getAllPrinters(db);
 
   const builder = new AIContextBuilder(db);
   const modules = await builder.getModulesContext();
@@ -60,9 +55,10 @@ export const load: PageServerLoad = async ({ platform, url }) => {
   }
 
   if (selectedPrinterId) {
-    const printer = printers.find((p) => p.id === selectedPrinterId);
-    if (printer?.loaded_spool_id) {
-      loadedSpool = await getSpoolById(db, printer.loaded_spool_id);
+    const loadedSlots = await getLoadedSpools(db, selectedPrinterId);
+    const slot0 = loadedSlots.find(s => s.slot_index === 0);
+    if (slot0?.spool_id) {
+      loadedSpool = await getSpoolById(db, slot0.spool_id);
       queue = await getSuggestedPrintQueue(db, selectedPrinterId, prioritized, modules, forecast);
     }
   }

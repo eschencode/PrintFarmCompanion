@@ -1,3 +1,9 @@
+
+npx drizzle-lab@latest visualizer
+Drizzle Visualizer is up and running on http://127.0.0.1:64738
+
+
+
 # 🖨️ Print Farm Companion
 
 A modern, full-stack web application for managing a 3D print farm. Track printers, spools, print jobs, and analyze production statistics — all from a beautiful dark-themed dashboard.
@@ -207,8 +213,3 @@ MIT License — feel free to use this project for your own print farm!
 ---
 
 **Happy Printing! 🖨️✨**
-
-
-
-
-

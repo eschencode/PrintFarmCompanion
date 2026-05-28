@@ -1,5 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { sql } from 'drizzle-orm';
+import { getDb } from '$lib/db';
 
 /**
  * POST /api/pi/pause
@@ -14,6 +16,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
   if (!piUrl) return json({ success: false, error: 'Pi not configured' }, { status: 503 });
 
+  const drizzleDb = getDb(db);
   let body: { printer_id: number };
   try {
     body = await request.json();
@@ -21,10 +24,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     return json({ success: false, error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const printer = await db
-    .prepare('SELECT * FROM printers WHERE id = ?')
-    .bind(body.printer_id)
-    .first() as Record<string, unknown> | null;
+  const printer = await drizzleDb.get(
+    sql`SELECT * FROM printers WHERE id = ${body.printer_id}`
+  ) as Record<string, unknown> | null;
 
   if (!printer) return json({ success: false, error: 'Printer not found' }, { status: 404 });
   if (!printer.printer_ip || !printer.printer_serial || !printer.printer_access_code) {

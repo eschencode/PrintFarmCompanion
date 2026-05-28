@@ -12,6 +12,55 @@
   let isDragging = false;
   let fileInput: HTMLInputElement;
 
+  // ── Inline new-object creation ────────────────────────────────────────────
+  let showNewObjectForm = false;
+  let newObjectName = '';
+  let newObjectError = '';
+  let savingNewObject = false;
+  // Local objects created during this upload session (merged with the prop)
+  let createdObjects: { id: number; name: string }[] = [];
+  $: allInventoryItems = [...inventoryItems, ...createdObjects];
+
+  async function createNewObject() {
+    newObjectError = '';
+    const name = newObjectName.trim();
+    if (!name) { newObjectError = 'Name is required'; return; }
+
+    savingNewObject = true;
+    try {
+      const res = await fetch('/api/objects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const result = await res.json() as { success: boolean; data?: { id: number }; error?: string };
+      if (result.success && result.data?.id) {
+        createdObjects = [...createdObjects, { id: result.data.id, name }];
+        if (previewData) previewData.objectId = result.data.id;
+        showNewObjectForm = false;
+        newObjectName = '';
+      } else {
+        newObjectError = result.error ?? 'Failed to create object';
+      }
+    } catch {
+      newObjectError = 'Network error';
+    } finally {
+      savingNewObject = false;
+    }
+  }
+
+  type FilamentSlot = {
+    slotIndex: number;
+    /** null = "Any spool" wildcard */
+    spoolPresetId: number | null;
+    /** Expected grams used from this slot. null = unknown. */
+    weight: number | null;
+    /** Detected hex colour from the .3mf, kept for the preview swatch even when no preset matches. */
+    detectedColor: string | null;
+    /** Detected material/type (e.g. PLA), for the helper text. */
+    detectedType: string | null;
+  };
+
   type PreviewData = {
     name: string;
     thumbnail: string | null;
@@ -21,11 +70,55 @@
     nozzleDiameter: number | null;
     expectedWeight: number | null;
     objectsPerPrint: number;
-    defaultSpoolPresetId: number | null;
-    inventorySlug: string | null;
-    printerModel: string | null;
+    slots: FilamentSlot[];
+    objectId: number | null;
+    printerPresetId: number | null;
     localFileHandlerPath: string | null;
   };
+
+  // Try to find a spool preset that matches a detected (type, color) pair.
+  // Type-only match if color is missing; color is matched case-insensitively
+  // ignoring an optional leading "#".
+  function matchPreset(presets: any[], type: string | null, color: string | null): number | null {
+    if (!presets?.length) return null;
+    const normColor = (c: string | null | undefined) =>
+      (c ?? '').replace(/^#/, '').toLowerCase().slice(0, 6);
+    const normType = (t: string | null | undefined) => (t ?? '').toLowerCase().trim();
+
+    const wantColor = normColor(color);
+    const wantType = normType(type);
+    // Prefer the preset's explicit hex (color_hex); fall back to its name field.
+    const presetColor = (p: any) => normColor(p.color_hex ?? p.color);
+
+    // Prefer exact (type + color)
+    if (wantColor && wantType) {
+      const exact = presets.find(
+        (p) => normType(p.material) === wantType && presetColor(p) === wantColor,
+      );
+      if (exact) return exact.id;
+    }
+    // Color-only match (if e.g. "Generic PLA" matches but we still want the same color)
+    if (wantColor) {
+      const colorMatch = presets.find((p) => presetColor(p) === wantColor);
+      if (colorMatch) return colorMatch.id;
+    }
+    return null;
+  }
+
+  function addSlot() {
+    if (!previewData) return;
+    previewData.slots = [
+      ...previewData.slots,
+      { slotIndex: previewData.slots.length, spoolPresetId: null, weight: null, detectedColor: null, detectedType: null },
+    ];
+  }
+
+  function removeSlot(index: number) {
+    if (!previewData) return;
+    previewData.slots = previewData.slots
+      .filter((_, i) => i !== index)
+      .map((s, i) => ({ ...s, slotIndex: i }));
+  }
 
   let previewData: PreviewData | null = null;
   let currentFile: File | null = null;  // original File kept for Pi upload
@@ -97,9 +190,11 @@
       let nozzleDiameter: number | null = null;
       let expectedWeight: number | null = null;
       let objectsPerPrint: number = 1;
-      let defaultSpoolPresetId: number | null = null;
-      let inventorySlug: string | null = null;
-      let printerModel: string | null = null;
+      let detectedColors: string[] = [];
+      let detectedTypes: string[] = [];
+      let detectedWeights: (number | null)[] = [];
+      let objectId: number | null = null;
+      let printerPresetId: number | null = null;
 
       // Metadata collection object for detailed logging
       const metadata: Record<string, any> = {
@@ -175,6 +270,21 @@
             plateType = normalizePlateType(raw);
           }
 
+          // Per-slot filament info. Bambu's plate_1.json filament array is the most
+          // authoritative source — each entry has color, type, and used_g.
+          if (Array.isArray(json.filament) && json.filament.length > 0) {
+            const sortedFilaments = [...json.filament].sort(
+              (a, b) => Number(a.id ?? 0) - Number(b.id ?? 0),
+            );
+            detectedColors = sortedFilaments.map((f: any) => String(f.color ?? ''));
+            detectedTypes = sortedFilaments.map((f: any) => String(f.type ?? ''));
+            detectedWeights = sortedFilaments.map((f: any) => {
+              const v = f.used_g ?? f.filament_weight ?? null;
+              const n = v == null ? NaN : Number(v);
+              return isNaN(n) ? null : Math.ceil(n);
+            });
+          }
+
         } catch (e) {
           console.warn(`Could not parse ${path} as JSON:`, e);
         }
@@ -197,6 +307,15 @@
           }
           if (!plateType) {
             plateType = normalizePlateType(json.bed_type ?? json.plate_type ?? null);
+          }
+
+          // Filament slots — arrays whose length determines slot count.
+          // Bambu Studio uses `filament_colour` (hex) + `filament_type` (e.g. "PLA").
+          if (Array.isArray(json.filament_colour)) {
+            detectedColors = json.filament_colour.map((c: any) => String(c ?? ''));
+          }
+          if (Array.isArray(json.filament_type)) {
+            detectedTypes = json.filament_type.map((t: any) => String(t ?? ''));
           }
         } catch (e) {
           console.warn('project_settings.config is not JSON or could not be parsed:', e);
@@ -284,6 +403,36 @@
       if (estimatedTime !== null) estimatedTime = Math.round(estimatedTime / 60);
       if (expectedWeight !== null) expectedWeight = Math.ceil(expectedWeight);
 
+      // Try to auto-match printer preset by extracted model name
+      if (printerModels.length > 0 && plateType) {
+        const match = printerModels.find((m: any) =>
+          m.model?.toLowerCase().includes(plateType?.toLowerCase() ?? '') ||
+          plateType?.toLowerCase().includes(m.model?.toLowerCase() ?? '')
+        );
+        if (match) printerPresetId = match.id;
+      }
+
+      // Build filament slots — one per detected colour/type. Fall back to a single
+      // empty slot if the .3mf had no filament metadata at all.
+      const slotCount = Math.max(detectedColors.length, detectedTypes.length, detectedWeights.length, 1);
+      const slots: FilamentSlot[] = Array.from({ length: slotCount }, (_, i) => {
+        const color = detectedColors[i] ?? null;
+        const type = detectedTypes[i] ?? null;
+        return {
+          slotIndex: i,
+          spoolPresetId: matchPreset(spoolPresets, type, color),
+          weight: detectedWeights[i] ?? null,
+          detectedColor: color,
+          detectedType: type,
+        };
+      });
+
+      // Single-color fallback: if we only have a total weight (no per-filament
+      // breakdown), drop it onto slot 0 so the user doesn't have to retype it.
+      if (slots.length === 1 && slots[0].weight == null && expectedWeight != null) {
+        slots[0].weight = expectedWeight;
+      }
+
       previewData = {
         name: f.name.replace(/\.3mf$/i, ''),
         thumbnail,
@@ -293,9 +442,9 @@
         nozzleDiameter: nozzleDiameter ?? null,
         expectedWeight: expectedWeight ?? null,
         objectsPerPrint: objectsPerPrint || 1,
-        defaultSpoolPresetId,
-        inventorySlug,
-        printerModel: printerModel ?? null,
+        slots,
+        objectId,
+        printerPresetId,
         localFileHandlerPath: suggestedLocalPath,
       };
     } catch (e) {
@@ -366,11 +515,14 @@
           estimated_time: previewData.estimatedTime,
           plate_type: previewData.plateType || null,
           nozzle_diameter: previewData.nozzleDiameter,
-          expected_weight: previewData.expectedWeight,
           objects_per_print: previewData.objectsPerPrint,
-          default_spool_preset_id: previewData.defaultSpoolPresetId,
-          inventory_slug: previewData.inventorySlug,
-          printer_model: previewData.printerModel,
+          slots: previewData.slots.map((s) => ({
+            slot_index: s.slotIndex,
+            spool_preset_id: s.spoolPresetId,
+            weight: s.weight,
+          })),
+          object_id: previewData.objectId,
+          printer_preset_id: previewData.printerPresetId,
           local_file_handler_path: previewData.localFileHandlerPath,
           pi_file_path: piFilePath,
           file_stored_on_pi: fileStoredOnPi,
@@ -466,21 +618,77 @@
         </div>
 
         <div class="grid grid-cols-2 gap-x-3 gap-y-3">
-          <!-- Spool Preset -->
+          <!-- Filament Slots -->
           <div class="col-span-2">
-            <label for="upload-spool" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Spool Preset</label>
-            <select
-              id="upload-spool"
-              bind:value={previewData.defaultSpoolPresetId}
-              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-            >
-              <option value="">None</option>
-              {#each spoolPresets as preset (preset.id)}
-                <option value={preset.id}>
-                  {preset.name} ({preset.material})
-                </option>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                Filament Slots ({previewData.slots.length})
+              </span>
+              <button
+                type="button"
+                onclick={addSlot}
+                class="text-[10px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+              >
+                + Add slot
+              </button>
+            </div>
+            <div class="space-y-1.5">
+              {#each previewData.slots as slot, i (i)}
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 w-5 text-right shrink-0">#{i + 1}</span>
+                  {#if slot.detectedColor}
+                    <span
+                      class="w-3.5 h-3.5 rounded-full border border-zinc-300 dark:border-zinc-600 shrink-0"
+                      style="background:{slot.detectedColor.startsWith('#') ? slot.detectedColor : '#' + slot.detectedColor}"
+                      title={slot.detectedType ? `${slot.detectedType} ${slot.detectedColor}` : slot.detectedColor}
+                    ></span>
+                  {/if}
+                  <select
+                    bind:value={previewData.slots[i].spoolPresetId}
+                    class="flex-1 min-w-0 bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+                  >
+                    <option value={null}>Any spool</option>
+                    {#each spoolPresets as preset (preset.id)}
+                      <option value={preset.id}>
+                        {preset.brand} {preset.color} ({preset.material})
+                      </option>
+                    {/each}
+                  </select>
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={previewData.slots[i].weight ?? ''}
+                      oninput={(e) => {
+                        if (!previewData) return;
+                        const v = parseInt((e.target as HTMLInputElement).value, 10);
+                        previewData.slots[i].weight = isNaN(v) ? null : v;
+                      }}
+                      placeholder="—"
+                      aria-label="Weight for slot {i + 1} (grams)"
+                      class="w-24 bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-2 text-base font-medium text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors text-right tabular-nums"
+                    />
+                    <span class="text-xs text-zinc-400">g</span>
+                  </div>
+                  <button
+                    type="button"
+                    onclick={() => removeSlot(i)}
+                    disabled={previewData.slots.length === 1}
+                    class="text-zinc-400 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
+                    title="Remove slot"
+                    aria-label="Remove slot {i + 1}"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               {/each}
-            </select>
+            </div>
+            <p class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-1">
+              "Any spool" matches any loaded filament. Auto-detected from the .3mf when available.
+            </p>
           </div>
 
           <!-- Est. Time (minutes) -->
@@ -554,68 +762,70 @@
             </div>
           </div>
 
-          <!-- Expected weight -->
+          <!-- Printer Preset -->
           <div>
-            <label for="upload-weight" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Weight</label>
-            <div class="flex items-center gap-1.5">
-              <input
-                id="upload-weight"
-                type="number"
-                step="0.1"
-                bind:value={previewData.expectedWeight}
-                placeholder="0.0"
-                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-              />
-              <span class="text-xs text-zinc-400 flex-shrink-0">g</span>
+            <label for="upload-printer-preset" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Printer Preset</label>
+            <select
+              id="upload-printer-preset"
+              bind:value={previewData.printerPresetId}
+              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+            >
+              <option value={null}>— None —</option>
+              {#each printerModels as model (model.id)}
+                <option value={model.id}>{model.brand} {model.model}</option>
+              {/each}
+            </select>
+          </div>
+
+          <!-- Object (Inventory) -->
+          <div class="col-span-2">
+            <div class="flex items-center justify-between mb-1">
+              <label for="upload-object" class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Object</label>
+              <button
+                type="button"
+                onclick={() => { showNewObjectForm = !showNewObjectForm; newObjectName = ''; newObjectError = ''; }}
+                class="text-[10px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+              >
+                {showNewObjectForm ? 'Cancel' : '+ New Object'}
+              </button>
             </div>
-          </div>
 
-          <!-- Printer Model -->
-          <div>
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Printer Model</label>
-            {#if printerModels.length > 0}
-              <select
-                bind:value={previewData.printerModel}
-                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-              >
-                <option value={null}>— None selected —</option>
-                {#each printerModels as model (model.id)}
-                  <option value={model.name}>{model.name}</option>
-                {/each}
-              </select>
-            {:else}
-              <input
-                type="text"
-                bind:value={previewData.printerModel}
-                placeholder="e.g. P1S"
-                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-              />
+            {#if showNewObjectForm}
+              <div class="bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#2a2a2a] rounded-lg p-3 space-y-2 mb-2">
+                <div>
+                  <label for="new-obj-name" class="text-[9px] uppercase tracking-wide text-zinc-400 block mb-0.5">Name</label>
+                  <input
+                    id="new-obj-name"
+                    type="text"
+                    bind:value={newObjectName}
+                    placeholder="Blue Hook"
+                    class="w-full bg-white dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#333] rounded px-2 py-1 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500"
+                  />
+                </div>
+                {#if newObjectError}
+                  <p class="text-[10px] text-red-500">{newObjectError}</p>
+                {/if}
+                <button
+                  type="button"
+                  onclick={createNewObject}
+                  disabled={savingNewObject || !newObjectName.trim()}
+                  class="w-full py-1 text-xs font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {savingNewObject ? 'Creating…' : 'Create & Select'}
+                </button>
+              </div>
             {/if}
-          </div>
 
-          <!-- Inventory Slug -->
-          <div>
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Inventory</label>
-            {#if inventoryItems.length > 0}
-              <select
-                bind:value={previewData.inventorySlug}
-                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-              >
-                <option value="">None</option>
-                {#each inventoryItems as item (item.slug)}
-                  <option value={item.slug}>{item.name}</option>
-                {/each}
-              </select>
-            {:else}
-              <input
-                type="text"
-                bind:value={previewData.inventorySlug}
-                placeholder="slug"
-                class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-              />
-            {/if}
+            <select
+              id="upload-object"
+              bind:value={previewData.objectId}
+              class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+            >
+              <option value={null}>None</option>
+              {#each allInventoryItems as item (item.id)}
+                <option value={item.id}>{item.name}</option>
+              {/each}
+            </select>
           </div>
         </div>
       </div>

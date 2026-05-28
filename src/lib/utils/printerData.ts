@@ -1,96 +1,101 @@
-import type { PrintModule, Printer, Spool, PrintJobExtended } from '$lib/types';
+import type {
+  PrintModuleFull,
+  DashboardPrinter,
+  SpoolWithPreset,
+  PrintJobFull,
+} from "$lib/types";
 
 type CategorizedModules = {
-  compatiblePrintable: PrintModule[];
-  compatibleInsufficientMaterial: PrintModule[];
-  anySpoolPrintable: PrintModule[];
-  anySpoolInsufficientMaterial: PrintModule[];
+  compatiblePrintable: PrintModuleFull[];
+  compatibleInsufficientMaterial: PrintModuleFull[];
+  anySpoolPrintable: PrintModuleFull[];
+  anySpoolInsufficientMaterial: PrintModuleFull[];
 };
 
 const emptyCategorizedModules: CategorizedModules = {
   compatiblePrintable: [],
   compatibleInsufficientMaterial: [],
   anySpoolPrintable: [],
-  anySpoolInsufficientMaterial: []
+  anySpoolInsufficientMaterial: [],
 };
 
 /** Returns the active (status = 'printing') job for a given printer, or undefined. */
-export function getActivePrintJob(printerId: number, activePrintJobs: PrintJobExtended[]): PrintJobExtended | undefined {
-  return activePrintJobs.find(job => job.printer_id === printerId);
+export function getActivePrintJob(
+  printerId: number,
+  activePrintJobs: PrintJobFull[],
+): PrintJobFull | undefined {
+  return activePrintJobs.find((job) => job.printer_id === printerId);
 }
 
-/** Returns the loaded spool for a given spool ID, or null if none. */
-export function getLoadedSpool(spoolId: number | null | undefined, spools: Spool[]): Spool | null {
-  if (!spoolId) return null;
-  return spools.find(s => s.id === spoolId) ?? null;
-}
-
-/** Returns the most recent completed job for a printer, sorted by end_time descending. */
-export function getLastPrintJob(printerId: number, printJobs: PrintJobExtended[]): PrintJobExtended | null {
-  if (!printJobs || printJobs.length === 0) return null;
-  const completed = printJobs.filter(job =>
-    job.printer_id === printerId && job.status !== 'printing'
+/**
+ * Returns the most recent completed job for a printer.
+ * Sorted by created_at descending (jobs have no end_time in the new schema).
+ */
+export function getLastPrintJob(
+  printerId: number,
+  printJobs: PrintJobFull[],
+): PrintJobFull | null {
+  if (!printJobs?.length) return null;
+  const completed = printJobs.filter(
+    (job) => job.printer_id === printerId && job.status !== "printing",
   );
-  if (completed.length === 0) return null;
-  return completed.sort((a, b) => (b.end_time ?? 0) - (a.end_time ?? 0))[0];
+  if (!completed.length) return null;
+  return completed.sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))[0];
 }
 
 /**
  * Categorizes print modules for a given printer/spool combination.
  *
- * Modules are split into four buckets:
- * - compatiblePrintable: preset matches and enough material
- * - compatibleInsufficientMaterial: preset matches but not enough material
- * - anySpoolPrintable: no preset preference and enough material
- * - anySpoolInsufficientMaterial: no preset preference but not enough material
- *
- * Modules requiring a different printer model are silently excluded.
- * Uses strict equality for model ID comparison — coercion was the source of past bugs.
+ * Module compatibility rules:
+ * 1. If a module requires a specific printer preset (printer_preset_id), it must
+ *    match the printer's preset — otherwise excluded.
+ * 2. If a module has filament slot requirements (filament_slots), slot 0 must
+ *    match the loaded spool's preset_id — otherwise excluded.
+ * 3. If a module has no filament slot requirements, it accepts any spool.
+ * 4. Modules are split into printable / insufficientMaterial based on spool weight.
  */
-export function getCategorizedModules(printer: Printer, loadedSpool: Spool | null, printModules: PrintModule[]): CategorizedModules {
-  if (!printer || !printer.loaded_spool_id || !loadedSpool) return emptyCategorizedModules;
+export function getCategorizedModules(
+  printer: DashboardPrinter,
+  loadedSpool: SpoolWithPreset | null,
+  printModules: PrintModuleFull[],
+): CategorizedModules {
+  if (!printer || !loadedSpool) return emptyCategorizedModules;
 
-  const categories: CategorizedModules = {
-    compatiblePrintable: [],
-    compatibleInsufficientMaterial: [],
-    anySpoolPrintable: [],
-    anySpoolInsufficientMaterial: []
-  };
+  const categories: CategorizedModules = { ...emptyCategorizedModules };
 
-  console.log('[DEBUG getCategorizedModules] printer:', printer.name, 'printer_model_id:', printer.printer_model_id, '(type:', typeof printer.printer_model_id, ')');
-  console.log('[DEBUG getCategorizedModules] loadedSpool preset_id:', loadedSpool.preset_id, '(type:', typeof loadedSpool.preset_id, ')');
+  for (const module of printModules) {
+    if (!module.active) continue;
 
-  printModules.forEach(module => {
-    const modelFilteredOut = module.printer_model_id && printer.printer_model_id && module.printer_model_id !== printer.printer_model_id;
-    if (modelFilteredOut) {
-      console.log('[DEBUG] FILTERED OUT by model:', module.name, 'module_model_id:', module.printer_model_id, '(type:', typeof module.printer_model_id, ') vs printer_model_id:', printer.printer_model_id, '(type:', typeof printer.printer_model_id, ')');
-      return;
-    }
+    // Filter by printer model (preset)
+    if (module.printer_preset_id !== printer.printer_preset_id) continue;
 
-    const hasEnoughMaterial = loadedSpool.remaining_weight >= (module.expected_weight ?? 0);
-    const moduleHasPreference = module.default_spool_preset_id !== null;
-    const presetMatches = loadedSpool.preset_id === module.default_spool_preset_id;
-    console.log('[DEBUG] Module:', module.name, '| model_id:', module.printer_model_id, '| preset:', module.default_spool_preset_id, '| spool_preset:', loadedSpool.preset_id, '| presetMatch:', presetMatches, '| hasPreference:', moduleHasPreference, '| enoughMaterial:', hasEnoughMaterial);
+    const hasEnoughMaterial =
+      loadedSpool.remaining_weight >= (module.weight ?? 0);
 
-    if (moduleHasPreference) {
-      if (presetMatches) {
-        if (hasEnoughMaterial) {
-          categories.compatiblePrintable.push(module);
-        } else {
-          categories.compatibleInsufficientMaterial.push(module);
-        }
+    // Slot 0 spool requirement. spool_preset_id = null on a slot is a wildcard
+    // ("any spool"), so it's treated the same as having no slot at all.
+    const slot0 = module.filament_slots?.find((s) => s.slot_index === 0);
+    const slot0RequiresSpecific = slot0 != null && slot0.spool_preset_id !== null;
+
+    if (slot0RequiresSpecific) {
+      if (slot0!.spool_preset_id !== loadedSpool.preset_id) continue;
+      if (hasEnoughMaterial) {
+        categories.compatiblePrintable.push(module);
+      } else {
+        categories.compatibleInsufficientMaterial.push(module);
       }
-      // If preset doesn't match, don't show it
     } else {
+      // No requirement OR explicit "any spool" — works with any loaded spool
       if (hasEnoughMaterial) {
         categories.anySpoolPrintable.push(module);
       } else {
         categories.anySpoolInsufficientMaterial.push(module);
       }
     }
-  });
+  }
 
-  const sortByWeight = (a: PrintModule, b: PrintModule) => (b.expected_weight ?? 0) - (a.expected_weight ?? 0);
+  const sortByWeight = (a: PrintModuleFull, b: PrintModuleFull) =>
+    (b.weight ?? 0) - (a.weight ?? 0);
   categories.compatiblePrintable.sort(sortByWeight);
   categories.compatibleInsufficientMaterial.sort(sortByWeight);
   categories.anySpoolPrintable.sort(sortByWeight);

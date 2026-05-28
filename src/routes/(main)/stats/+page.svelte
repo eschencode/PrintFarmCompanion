@@ -214,13 +214,15 @@
   }
 
   function startEdit(spool: any) {
+    // brand/material/color/cost now live on the preset and are not editable per-spool;
+    // only remaining_weight can be changed here.
     editingSpoolId = spool.id;
     editForm = {
-      brand: spool.brand,
-      material: spool.material,
-      color: spool.color || '',
+      brand: spool.preset?.brand ?? '',
+      material: spool.preset?.material ?? '',
+      color: spool.preset?.color ?? '',
       remaining_weight: spool.remaining_weight,
-      cost: spool.cost || 0
+      cost: spool.preset?.cost ?? 0
     };
   }
 
@@ -235,7 +237,8 @@
     };
   }
 
-  function formatDate(timestamp: number) {
+  function formatDate(timestamp: number | null) {
+    if (timestamp == null) return '-';
     return new Date(timestamp).toLocaleString();
   }
 
@@ -771,13 +774,13 @@
                     {formatDate(job.start_time)}
                   </td>
                   <td class="px-4 py-3 text-sm text-zinc-900 dark:text-zinc-50 font-medium">
-                    {job.name || 'Unknown'}
+                    {job.module_name || 'Unknown'}
                   </td>
                   <td class="px-4 py-3 text-sm text-zinc-500">
                     {printer?.name || 'Unknown'}
                   </td>
                   <td class="px-4 py-3 text-sm text-zinc-500">
-                    {job.actual_weight || job.planned_weight}g
+                    {job.total_used_weight}g
                   </td>
                   <td class="px-4 py-3 text-sm">
                     {#if job.status === 'printing'}
@@ -787,7 +790,7 @@
                         </svg>
                         In Progress
                       </span>
-                    {:else if job.status === 'success'}
+                    {:else if job.status === 'successful'}
                       <span class="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                           <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
@@ -845,8 +848,8 @@
                 {#each sortedSpools as spool}
                   {@const percentLeft = ((spool.remaining_weight / spool.initial_weight) * 100).toFixed(1)}
                   {@const usedWeight = spool.initial_weight - spool.remaining_weight}
-                  {@const isLoaded = data.printers.some(p => p.loaded_spool_id === spool.id)}
-                  {@const loadedPrinter = data.printers.find(p => p.loaded_spool_id === spool.id)}
+                  {@const isLoaded = (data.printers as any[]).some(p => (p.loaded_spools as any[] | undefined)?.some(s => s.spool_id === spool.id))}
+                  {@const loadedPrinter = (data.printers as any[]).find(p => (p.loaded_spools as any[] | undefined)?.some(s => s.spool_id === spool.id))}
                   {@const isEditing = editingSpoolId === spool.id}
 
                   <tr class="border-t border-zinc-200 dark:border-[#262626] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
@@ -864,7 +867,7 @@
                           class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 py-1 text-zinc-900 dark:text-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50"
                         />
                       {:else}
-                        <span class="text-zinc-900 dark:text-zinc-50 font-medium">{spool.brand}</span>
+                        <span class="text-zinc-900 dark:text-zinc-50 font-medium">{spool.preset?.brand ?? ''}</span>
                       {/if}
                     </td>
 
@@ -877,7 +880,7 @@
                           class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 py-1 text-zinc-900 dark:text-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50"
                         />
                       {:else}
-                        <span class="text-zinc-700 dark:text-zinc-300">{spool.material}</span>
+                        <span class="text-zinc-700 dark:text-zinc-300">{spool.preset?.material ?? ''}</span>
                       {/if}
                     </td>
 
@@ -890,10 +893,10 @@
                           placeholder="Color"
                           class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 py-1 text-zinc-900 dark:text-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50"
                         />
-                      {:else if spool.color}
+                      {:else if spool.preset?.color}
                         <span class="inline-flex items-center gap-2">
-                          <span class="w-3 h-3 rounded-full border border-zinc-300 dark:border-zinc-700" style="background-color: {spool.color.toLowerCase()}"></span>
-                          {spool.color}
+                          <span class="w-3 h-3 rounded-full border border-zinc-300 dark:border-zinc-700" style="background-color: {spool.preset.color.toLowerCase()}"></span>
+                          {spool.preset.color}
                         </span>
                       {:else}
                         <span class="text-zinc-500">-</span>
@@ -962,8 +965,8 @@
                             class="w-16 bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-2 py-1 text-zinc-900 dark:text-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50"
                           />
                         </div>
-                      {:else if spool.cost}
-                        <span class="text-green-600 dark:text-green-400">${spool.cost.toFixed(2)}</span>
+                      {:else if spool.preset?.cost}
+                        <span class="text-green-600 dark:text-green-400">${spool.preset.cost.toFixed(2)}</span>
                       {:else}
                         <span class="text-zinc-500">-</span>
                       {/if}
@@ -1059,7 +1062,7 @@
                             <button
                               type="submit"
                               on:click|stopPropagation={(e) => {
-                                if (!confirm(`Delete spool #${spool.id} (${spool.brand} ${spool.material})?`)) {
+                                if (!confirm(`Delete spool #${spool.id} (${spool.preset?.brand ?? ''} ${spool.preset?.material ?? ''})?`)) {
                                   e.preventDefault();
                                 }
                               }}
@@ -1329,9 +1332,10 @@
                 <p class="text-sm text-zinc-500 mt-1">Order history and sync status</p>
               </div>
               {#if data.shopifyStats.syncState}
+                {@const sync = data.shopifyStats.syncState as { last_sync_at?: number; orders_processed?: number; items_deducted?: number }}
                 <div class="text-right text-xs text-zinc-500">
-                  <p>Last sync: {data.shopifyStats.syncState.last_sync_at ? new Date(data.shopifyStats.syncState.last_sync_at).toLocaleString() : 'Never'}</p>
-                  <p>{data.shopifyStats.syncState.orders_processed} orders processed / {data.shopifyStats.syncState.items_deducted} items deducted</p>
+                  <p>Last sync: {sync.last_sync_at ? new Date(sync.last_sync_at).toLocaleString() : 'Never'}</p>
+                  <p>{sync.orders_processed ?? 0} orders processed / {sync.items_deducted ?? 0} items deducted</p>
                 </div>
               {/if}
             </div>
@@ -1377,11 +1381,11 @@
                   <tbody>
                     {#each data.shopifyStats.recentOrders as order}
                       <tr class="border-t border-zinc-200 dark:border-[#262626] hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                        <td class="px-4 py-2.5 text-sm font-mono text-zinc-900 dark:text-zinc-50">#{order.shopify_order_number}</td>
-                        <td class="px-4 py-2.5 text-sm text-zinc-500">{new Date(order.processed_at).toLocaleString()}</td>
+                        <td class="px-4 py-2.5 text-sm font-mono text-zinc-900 dark:text-zinc-50">#{order.order_number ?? order.order_id}</td>
+                        <td class="px-4 py-2.5 text-sm text-zinc-500">{new Date(order.processed_at * 1000).toLocaleString()}</td>
                         <td class="px-4 py-2.5 text-sm text-right font-medium text-zinc-700 dark:text-zinc-300">{order.total_items}</td>
                         <td class="px-4 py-2.5 text-sm">
-                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400">{order.status}</span>
+                          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400">synced</span>
                         </td>
                       </tr>
                     {/each}

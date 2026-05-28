@@ -1,11 +1,12 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import * as db from '$lib/server';
+import { getAllPrintJobsForStats } from '$lib/server/jobs';
 import {
   buildModuleBreakdown,
   computeUtilization,
   buildFailureAnalysis,
-  buildSpoolUsage
+  buildSpoolUsage,
 } from '$lib/utils/statsCompute';
 
 /**
@@ -20,32 +21,30 @@ export const GET: RequestHandler = async ({ url, platform }) => {
   if (!database) return json({ error: 'Database not available' }, { status: 500 });
 
   const fromMs = Number(url.searchParams.get('from'));
-  const toMs   = Number(url.searchParams.get('to'));
+  const toMs = Number(url.searchParams.get('to'));
   if (!fromMs || !toMs || fromMs >= toMs) {
     return json({ error: 'Invalid from/to parameters' }, { status: 400 });
   }
 
   try {
-    const [printers, rawJobs, modules, spools] = await Promise.all([
+    const [printers, allJobs] = await Promise.all([
       db.getAllPrinters(database),
-      db.getAllPrintJobs(database),
-      db.getAllPrintModules(database),
-      db.getAllSpools(database),
+      getAllPrintJobsForStats(database),
     ]);
 
-    const jobs = (rawJobs as any[]).filter(
-      (j: any) =>
-        (j.status === 'success' || j.status === 'failed') &&
-        j.start_time >= fromMs &&
-        j.start_time <= toMs
+    const windowJobs = allJobs.filter(
+      (j) =>
+        (j.status === 'successful' || j.status === 'failed') &&
+        (j.start_time ?? 0) >= fromMs &&
+        (j.start_time ?? 0) <= toMs,
     );
 
-    const moduleBreakdown  = buildModuleBreakdown(jobs, modules as any[], spools as any[]);
-    const utilizationScores = computeUtilization(printers as any[], rawJobs as any[], fromMs, toMs);
-    const failureAnalysis  = buildFailureAnalysis(jobs, printers as any[], spools as any[]);
-    const spoolUsage       = buildSpoolUsage(jobs);
-
-    return json({ moduleBreakdown, utilizationScores, failureAnalysis, spoolUsage });
+    return json({
+      moduleBreakdown: buildModuleBreakdown(windowJobs),
+      utilizationScores: computeUtilization(printers, allJobs, fromMs, toMs),
+      failureAnalysis: buildFailureAnalysis(windowJobs, printers),
+      spoolUsage: buildSpoolUsage(windowJobs),
+    });
   } catch (e) {
     console.error('Stats API error:', e);
     return json({ error: 'Failed to compute stats' }, { status: 500 });
