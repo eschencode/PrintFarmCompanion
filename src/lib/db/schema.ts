@@ -91,6 +91,9 @@ export const platePresets = sqliteTable(
 export const spoolPresets = sqliteTable("spool_presets", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   color: text("color").notNull(),
+  // Hex value (e.g. "#1a1a1a") used for UI swatches/gauges. `color` stays the
+  // human-readable name. Nullable: legacy presets fall back to the name.
+  colorHex: text("color_hex"),
   brand: text("brand").notNull(),
   material: text("material").notNull(), // PLA, PETG, ABS, ...
   defaultWeight: integer("default_weight").notNull(), // nominal weight in grams

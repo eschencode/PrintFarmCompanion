@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolveSpoolColor } from '$lib/utils/spoolColor';
   import type { DashboardPrinter, SpoolWithPreset, PrintModuleFull, PrinterQueuedJob } from '$lib/types';
 
   /**
@@ -78,7 +79,7 @@
         <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22] mb-4">
           <p class="text-[10px] uppercase tracking-widest text-zinc-400 mb-2">Loaded Spool</p>
           <div class="flex items-center gap-3">
-            <div class="w-3 h-3 rounded-full shrink-0" style="background-color: {loadedSpool.preset?.color ?? '#888'}"></div>
+            <div class="w-3 h-3 rounded-full shrink-0" style="background-color: {resolveSpoolColor(loadedSpool.preset)}"></div>
             <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{loadedSpool.preset?.brand ?? ''} {loadedSpool.preset?.material ?? ''}</span>
             <span class="ml-auto text-xs text-zinc-400 tabular-nums">{loadedSpool.remaining_weight}g left</span>
           </div>

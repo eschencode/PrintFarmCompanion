@@ -3,6 +3,8 @@
     import { getPrinterImage } from "$lib/utils/printerImage";
     import { getProgress } from "$lib/utils/time";
     import { getActivePrintJob } from "$lib/utils/printerData";
+    import { resolveSpoolColor } from "$lib/utils/spoolColor";
+    import SpoolGauge from "$lib/components/dashboard/SpoolGauge.svelte";
     import type {
         DashboardPrinter,
         PrintModuleFull,
@@ -148,15 +150,44 @@
         {/if}
     </div>
 
-    <!-- Printer Image -->
-    <div
-        class="flex-1 flex items-center justify-center min-h-0 w-full group-hover:scale-[1.03] transition-transform duration-500 ease-out"
-    >
-        <img
-            src={getPrinterImage(printer.preset?.model)}
-            alt="Printer"
-            class="max-h-full max-w-full object-contain opacity-80 group-hover:opacity-100 transition-opacity duration-500"
-        />
+    <!-- Printer Image with vertical spool gauges on the left -->
+    <div class="flex-1 flex items-stretch justify-center min-h-0 w-full gap-2">
+        {#if printer.loaded_spools && printer.loaded_spools.length > 0}
+            {@const slots = [...printer.loaded_spools].sort((a, b) => a.slot_index - b.slot_index)}
+            <div class="flex items-stretch gap-1.5 py-2 shrink-0">
+                {#each slots as slot (slot.slot_index)}
+                    {#if slot.spool}
+                        <div
+                            class="flex flex-col items-center h-full"
+                            title="Slot {slot.slot_index + 1}: {slot.spool.preset?.brand ?? ''} {slot.spool.preset?.material ?? ''} {slot.spool.preset?.color ?? ''} — {slot.spool.remaining_weight}g"
+                        >
+                            <SpoolGauge
+                                remaining={slot.spool.remaining_weight}
+                                initial={slot.spool.initial_weight}
+                                color={resolveSpoolColor(slot.spool.preset)}
+                                orientation="vertical"
+                                size="sm"
+                            />
+                        </div>
+                    {:else}
+                        <div
+                            class="w-1.5 my-2 self-stretch rounded-full border border-dashed border-zinc-300 dark:border-zinc-700"
+                            title="Slot {slot.slot_index + 1}: empty"
+                        ></div>
+                    {/if}
+                {/each}
+            </div>
+        {/if}
+
+        <div
+            class="flex-1 flex items-center justify-center min-h-0 group-hover:scale-[1.03] transition-transform duration-500 ease-out"
+        >
+            <img
+                src={getPrinterImage(printer.preset?.model)}
+                alt="Printer"
+                class="max-h-full max-w-full object-contain opacity-80 group-hover:opacity-100 transition-opacity duration-500"
+            />
+        </div>
     </div>
 
     <!-- Printer Name & Status -->
@@ -168,38 +199,6 @@
         >
             {printer.name}
         </h3>
-
-        <!-- Slot indicators (one chip per slot, coloured by loaded spool) -->
-        {#if printer.loaded_spools && printer.loaded_spools.length > 0}
-            {@const slots = [...printer.loaded_spools].sort((a, b) => a.slot_index - b.slot_index)}
-            {@const isSingle = slots.length === 1}
-            <div class="flex justify-center items-center gap-1.5 mt-1 px-1">
-                {#each slots as slot (slot.slot_index)}
-                    {#if slot.spool}
-                        <div
-                            class="flex items-center gap-1"
-                            title="Slot {slot.slot_index + 1}: {slot.spool.preset?.brand ?? ''} {slot.spool.preset?.material ?? ''} {slot.spool.preset?.color ?? ''} — {slot.spool.remaining_weight}g"
-                        >
-                            <div
-                                class="rounded-full border border-zinc-300/40 dark:border-white/15 shrink-0"
-                                style="width: clamp(0.45rem, 1.4vw, 0.6rem); height: clamp(0.45rem, 1.4vw, 0.6rem); background-color: {slot.spool.preset?.color || '#888'};"
-                            ></div>
-                            {#if isSingle}
-                                <span class="text-[clamp(0.4rem,1.3vw,0.65rem)] tabular-nums text-zinc-500 dark:text-zinc-400">
-                                    {slot.spool.remaining_weight}g
-                                </span>
-                            {/if}
-                        </div>
-                    {:else}
-                        <div
-                            class="rounded-full border border-dashed border-zinc-300 dark:border-zinc-700 shrink-0"
-                            style="width: clamp(0.45rem, 1.4vw, 0.6rem); height: clamp(0.45rem, 1.4vw, 0.6rem);"
-                            title="Slot {slot.slot_index + 1}: empty"
-                        ></div>
-                    {/if}
-                {/each}
-            </div>
-        {/if}
 
         <p
             class="text-[clamp(0.4rem,1.5vw,0.7rem)] font-light tracking-wide uppercase mt-0.5"

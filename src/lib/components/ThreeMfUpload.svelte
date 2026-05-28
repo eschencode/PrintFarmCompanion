@@ -87,17 +87,19 @@
 
     const wantColor = normColor(color);
     const wantType = normType(type);
+    // Prefer the preset's explicit hex (color_hex); fall back to its name field.
+    const presetColor = (p: any) => normColor(p.color_hex ?? p.color);
 
     // Prefer exact (type + color)
     if (wantColor && wantType) {
       const exact = presets.find(
-        (p) => normType(p.material) === wantType && normColor(p.color) === wantColor,
+        (p) => normType(p.material) === wantType && presetColor(p) === wantColor,
       );
       if (exact) return exact.id;
     }
     // Color-only match (if e.g. "Generic PLA" matches but we still want the same color)
     if (wantColor) {
-      const colorMatch = presets.find((p) => normColor(p.color) === wantColor);
+      const colorMatch = presets.find((p) => presetColor(p) === wantColor);
       if (colorMatch) return colorMatch.id;
     }
     return null;

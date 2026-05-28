@@ -17,6 +17,7 @@ export const actions: Actions = {
       brand: formData.get('brand') as string,
       material: formData.get('material') as string,
       color: (formData.get('color') as string) || '',
+      colorHex: (formData.get('colorHex') as string) || null,
       defaultWeight: Number(formData.get('defaultWeight')),
       cost: Number(formData.get('cost')) || undefined,
     });
@@ -30,6 +31,7 @@ export const actions: Actions = {
       brand: formData.get('brand') as string,
       material: formData.get('material') as string,
       color: (formData.get('color') as string) || '',
+      colorHex: (formData.get('colorHex') as string) || null,
       defaultWeight: Number(formData.get('defaultWeight')),
       cost: Number(formData.get('cost')) || undefined,
     });

@@ -3,6 +3,8 @@
   import type { SubmitFunction } from '@sveltejs/kit';
   import { formatTime, formatRemainingTime, getElapsedTime, getRemainingTime, getProgress } from '$lib/utils/time';
   import { getLastPrintJob } from '$lib/utils/printerData';
+  import { resolveSpoolColor } from '$lib/utils/spoolColor';
+  import SpoolGauge from '$lib/components/dashboard/SpoolGauge.svelte';
   import type { DashboardPrinter, SpoolWithPreset, PrintModuleFull, PrintJobWithDetails, PiStatus } from '$lib/types';
 
   /**
@@ -167,22 +169,39 @@
 
           <!-- Spool Weight Info -->
           {#if loadedSpool}
+            {@const usage = activePrintJob.module_weight ?? 0}
+            {@const after = Math.max(0, loadedSpool.remaining_weight - usage)}
             <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
-              <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-4 tracking-wide uppercase">Spool Weight</p>
-              <div class="grid grid-cols-2 gap-4">
-                <div>
-                  <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">Before Print</p>
-                  <p class="text-xl text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{loadedSpool.remaining_weight}g</p>
-                </div>
-                <div>
-                  <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">Expected After</p>
-                  <p class="text-xl text-blue-500 dark:text-blue-400 font-light tabular-nums">{Math.max(0, loadedSpool.remaining_weight - (activePrintJob.module_weight ?? 0)).toFixed(1)}g</p>
-                </div>
+              <div class="flex items-center justify-between mb-3">
+                <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase">Spool Weight</p>
+                <span class="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span class="w-2.5 h-2.5 rounded-full border border-zinc-300/50 dark:border-white/15" style="background-color: {resolveSpoolColor(loadedSpool.preset)}"></span>
+                  {loadedSpool.preset?.brand ?? ''} {loadedSpool.preset?.material ?? ''}
+                </span>
               </div>
-              <div class="mt-4 pt-4 border-t border-zinc-200/60 dark:border-[#1a1a22]">
-                <div class="flex justify-between text-xs">
-                  <span class="text-zinc-400 dark:text-zinc-600">Material Usage</span>
-                  <span class="text-amber-500 font-medium tabular-nums">{activePrintJob.module_weight ?? 0}g</span>
+
+              <!-- Gauge with after-print marker -->
+              <SpoolGauge
+                remaining={loadedSpool.remaining_weight}
+                initial={loadedSpool.initial_weight}
+                color={resolveSpoolColor(loadedSpool.preset)}
+                projected={after}
+                size="lg"
+                showLabel={false}
+              />
+
+              <div class="grid grid-cols-3 gap-4 mt-4">
+                <div>
+                  <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">Before</p>
+                  <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{loadedSpool.remaining_weight}g</p>
+                </div>
+                <div>
+                  <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">Usage</p>
+                  <p class="text-lg text-amber-500 font-light tabular-nums">−{usage}g</p>
+                </div>
+                <div>
+                  <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">After</p>
+                  <p class="text-lg text-blue-500 dark:text-blue-400 font-light tabular-nums">{after.toFixed(0)}g</p>
                 </div>
               </div>
             </div>
@@ -257,23 +276,28 @@
 
           <!-- Loaded Spool Info -->
           {#if loadedSpool}
+            {@const capacity = loadedSpool.initial_weight > 0 ? loadedSpool.initial_weight : loadedSpool.remaining_weight}
+            {@const pct = capacity > 0 ? Math.round((loadedSpool.remaining_weight / capacity) * 100) : 0}
             <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
-              <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-4 tracking-wide uppercase">Loaded Spool</p>
-              <div class="space-y-3">
-                <div class="flex justify-between items-center">
-                  <span class="text-sm text-zinc-400 dark:text-zinc-600">Name</span>
-                  <span class="text-base text-zinc-900 dark:text-zinc-100 font-medium">
-                    {loadedSpool.preset?.brand ?? ''} {loadedSpool.preset?.material ?? ''}
-                  </span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-sm text-zinc-400 dark:text-zinc-600">Color</span>
-                  <span class="text-base text-zinc-900 dark:text-zinc-100">{loadedSpool.preset?.color || 'N/A'}</span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-sm text-zinc-400 dark:text-zinc-600">Remaining Weight</span>
-                  <span class="text-lg text-emerald-500 dark:text-emerald-400 font-medium tabular-nums">{loadedSpool.remaining_weight}g</span>
-                </div>
+              <div class="flex items-center justify-between mb-3">
+                <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase">Loaded Spool</p>
+                <span class="flex items-center gap-1.5 text-sm text-zinc-900 dark:text-zinc-100 font-medium">
+                  <span class="w-2.5 h-2.5 rounded-full border border-zinc-300/50 dark:border-white/15" style="background-color: {resolveSpoolColor(loadedSpool.preset)}"></span>
+                  {loadedSpool.preset?.brand ?? ''} {loadedSpool.preset?.material ?? ''}
+                </span>
+              </div>
+
+              <SpoolGauge
+                remaining={loadedSpool.remaining_weight}
+                initial={loadedSpool.initial_weight}
+                color={resolveSpoolColor(loadedSpool.preset)}
+                size="lg"
+                showLabel={false}
+              />
+
+              <div class="flex items-baseline justify-between mt-3">
+                <span class="text-2xl text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{loadedSpool.remaining_weight}g</span>
+                <span class="text-sm text-zinc-400 dark:text-zinc-500 tabular-nums">{pct}% of {capacity}g</span>
               </div>
             </div>
           {:else}

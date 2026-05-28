@@ -26,6 +26,7 @@ export async function createSpoolPreset(
   db: D1Database,
   preset: {
     color: string;
+    colorHex?: string | null;
     brand: string;
     material: string;
     defaultWeight: number;
@@ -36,9 +37,9 @@ export async function createSpoolPreset(
   const drizzleDb = getDb(db);
   try {
     const result = await drizzleDb.run(sql`
-      INSERT INTO spool_presets (color, brand, material, default_weight, cost, in_storage, created_at, updated_at)
+      INSERT INTO spool_presets (color, color_hex, brand, material, default_weight, cost, in_storage, created_at, updated_at)
       VALUES (
-        ${preset.color}, ${preset.brand}, ${preset.material},
+        ${preset.color}, ${preset.colorHex ?? null}, ${preset.brand}, ${preset.material},
         ${preset.defaultWeight}, ${preset.cost ?? 0}, ${preset.inStorage ?? 0},
         ${Math.floor(Date.now() / 1000)}, ${Math.floor(Date.now() / 1000)}
       )
@@ -55,6 +56,7 @@ export async function updateSpoolPreset(
   id: number,
   preset: {
     color?: string;
+    colorHex?: string | null;
     brand?: string;
     material?: string;
     defaultWeight?: number;
@@ -66,6 +68,7 @@ export async function updateSpoolPreset(
   try {
     const updates: ReturnType<typeof sql>[] = [];
     if (preset.color !== undefined) updates.push(sql`color = ${preset.color}`);
+    if (preset.colorHex !== undefined) updates.push(sql`color_hex = ${preset.colorHex}`);
     if (preset.brand !== undefined) updates.push(sql`brand = ${preset.brand}`);
     if (preset.material !== undefined) updates.push(sql`material = ${preset.material}`);
     if (preset.defaultWeight !== undefined) updates.push(sql`default_weight = ${preset.defaultWeight}`);
@@ -154,6 +157,7 @@ export async function getAllSpools(db: D1Database): Promise<SpoolWithPreset[]> {
     created_at: number;
     updated_at: number;
     color: string | null;
+    color_hex: string | null;
     brand: string | null;
     material: string | null;
     default_weight: number | null;
@@ -165,7 +169,7 @@ export async function getAllSpools(db: D1Database): Promise<SpoolWithPreset[]> {
     SELECT
       s.id, s.preset_id, s.initial_weight, s.remaining_weight,
       s.created_at, s.updated_at,
-      sp.color, sp.brand, sp.material, sp.default_weight, sp.cost,
+      sp.color, sp.color_hex, sp.brand, sp.material, sp.default_weight, sp.cost,
       sp.in_storage    as sp_in_storage,
       sp.created_at    as sp_created_at,
       sp.updated_at    as sp_updated_at
@@ -187,6 +191,7 @@ export async function getAllSpools(db: D1Database): Promise<SpoolWithPreset[]> {
           brand: r.brand,
           material: r.material ?? '',
           color: r.color ?? '',
+          color_hex: r.color_hex ?? null,
           default_weight: r.default_weight ?? 0,
           cost: r.cost ?? 0,
           in_storage: r.sp_in_storage ?? 0,

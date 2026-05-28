@@ -378,6 +378,7 @@ export async function getLoadedSpools(
     remaining_weight: number | null;
     // joined from spool_presets
     color: string | null;
+    color_hex: string | null;
     brand: string | null;
     material: string | null;
     default_weight: number | null;
@@ -388,7 +389,7 @@ export async function getLoadedSpools(
       pls.created_at, pls.updated_at,
       s.id      as s_id,
       s.preset_id, s.initial_weight, s.remaining_weight,
-      sp.color, sp.brand, sp.material, sp.default_weight, sp.cost
+      sp.color, sp.color_hex, sp.brand, sp.material, sp.default_weight, sp.cost
     FROM printer_loaded_spools pls
     LEFT JOIN spools s ON pls.spool_id = s.id
     LEFT JOIN spool_presets sp ON s.preset_id = sp.id
@@ -416,6 +417,7 @@ export async function getLoadedSpools(
                 brand: row.brand,
                 material: row.material ?? '',
                 color: row.color ?? '',
+                color_hex: row.color_hex ?? null,
                 default_weight: row.default_weight ?? 0,
                 cost: row.cost ?? 0,
                 in_storage: 0,

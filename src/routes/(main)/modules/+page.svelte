@@ -4,6 +4,7 @@
   import ZipBulkUpload from '$lib/components/ZipBulkUpload.svelte';
   import EditModuleModal from '$lib/components/EditModuleModal.svelte';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
+  import { resolveSpoolColor } from '$lib/utils/spoolColor';
 
   export let data: PageData;
 
@@ -35,7 +36,7 @@
         return p
           ? {
               name: `${p.brand} ${p.material}${p.color ? ' ' + p.color : ''}`,
-              color: p.color ?? null,
+              color: resolveSpoolColor(p),
               isAny: false,
               weight,
             }

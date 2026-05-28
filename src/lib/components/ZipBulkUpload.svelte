@@ -14,16 +14,17 @@
     const normColor = (c: string | null | undefined) =>
       (c ?? '').replace(/^#/, '').toLowerCase().slice(0, 6);
     const normType = (t: string | null | undefined) => (t ?? '').toLowerCase().trim();
+    const presetColor = (p: any) => normColor(p.color_hex ?? p.color);
     const wantColor = normColor(color);
     const wantType = normType(type);
     if (wantColor && wantType) {
       const exact = presets.find(
-        (p) => normType(p.material) === wantType && normColor(p.color) === wantColor,
+        (p) => normType(p.material) === wantType && presetColor(p) === wantColor,
       );
       if (exact) return exact.id;
     }
     if (wantColor) {
-      const c = presets.find((p) => normColor(p.color) === wantColor);
+      const c = presets.find((p) => presetColor(p) === wantColor);
       if (c) return c.id;
     }
     return null;
@@ -297,7 +298,6 @@
             estimated_time: entry.estimatedTime,
             plate_type: entry.plateType,
             nozzle_diameter: entry.nozzleDiameter,
-            expected_weight: entry.expectedWeight,
             objects_per_print: entry.objectsPerPrint,
             slots: entry.slots,
             printer_model: entry.printerModel || null,

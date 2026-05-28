@@ -22,6 +22,12 @@
     showPresetEditor = false;
     editingPreset = null;
   }
+
+  // Hex value bound to the colour picker. Seeded from the preset when editing.
+  let colorHex = '#888888';
+  $: if (showPresetEditor) {
+    colorHex = editingPreset?.color_hex || '#888888';
+  }
 </script>
 
 <div class="min-h-screen p-6 sm:p-10">
@@ -69,9 +75,13 @@
         <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a]">
           {#each data.spoolPresets as preset}
             <div class="px-5 py-3.5 flex items-center gap-4 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
-              <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-[#1a1a1a] flex items-center justify-center shrink-0">
-                <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 3L2 9l10 6 10-6-10-6zM2 17l10 6 10-6M2 13l10 6 10-6"/></svg>
-              </div>
+              {#if preset.color_hex}
+                <div class="w-8 h-8 rounded-lg shrink-0 border border-zinc-200 dark:border-[#262626]" style="background-color: {preset.color_hex}"></div>
+              {:else}
+                <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-[#1a1a1a] flex items-center justify-center shrink-0">
+                  <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 3L2 9l10 6 10-6-10-6zM2 17l10 6 10-6M2 13l10 6 10-6"/></svg>
+                </div>
+              {/if}
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{preset.brand} {preset.material}{preset.color ? ` ${preset.color}` : ''}</p>
                 <p class="text-xs text-zinc-400 mt-0.5">{preset.default_weight}g{preset.cost ? ` · €${preset.cost}` : ''}</p>
@@ -190,14 +200,30 @@
           </div>
           <div>
             <label for="presetColor" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Color</label>
-            <input
-              type="text"
-              id="presetColor"
-              name="color"
-              value={editingPreset?.color ?? ''}
-              placeholder="Black"
-              class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
-            />
+            <div class="flex items-center gap-2">
+              <!-- Swatch / picker — drives color_hex used in the dashboard gauges -->
+              <label
+                class="relative w-10 h-[42px] shrink-0 rounded-lg border border-zinc-200 dark:border-[#262626] overflow-hidden cursor-pointer"
+                style="background-color: {colorHex}"
+                title="Pick spool colour"
+              >
+                <input
+                  type="color"
+                  bind:value={colorHex}
+                  class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  aria-label="Spool colour picker"
+                />
+              </label>
+              <input type="hidden" name="colorHex" value={colorHex} />
+              <input
+                type="text"
+                id="presetColor"
+                name="color"
+                value={editingPreset?.color ?? ''}
+                placeholder="Black"
+                class="flex-1 min-w-0 bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+              />
+            </div>
           </div>
           <div>
             <label for="presetWeight" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Weight (g) *</label>

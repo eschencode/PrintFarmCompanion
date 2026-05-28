@@ -34,6 +34,8 @@ export interface PlatePreset {
 export interface SpoolPreset {
   id: number;
   color: string;
+  /** Hex value for UI swatches/gauges (e.g. "#1a1a1a"). Null = fall back to `color`. */
+  color_hex: string | null;
   brand: string;
   material: string; // PLA, PETG, ABS, ...
   default_weight: number; // nominal weight in grams

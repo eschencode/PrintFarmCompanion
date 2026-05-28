@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import type { SubmitFunction } from '@sveltejs/kit';
+  import { resolveSpoolColor } from '$lib/utils/spoolColor';
   import type { DashboardPrinter, SpoolPreset, SpoolSuggestion, SpoolWithPreset } from '$lib/types';
 
   export let printer: DashboardPrinter;
@@ -33,7 +34,7 @@
       spoolId: ls?.spool_id ?? null,
       remainingWeight: ls?.spool?.remaining_weight ?? null,
       brand: ls?.spool?.preset?.brand ?? null,
-      color: ls?.spool?.preset?.color ?? null,
+      color: ls?.spool?.preset ? resolveSpoolColor(ls.spool.preset) : null,
       material: ls?.spool?.preset?.material ?? null,
     };
   });
@@ -155,7 +156,7 @@
                     <div class="flex items-center gap-2.5 min-w-0">
                       <div
                         class="w-4 h-4 rounded-full shrink-0 border border-zinc-200/40 dark:border-white/10"
-                        style="background-color: {preset.color || '#888'}"
+                        style="background-color: {resolveSpoolColor(preset)}"
                       ></div>
                       <h3 class="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
                         {preset.brand} {preset.material}
@@ -229,11 +230,11 @@
                 >
                   <div
                     class="w-4 h-4 rounded-full shrink-0 border border-zinc-200/40 dark:border-white/10 flex-none"
-                    style="background-color: {s.color || '#888'}"
+                    style="background-color: {resolveSpoolColor(spool.preset ?? s)}"
                   ></div>
                   <div class="flex-1 min-w-0">
                     <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                      {s.brand ?? 'Unknown'} {s.material ?? ''} · {s.color ?? ''}
+                      {spool.preset?.brand ?? s.brand ?? 'Unknown'} {spool.preset?.material ?? s.material ?? ''} · {spool.preset?.color ?? s.color ?? ''}
                     </p>
                     <p class="text-xs text-zinc-400 dark:text-zinc-500">
                       {spool.remaining_weight}g remaining of {spool.initial_weight}g

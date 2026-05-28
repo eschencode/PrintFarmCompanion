@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { resolveSpoolColor } from '$lib/utils/spoolColor';
 
   export let module: any;
   export let isOpen = false;
@@ -218,8 +219,8 @@
               {@const preset = slot.spoolPresetId ? spoolPresets.find((p: any) => p.id === slot.spoolPresetId) : null}
               <div class="flex items-center gap-2">
                 <span class="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 w-5 text-right shrink-0">#{i + 1}</span>
-                {#if preset?.color}
-                  <span class="w-3.5 h-3.5 rounded-full border border-zinc-300 dark:border-zinc-600 shrink-0" style="background:{preset.color}"></span>
+                {#if preset}
+                  <span class="w-3.5 h-3.5 rounded-full border border-zinc-300 dark:border-zinc-600 shrink-0" style="background:{resolveSpoolColor(preset)}"></span>
                 {/if}
                 <select
                   bind:value={slots[i].spoolPresetId}

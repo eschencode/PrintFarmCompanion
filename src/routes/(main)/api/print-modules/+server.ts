@@ -55,6 +55,29 @@ async function writeSlots(
   }
 }
 
+/** Sum of slot weights, treating nulls as 0. */
+function totalSlotWeight(slots: SlotInput[]): number {
+  return slots.reduce((sum, s) => sum + (s.weight ?? 0), 0);
+}
+
+/**
+ * Keep `print_modules.weight` in sync with the sum of slot weights so the
+ * denormalised total stays correct for matching / stats / recommendations.
+ * The UI no longer collects a separate module-level weight.
+ */
+async function syncModuleWeight(
+  drizzleDb: ReturnType<typeof getDb>,
+  moduleId: number | string,
+  slots: SlotInput[],
+  now: number,
+) {
+  await drizzleDb.run(sql`
+    UPDATE print_modules
+    SET weight = ${totalSlotWeight(slots)}, updated_at = ${now}
+    WHERE id = ${moduleId}
+  `);
+}
+
 export const POST: RequestHandler = async ({ request, platform }) => {
   const db = platform?.env?.DB;
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
@@ -70,7 +93,6 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   const {
     name, file_name, thumbnail,
     estimated_time, nozzle_diameter,
-    expected_weight,
     objects_per_print, object_id, printer_preset_id,
     local_file_handler_path, pi_file_path,
   } = body;
@@ -81,6 +103,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
   const resolvedObjectId = (object_id as number | null) ?? null;
   const resolvedPresetId = (printer_preset_id as number | null) ?? null;
+  const slots = normalizeSlots(body) ?? [];
+  const moduleWeight = totalSlotWeight(slots);
 
   const filename = (pi_file_path as string) || (local_file_handler_path as string) || (file_name as string);
   const now = Math.floor(Date.now() / 1000);
@@ -92,7 +116,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
          nozzle_diameter, object_id, printer_preset_id, active, created_at, updated_at)
       VALUES (
         ${name}, ${filename}, ${thumbnail ?? null},
-        ${expected_weight ?? 0}, ${estimated_time ?? 0}, ${objects_per_print ?? 1},
+        ${moduleWeight}, ${estimated_time ?? 0}, ${objects_per_print ?? 1},
         ${nozzle_diameter ?? null}, ${resolvedObjectId}, ${resolvedPresetId},
         1, ${now}, ${now}
       )
@@ -100,8 +124,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
     const moduleId = result.meta.last_row_id as number;
 
-    const slots = normalizeSlots(body);
-    if (slots && slots.length > 0 && moduleId) {
+    if (slots.length > 0 && moduleId) {
       await writeSlots(drizzleDb, moduleId, slots);
     }
 
@@ -205,7 +228,7 @@ export const PATCH: RequestHandler = async ({ url, request, platform }) => {
   }
 
   const {
-    name, estimated_time, nozzle_diameter, expected_weight,
+    name, estimated_time, nozzle_diameter,
     objects_per_print, object_id,
     printer_preset_id,
   } = body;
@@ -222,7 +245,6 @@ export const PATCH: RequestHandler = async ({ url, request, platform }) => {
         name = ${name},
         expected_time_minutes = ${estimated_time ?? null},
         nozzle_diameter = ${nozzle_diameter ?? null},
-        weight = ${expected_weight ?? null},
         objects_per_print = ${objects_per_print ?? 1},
         object_id = ${resolvedObjectId},
         printer_preset_id = ${resolvedPresetId},
@@ -233,6 +255,7 @@ export const PATCH: RequestHandler = async ({ url, request, platform }) => {
     const slots = normalizeSlots(body);
     if (slots !== null) {
       await writeSlots(drizzleDb, id, slots);
+      await syncModuleWeight(drizzleDb, id, slots, now);
     }
 
     return json({ success: true });
