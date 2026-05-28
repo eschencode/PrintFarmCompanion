@@ -120,6 +120,25 @@
     enriched.filter((e) => e.status !== 'ok' && ((e.preset.in_storage ?? 0) > 0 || e.used30d > 0)).length
   );
 
+  // Order plan: at the current 30-day usage rate, projected demand over the next
+  // 30 days equals used30d. Order enough to cover that minus what's in storage.
+  interface OrderItem {
+    preset: SpoolPreset;
+    needed: number;
+    used30d: number;
+  }
+  const orderPlan = $derived<OrderItem[]>(
+    enriched
+      .map((e) => ({
+        preset: e.preset,
+        used30d: e.used30d,
+        needed: Math.max(0, Math.ceil(e.used30d - (e.preset.in_storage ?? 0))),
+      }))
+      .filter((o) => o.needed > 0)
+      .sort((a, b) => b.needed - a.needed)
+  );
+  const totalToOrder = $derived(orderPlan.reduce((sum, o) => sum + o.needed, 0));
+
   function daysLeftLabel(e: EnrichedPreset): string {
     if ((e.preset.in_storage ?? 0) === 0) return 'empty';
     if (!isFinite(e.daysLeft)) return 'no recent usage';
@@ -204,6 +223,40 @@
           Add
         </button>
       </form>
+    </div>
+
+    <!-- Order Plan -->
+    <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-4 mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h2 class="text-sm font-medium text-zinc-500">Order plan · next 30 days</h2>
+          <p class="text-[11px] text-zinc-400 dark:text-zinc-600 mt-0.5">Based on the last 30 days of usage</p>
+        </div>
+        {#if totalToOrder > 0}
+          <span class="text-xs font-medium text-amber-600 dark:text-amber-500 tabular-nums shrink-0">{totalToOrder} to order</span>
+        {/if}
+      </div>
+
+      {#if orderPlan.length === 0}
+        <p class="text-sm text-zinc-400 dark:text-zinc-500">You're stocked for the next 30 days at the current usage rate.</p>
+      {:else}
+        <div class="space-y-1.5">
+          {#each orderPlan as o (o.preset.id)}
+            <div class="flex items-center justify-between gap-3 text-sm">
+              <span class="flex items-center gap-2 min-w-0">
+                {#if o.preset.color_hex}
+                  <span class="w-3 h-3 rounded-full border border-black/10 shrink-0" style="background-color: {o.preset.color_hex}"></span>
+                {:else}
+                  <span class="w-3 h-3 rounded-full shrink-0 {colorClass(o.preset.color)}"></span>
+                {/if}
+                <span class="truncate text-zinc-700 dark:text-zinc-300">{presetName(o.preset)}</span>
+                <span class="text-xs text-zinc-400 dark:text-zinc-600 shrink-0">{o.preset.material}</span>
+              </span>
+              <span class="tabular-nums font-medium text-zinc-900 dark:text-zinc-50 shrink-0">+{o.needed}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
     </div>
 
     <!-- Spool List -->

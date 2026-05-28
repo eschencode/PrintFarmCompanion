@@ -329,7 +329,7 @@ export interface ShopifyOrder {
 // ============================================================================
 
 export interface GridCell {
-  type: 'printer' | 'stats' | 'settings' | 'spools' | 'storage' | 'empty' | 'inventory' | 'products';
+  type: 'printer' | 'stats' | 'settings' | 'spools' | 'empty' | 'inventory' | 'products';
   printerId?: number;
 }
 
