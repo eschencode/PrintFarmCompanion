@@ -31,6 +31,24 @@ interface ShopifyOrdersResponse {
     orders: ShopifyOrder[];
 }
 
+export interface ShopifyVariantRow {
+    sku: string;
+    product_title: string;
+    variant_title: string;
+    product_id: string;
+    variant_id: string;
+}
+
+interface ShopifyProduct {
+    id: number;
+    title: string;
+    variants: { id: number; title: string; sku: string | null }[];
+}
+
+interface ShopifyProductsResponse {
+    products: ShopifyProduct[];
+}
+
 export class ShopifyClient {
     private storeDomain: string;
     private accessToken: string;
@@ -138,6 +156,51 @@ export class ShopifyClient {
 
         const response = await this.fetch<ShopifyOrdersResponse>(`/orders.json?${params}`);
         return response.orders;
+    }
+
+    /**
+     * Fetch every product variant that has a SKU, paginating through all products.
+     * Used to populate the SKU catalog cache for the mapping picker.
+     */
+    async getAllVariants(): Promise<ShopifyVariantRow[]> {
+        const out: ShopifyVariantRow[] = [];
+        let sinceId: string | null = null;
+        let hasMore = true;
+
+        while (hasMore) {
+            const params = new URLSearchParams({
+                limit: '250',
+                fields: 'id,title,variants',
+            });
+            if (sinceId) params.set('since_id', sinceId);
+
+            const resp = await this.fetch<ShopifyProductsResponse>(`/products.json?${params}`);
+            const products = resp.products;
+            if (products.length === 0) break;
+
+            for (const p of products) {
+                for (const v of p.variants ?? []) {
+                    const sku = v.sku?.trim();
+                    if (!sku) continue;
+                    out.push({
+                        sku,
+                        product_title: p.title,
+                        variant_title: v.title,
+                        product_id: String(p.id),
+                        variant_id: String(v.id),
+                    });
+                }
+            }
+
+            sinceId = String(products[products.length - 1].id);
+            if (products.length < 250) hasMore = false;
+            if (out.length > 50000) {
+                console.warn('Shopify SKU sync: hit safety limit of 50000 variants');
+                hasMore = false;
+            }
+        }
+
+        return out;
     }
 
     /**

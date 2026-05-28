@@ -90,6 +90,21 @@ export const actions: Actions = {
     return db.startPrintJob(database, { printerId, moduleId });
   },
 
+  confirmExternalPrint: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) return { success: false, error: 'Database not available' };
+
+    const formData = await request.formData();
+    const printerId = Number(formData.get('printerId'));
+    const taskId = String(formData.get('taskId') ?? '');
+    const moduleIdRaw = formData.get('moduleId');
+    const moduleId = moduleIdRaw ? Number(moduleIdRaw) : null;
+
+    if (!printerId || !taskId) return { success: false, error: 'Missing printer or task' };
+
+    return db.adoptExternalPrintJob(database, { printerId, moduleId, externalTaskId: taskId });
+  },
+
   completePrint: async ({ platform, request }) => {
     const database = platform?.env?.DB;
     if (!database) return { error: 'Database not available' };
