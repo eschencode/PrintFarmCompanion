@@ -7,16 +7,17 @@ export const load: PageServerLoad = async ({ platform }) => {
 
   if (!database) {
     console.log('⚠️ Database not available.');
-    return { printers: [], spools: [], printModules: [], activePrintJobs: [], printJobs: [], spoolPresets: [], gridPresets: [] };
+    return { printers: [], spools: [], printModules: [], activePrintJobs: [], printJobs: [], spoolPresets: [], spoolUsage: [], gridPresets: [] };
   }
 
-  const [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, gridPresets] = await Promise.all([
+  const [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets] = await Promise.all([
     db.getAllPrintersFull(database),
     db.getAllSpools(database),
     db.getAllPrintModules(database),
     db.getActivePrintJobs(database),
     db.getAllPrintJobs(database),
     db.getAllSpoolPresets(database),
+    db.getSpoolUsageStats(database),
     db.getAllGridPresets(database),
   ]);
 
@@ -35,7 +36,7 @@ export const load: PageServerLoad = async ({ platform }) => {
     };
   });
 
-  return { printers, spools, printModules, activePrintJobs, printJobs, spoolPresets, gridPresets };
+  return { printers, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets };
 };
 
 export const actions: Actions = {

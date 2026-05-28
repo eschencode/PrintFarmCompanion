@@ -145,6 +145,34 @@ export async function setStorageCount(
   }
 }
 
+export interface SpoolUsageStat {
+  preset_id: number;
+  used_7d: number;
+  used_30d: number;
+}
+
+/**
+ * Count how many spools were opened (broken out of storage into a `spools` row)
+ * per preset over recent windows. Each `spools` row = one unit pulled from
+ * storage, so this is the consumption signal for usage/depletion prediction.
+ */
+export async function getSpoolUsageStats(db: D1Database): Promise<SpoolUsageStat[]> {
+  const drizzleDb = getDb(db);
+  const now = Math.floor(Date.now() / 1000);
+  const d7 = now - 7 * 86400;
+  const d30 = now - 30 * 86400;
+  const rows = await drizzleDb.all<SpoolUsageStat>(sql`
+    SELECT
+      preset_id,
+      SUM(CASE WHEN created_at >= ${d7} THEN 1 ELSE 0 END)  AS used_7d,
+      SUM(CASE WHEN created_at >= ${d30} THEN 1 ELSE 0 END) AS used_30d
+    FROM spools
+    WHERE preset_id IS NOT NULL
+    GROUP BY preset_id
+  `);
+  return rows ?? [];
+}
+
 // ─── Spools ───────────────────────────────────────────────────────────────────
 
 export async function getAllSpools(db: D1Database): Promise<SpoolWithPreset[]> {

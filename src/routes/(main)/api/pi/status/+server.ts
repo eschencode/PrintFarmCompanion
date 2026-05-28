@@ -1,6 +1,5 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { linkExternalTaskToOpenJob } from '$lib/server';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
@@ -51,47 +50,48 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     const data = await piResp.json() as Record<string, any>;
 
     // ── External-print detection (read-only; never marks anything failed).
-    // If the Pi reports a task we aren't tracking, first try to adopt an open
-    // UI-started job (backfill its task_id). If there's no open job, surface it
-    // as `detected_external` so the UI can ask the user whether to add it.
+    // A print is "tracked" when the printer already has an open `printing` job —
+    // regardless of task_id. We deliberately do NOT match on task_id: in-app
+    // starts store a Pi-generated UUID (so the completion webhook can match),
+    // while status polling reports the Bambu MQTT task_id (often "0"/empty), so
+    // the two never line up. Matching on task_id made every dashboard start
+    // pop the "add this print?" prompt. If the printer has no open job at all,
+    // the print was started outside the app (touchscreen / SD card) — surface
+    // it as `detected_external` for the user to confirm.
     const status = data.status;
     if (db && status?.task_id && ['RUNNING', 'PREPARE', 'PAUSE'].includes(status.gcode_state)) {
       try {
         const drizzleDb = getDb(db);
-        const tracked = await drizzleDb.get(
-          sql`SELECT id FROM print_jobs WHERE external_task_id = ${status.task_id} LIMIT 1`
+        const printer = await drizzleDb.get<{ id: number }>(
+          sql`SELECT p.id FROM printers p JOIN printer_secrets ps ON p.id = ps.printer_id WHERE ps.serial = ${serial}`
         );
 
-        if (!tracked) {
-          const printer = await drizzleDb.get<{ id: number }>(
-            sql`SELECT p.id FROM printers p JOIN printer_secrets ps ON p.id = ps.printer_id WHERE ps.serial = ${serial}`
+        if (printer) {
+          const openJob = await drizzleDb.get(
+            sql`SELECT id FROM print_jobs WHERE printer_id = ${printer.id} AND status = 'printing' LIMIT 1`
           );
 
-          if (printer) {
-            const linked = await linkExternalTaskToOpenJob(db, printer.id, status.task_id);
+          if (!openJob) {
+            const filename = (status.gcode_file ?? status.subtask_name ?? '').toString();
+            const normalized = filename.split('/').pop()?.replace(/\.gcode\.3mf$/i, '').toLowerCase() ?? '';
 
-            if (!linked) {
-              const filename = (status.gcode_file ?? status.subtask_name ?? '').toString();
-              const normalized = filename.split('/').pop()?.replace(/\.gcode\.3mf$/i, '').toLowerCase() ?? '';
-
-              let matchedModule: { id: number; name: string } | null = null;
-              if (normalized) {
-                matchedModule = await drizzleDb.get(sql`
-                  SELECT id, name FROM print_modules
-                  WHERE LOWER(filename) LIKE ${`%${normalized}%`}
-                     OR LOWER(name)     LIKE ${`%${normalized}%`}
-                  LIMIT 1
-                `) ?? null;
-              }
-
-              data.detected_external = {
-                printer_id: printer.id,
-                task_id: status.task_id,
-                gcode_file: filename || null,
-                suggested_module_id: matchedModule?.id ?? null,
-                suggested_module_name: matchedModule?.name ?? null,
-              };
+            let matchedModule: { id: number; name: string } | null = null;
+            if (normalized) {
+              matchedModule = await drizzleDb.get(sql`
+                SELECT id, name FROM print_modules
+                WHERE LOWER(filename) LIKE ${`%${normalized}%`}
+                   OR LOWER(name)     LIKE ${`%${normalized}%`}
+                LIMIT 1
+              `) ?? null;
             }
+
+            data.detected_external = {
+              printer_id: printer.id,
+              task_id: status.task_id,
+              gcode_file: filename || null,
+              suggested_module_id: matchedModule?.id ?? null,
+              suggested_module_name: matchedModule?.name ?? null,
+            };
           }
         }
       } catch (e) {
