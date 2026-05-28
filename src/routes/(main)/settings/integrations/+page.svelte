@@ -16,6 +16,7 @@
   let editingSetOriginalSku = '';
   let editingSetItems: SetItem[] = [];
   let skuSearch = '';
+  let catalogSearch = '';
 
   function openSetEditor(sku: string | null) {
     if (sku) {
@@ -23,10 +24,9 @@
       editingSetSkuInput = sku;
       editingSetOriginalSku = sku;
       const existing = (data.skuMappings as any[] ?? []).filter((m) => m.shopify_sku === sku);
-      editingSetItems = existing.map((m) => ({
-        object_id: m.object_id,
-        quantity: m.quantity,
-      }));
+      editingSetItems = existing.length
+        ? existing.map((m) => ({ object_id: m.object_id, quantity: m.quantity }))
+        : [{ object_id: 0, quantity: 1 }];
     } else {
       editingSetSku = '';
       editingSetSkuInput = '';
@@ -64,6 +64,25 @@
       groups[m.shopify_sku].push(m);
     }
     return groups;
+  })();
+
+  // SKU → its mapped items, for showing status in the catalog list.
+  $: mappingsBySku = (() => {
+    const m: Record<string, any[]> = {};
+    for (const row of (data.skuMappings as any[] ?? [])) {
+      (m[row.shopify_sku] ??= []).push(row);
+    }
+    return m;
+  })();
+
+  $: filteredCatalog = (() => {
+    const q = catalogSearch.toLowerCase().trim();
+    return (data.shopifySkus as any[] ?? []).filter((s) =>
+      !q ||
+      s.sku.toLowerCase().includes(q) ||
+      (s.product_title ?? '').toLowerCase().includes(q) ||
+      (s.variant_title ?? '').toLowerCase().includes(q)
+    );
   })();
 
   // ── Inline inventory item creator ───────────────────────────────────────────
@@ -203,12 +222,83 @@
       </div>
     </div>
 
+    <!-- ── Shopify SKU Catalog ──────────────────────────────────────── -->
+    <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-4">
+      <div class="px-5 py-4 border-b border-zinc-50 dark:border-[#1a1a1a]">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Shopify SKUs</p>
+        <p class="text-xs text-zinc-400 mt-0.5">All SKUs pulled from Shopify — attach the inventory items each one should deduct</p>
+      </div>
+
+      {#if (data.shopifySkus as any[] ?? []).length > 0}
+        <!-- Search -->
+        <div class="px-5 py-3 border-b border-zinc-50 dark:border-[#1a1a1a]">
+          <input
+            type="search"
+            bind:value={catalogSearch}
+            placeholder="Filter by SKU or product…"
+            class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+            aria-label="Filter Shopify SKUs"
+          />
+        </div>
+
+        {#if filteredCatalog.length > 0}
+          <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a] max-h-[28rem] overflow-y-auto">
+            {#each filteredCatalog as s (s.sku)}
+              {@const mapped = mappingsBySku[s.sku] ?? []}
+              <div class="px-5 py-3.5 flex items-start gap-4 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200 font-mono truncate">{s.sku}</p>
+                  {#if s.product_title || s.variant_title}
+                    <p class="text-xs text-zinc-400 mt-0.5 truncate">{[s.product_title, s.variant_title].filter(Boolean).join(' — ')}</p>
+                  {/if}
+                  {#if mapped.length > 0}
+                    <div class="flex flex-wrap gap-1 mt-1.5">
+                      {#each mapped as item}
+                        <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-[#1e1e1e] text-zinc-600 dark:text-zinc-400">
+                          {getItemLabel(item)}{#if item.quantity !== 1}<span class="text-zinc-400">×{item.quantity}</span>{/if}
+                        </span>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+                <button
+                  onclick={() => openSetEditor(s.sku)}
+                  class="shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium border transition-colors
+                    {mapped.length > 0
+                      ? 'border-zinc-200 dark:border-[#262626] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1a1a1a]'
+                      : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700'}"
+                  aria-label="{mapped.length > 0 ? 'Edit' : 'Add objects to'} mapping for {s.sku}"
+                >
+                  {#if mapped.length > 0}
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    Edit
+                  {:else}
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    Add objects
+                  {/if}
+                </button>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="px-5 py-6 text-center">
+            <p class="text-sm text-zinc-400">No SKUs match your filter</p>
+          </div>
+        {/if}
+      {:else}
+        <div class="px-5 py-10 text-center">
+          <p class="text-sm text-zinc-400 mb-1">No SKUs cached yet</p>
+          <p class="text-xs text-zinc-400">Use “Refresh SKUs” in the Shopify panel above to pull them from your store.</p>
+        </div>
+      {/if}
+    </div>
+
     <!-- ── SKU Mappings ───────────────────────────────────────────── -->
     <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-4">
       <div class="px-5 py-4 flex items-center justify-between border-b border-zinc-50 dark:border-[#1a1a1a]">
         <div>
           <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">SKU Mappings</p>
-          <p class="text-xs text-zinc-400 mt-0.5">Map Shopify SKUs to inventory items deducted on each order</p>
+          <p class="text-xs text-zinc-400 mt-0.5">All configured mappings — including any typed manually for SKUs not in the catalog</p>
         </div>
         <button
           onclick={() => openSetEditor(null)}
@@ -360,28 +450,19 @@
       >
         <div class="p-6 space-y-5">
 
-          <!-- SKU input — pick from the synced Shopify catalog, or type a SKU not yet synced -->
+          <!-- SKU input — usually pre-filled from the catalog list; editable as a manual fallback -->
           <div>
             <label for="shopifySku" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Shopify SKU *</label>
             <input
               id="shopifySku"
               type="text"
               name="shopifySku"
-              list="shopify-sku-options"
               bind:value={editingSetSkuInput}
               required
               autocomplete="off"
-              placeholder="Pick a synced SKU or type one…"
+              placeholder="e.g., WIDGET-BLK-XL"
               class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm font-mono text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 placeholder:font-sans focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
             />
-            <datalist id="shopify-sku-options">
-              {#each (data.shopifySkus as any[] ?? []) as s}
-                <option value={s.sku}>{[s.product_title, s.variant_title].filter(Boolean).join(' — ')}</option>
-              {/each}
-            </datalist>
-            {#if (data.shopifySkus as any[] ?? []).length === 0}
-              <p class="text-[11px] text-zinc-400 mt-1.5">No SKUs cached yet — use “Refresh SKUs” above to pull them from Shopify. You can still type a SKU manually.</p>
-            {/if}
           </div>
 
           <!-- Items -->
