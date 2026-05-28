@@ -456,32 +456,6 @@ export async function getPrintJobByExternalTaskId(
 }
 
 /**
- * Backfill: link a Pi-reported task_id onto an open `printing` job that has no
- * external_task_id yet. UI-started prints insert with NULL, so polling later
- * sees their task_id as "unknown" — adopting it here prevents that.
- * Returns true if an open job was linked.
- */
-export async function linkExternalTaskToOpenJob(
-  db: D1Database,
-  printerId: number,
-  externalTaskId: string,
-): Promise<boolean> {
-  const drizzleDb = getDb(db);
-  const now = Math.floor(Date.now() / 1000);
-  const orphan = await drizzleDb.get<{ id: number }>(sql`
-    SELECT id FROM print_jobs
-    WHERE printer_id = ${printerId} AND status = 'printing' AND external_task_id IS NULL
-    ORDER BY start_time DESC LIMIT 1
-  `);
-  if (!orphan) return false;
-  await drizzleDb.run(sql`
-    UPDATE print_jobs SET external_task_id = ${externalTaskId}, updated_at = ${now}
-    WHERE id = ${orphan.id}
-  `);
-  return true;
-}
-
-/**
  * Create a job for an externally-started print the user explicitly confirmed.
  * Idempotent on external_task_id; never closes/fails other jobs.
  */

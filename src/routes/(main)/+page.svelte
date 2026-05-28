@@ -25,8 +25,16 @@
   import { fileHandlerEnabled, directPrinterEnabled, printerPiEnabled, manualModeEnabled } from '$lib/stores/connectionToggles';
   import { isDesktop } from '$lib/stores/desktop';
   import type { TransportMode } from '$lib/types';
+  import { computeDepletion, worstStatus, STATUS_DOT } from '$lib/spool-status';
 
   export let data: PageData;
+
+  // Aggregate spool depletion status for the Materials card dot.
+  $: spoolUsageById = new Map((data.spoolUsage ?? []).map((u) => [Number(u.preset_id), u]));
+  $: spoolStatuses = (data.spoolPresets ?? [])
+    .filter((p) => (p.in_storage ?? 0) > 0 || (spoolUsageById.get(Number(p.id))?.used_30d ?? 0) > 0)
+    .map((p) => computeDepletion(p.in_storage ?? 0, spoolUsageById.get(Number(p.id))?.used_30d ?? 0).status);
+  $: spoolWorstStatus = worstStatus(spoolStatuses);
 
   let selectedPrinter: DashboardPrinter | null = null;
 
@@ -1049,14 +1057,20 @@
         </a>
 
       {:else if cell.type === 'storage'}
-        <!-- Storage Card -->
+        <!-- Storage Card (legacy alias for Spools) -->
         <a
           use:shine
-          href="/storage"
-          class="group bg-zinc-50 dark:bg-[#0c0c0f] border border-zinc-200/80 dark:border-[#1a1a22]
+          href="/spools"
+          class="group relative bg-zinc-50 dark:bg-[#0c0c0f] border border-zinc-200/80 dark:border-[#1a1a22]
                  rounded-xl p-2 card-lift card-shine
                  flex flex-col items-center justify-center overflow-hidden"
         >
+          {#if spoolWorstStatus !== 'ok'}
+            <span
+              class="absolute top-2 right-2 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-[#0c0c0f] {STATUS_DOT[spoolWorstStatus]} {spoolWorstStatus === 'empty' ? 'animate-pulse' : ''}"
+              title="{spoolWorstStatus === 'empty' ? 'A spool is out of stock' : 'A spool is running low'}"
+            ></span>
+          {/if}
           <div class="group-hover:scale-110 transition-transform duration-500 ease-out">
             <svg class="w-[clamp(1.5rem,4vw,2.5rem)] h-[clamp(1.5rem,4vw,2.5rem)] text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
@@ -1071,10 +1085,16 @@
         <a
           use:shine
           href="/spools"
-          class="group bg-zinc-50 dark:bg-[#0c0c0f] border border-zinc-200/80 dark:border-[#1a1a22]
+          class="group relative bg-zinc-50 dark:bg-[#0c0c0f] border border-zinc-200/80 dark:border-[#1a1a22]
                  rounded-xl p-2 card-lift card-shine
                  flex flex-col items-center justify-center overflow-hidden"
         >
+          {#if spoolWorstStatus !== 'ok'}
+            <span
+              class="absolute top-2 right-2 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-[#0c0c0f] {STATUS_DOT[spoolWorstStatus]} {spoolWorstStatus === 'empty' ? 'animate-pulse' : ''}"
+              title="{spoolWorstStatus === 'empty' ? 'A spool is out of stock' : 'A spool is running low'}"
+            ></span>
+          {/if}
           <div class="group-hover:scale-110 transition-transform duration-500 ease-out">
             <svg class="w-[clamp(1.5rem,4vw,2.5rem)] h-[clamp(1.5rem,4vw,2.5rem)] text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4.098 19.902a3.75 3.75 0 0 0 5.304 0l6.401-6.402M6.75 21A3.75 3.75 0 0 1 3 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125V11.25a1.5 1.5 0 0 1-1.5 1.5H6.75" />
