@@ -1,7 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '../db';
-import type { PrintJob, PrintJobFull, PrintJobSpool, StartPrintResponse, ServerResponse } from '../types';
+import type { PrintJob, PrintJobFull, PrintJobWithDetails, PrintJobSpool, StartPrintResponse, ServerResponse } from '../types';
 import { getPrinterById, getLoadedSpools } from './printers';
 import { getSpoolById, updateSpoolWeight } from './spools';
 import { getPrintModuleById, getModuleFilamentSlots } from './modules';
@@ -60,7 +60,7 @@ export async function getRecentPrintJobs(db: D1Database, limit = 10): Promise<Pr
   return (rows ?? []) as unknown as PrintJobFull[];
 }
 
-export async function getAllPrintJobs(db: D1Database): Promise<PrintJobFull[]> {
+export async function getAllPrintJobs(db: D1Database): Promise<PrintJobWithDetails[]> {
   const drizzleDb = getDb(db);
   const rows = await drizzleDb.all<PrintJob>(sql`
     SELECT
@@ -73,7 +73,7 @@ export async function getAllPrintJobs(db: D1Database): Promise<PrintJobFull[]> {
     LEFT JOIN print_modules pm ON pj.module_id  = pm.id
     ORDER BY pj.created_at DESC
   `);
-  return (rows ?? []) as unknown as PrintJobFull[];
+  return (rows ?? []) as unknown as PrintJobWithDetails[];
 }
 
 /**
@@ -194,7 +194,7 @@ export async function getAllPrintJobsForStats(db: D1Database): Promise<PrintJobS
   }));
 }
 
-export async function getActivePrintJobs(db: D1Database): Promise<PrintJobFull[]> {
+export async function getActivePrintJobs(db: D1Database): Promise<PrintJobWithDetails[]> {
   const drizzleDb = getDb(db);
   const rows = await drizzleDb.all<PrintJob>(sql`
     SELECT
@@ -213,7 +213,7 @@ export async function getActivePrintJobs(db: D1Database): Promise<PrintJobFull[]
     WHERE pj.status = 'printing'
     ORDER BY pj.created_at DESC
   `);
-  return (rows ?? []) as unknown as PrintJobFull[];
+  return (rows ?? []) as unknown as PrintJobWithDetails[];
 }
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────

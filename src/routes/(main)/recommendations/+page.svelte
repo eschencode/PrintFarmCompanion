@@ -87,13 +87,13 @@
       >
         <option value="">— none —</option>
         {#each data.printers as p}
-          <option value={p.id}>{p.name} {p.printer_model_name ? `(${p.printer_model_name})` : ''}</option>
+          <option value={p.id}>{p.name} {p.preset?.model ? `(${p.preset.model})` : ''}</option>
         {/each}
       </select>
       {#if data.loadedSpool}
         <span class="text-sm text-zinc-500">
-          loaded: {data.loadedSpool.brand ?? ''} {data.loadedSpool.material ?? ''}
-          {data.loadedSpool.color ?? ''} · {Math.round(data.loadedSpool.remaining_weight)}g remaining
+          loaded: {data.loadedSpool.preset?.brand ?? ''} {data.loadedSpool.preset?.material ?? ''}
+          {data.loadedSpool.preset?.color ?? ''} · {Math.round(data.loadedSpool.remaining_weight)}g remaining
         </span>
       {/if}
     </section>
@@ -152,7 +152,7 @@
               <div class="text-zinc-400 dark:text-zinc-600 tabular-nums w-6 text-right">{i + 1}.</div>
               <div class="flex-1">
                 <div class="flex items-center gap-2">
-                  <span class="font-medium">{s.preset_name}</span>
+                  <span class="font-medium">{s.object_name}</span>
                   <span class="text-xs px-2 py-0.5 rounded border {PRIORITY_COLORS[s.priority]}">{s.priority}</span>
                 </div>
                 <div class="text-xs text-zinc-500 mt-0.5">{s.reason}</div>
@@ -189,7 +189,7 @@
                   <tr class="border-t border-zinc-200/60 dark:border-[#1a1a22]">
                     <td class="px-4 py-2 tabular-nums text-zinc-500">{i + 1}</td>
                     <td class="px-4 py-2">{q.module_name}</td>
-                    <td class="px-4 py-2 text-zinc-500">{q.object_sku}</td>
+                    <td class="px-4 py-2 text-zinc-500">{q.object_name}</td>
                     <td class="px-4 py-2">
                       <span class="text-xs px-2 py-0.5 rounded border {PRIORITY_COLORS[q.priority]}">{q.priority}</span>
                     </td>
@@ -231,7 +231,7 @@
                 // Recover priority for this slug from data.prioritized
                 const tiers = data.prioritized;
                 for (const p of ['CRITICAL','HIGH','MEDIUM','LOW','VERY_LOW'] as InventoryPriority[]) {
-                  const m = tiers[p].find(x => x.slug === inv.slug);
+                  const m = tiers[p].find(x => x.id === inv.id);
                   if (m) return m;
                 }
                 return null;
@@ -239,7 +239,7 @@
               <tr class="border-t border-zinc-200/60 dark:border-[#1a1a22]">
                 <td class="px-4 py-2">
                   <div class="font-medium">{inv.name}</div>
-                  <div class="text-xs text-zinc-500">{inv.slug}</div>
+                  <div class="text-xs text-zinc-500">#{inv.id}</div>
                 </td>
                 <td class="px-4 py-2 text-right tabular-nums {inv.in_stock <= inv.min_threshold ? 'text-red-500 dark:text-red-400' : ''}">
                   {inv.in_stock}

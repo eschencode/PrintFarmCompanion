@@ -144,8 +144,6 @@
 
       tauriUnlisteners = [unlistenStatus, unlistenConnected, unlistenDisconnected];
     }
-
-    return () => clearInterval(tickerInterval);
   });
 
   async function openFileLocally(filePath: string, moduleName: string, printerId: number) {
@@ -312,7 +310,11 @@
     delete piPollingIntervals[serial];
   }
 
-  onDestroy(() => { Object.values(piPollingIntervals).forEach(clearTimeout); });
+  onDestroy(() => {
+    Object.values(piPollingIntervals).forEach(clearTimeout);
+    clearInterval(tickerInterval);
+    tauriUnlisteners.forEach((u) => u());
+  });
 
   let controlLoading: string | null = null;
 
@@ -664,7 +666,7 @@
   function getAllGrids(): { name: string; config: GridCell[]; rows: number; cols: number }[] {
     if (data.gridPresets && data.gridPresets.length > 0) {
       // Sort to put default first
-      const sorted = [...data.gridPresets].sort((a, b) => (b.is_default || 0) - (a.is_default || 0));
+      const sorted = [...data.gridPresets].sort((a, b) => Number(b.is_default) - Number(a.is_default));
       return sorted.map(preset => ({
         name: preset.name,
         config: parseGridConfig(preset.grid_config),
@@ -997,7 +999,6 @@
             piLive={piStatusBySerial[printer.printer_serial as string]}
             liveIsStarting={startingPrinterIds.has(Number(printer.id))}
             activePrintJobs={data.activePrintJobs}
-            spools={data.spools}
             printModules={data.printModules}
             startQueue={startQueue}
             startQueueTotal={startQueueTotal}

@@ -11,7 +11,8 @@ import {
   FORECAST_TRIALS,
   RISK_THRESHOLDS
 } from '$lib/recomendation/forecast';
-import { getAllPrinters, getLoadedSpools, getSpoolById } from '$lib/server';
+import { getAllPrintersFull, getLoadedSpools, getSpoolById, getSpoolPresetById } from '$lib/server';
+import type { SpoolWithPreset } from '$lib/types';
 
 export const load: PageServerLoad = async ({ platform, url }) => {
   const db = platform?.env?.DB;
@@ -33,7 +34,7 @@ export const load: PageServerLoad = async ({ platform, url }) => {
   const printerIdRaw = url.searchParams.get('printerId');
   const selectedPrinterId = printerIdRaw ? Number(printerIdRaw) : null;
 
-  const printers = await getAllPrinters(db);
+  const printers = await getAllPrintersFull(db);
 
   const builder = new AIContextBuilder(db);
   const modules = await builder.getModulesContext();
@@ -47,7 +48,7 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 
   let spoolSuggestions: Awaited<ReturnType<AIRecommendationService['suggestSpoolToLoad']>> = [];
   let queue: Awaited<ReturnType<typeof getSuggestedPrintQueue>> = [];
-  let loadedSpool: Awaited<ReturnType<typeof getSpoolById>> | null = null;
+  let loadedSpool: SpoolWithPreset | null = null;
 
   if (ai && selectedPrinterId) {
     const service = new AIRecommendationService(db, ai);
@@ -58,7 +59,11 @@ export const load: PageServerLoad = async ({ platform, url }) => {
     const loadedSlots = await getLoadedSpools(db, selectedPrinterId);
     const slot0 = loadedSlots.find(s => s.slot_index === 0);
     if (slot0?.spool_id) {
-      loadedSpool = await getSpoolById(db, slot0.spool_id);
+      const spool = await getSpoolById(db, slot0.spool_id);
+      if (spool) {
+        const preset = spool.preset_id ? await getSpoolPresetById(db, spool.preset_id) : null;
+        loadedSpool = { ...spool, preset };
+      }
       queue = await getSuggestedPrintQueue(db, selectedPrinterId, prioritized, modules, forecast);
     }
   }

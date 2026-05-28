@@ -2,14 +2,14 @@
   import { fileHandlerStore } from '$lib/stores/fileHandler';
   import { fileHandlerEnabled, directPrinterEnabled, printerPiEnabled, manualModeEnabled } from '$lib/stores/connectionToggles';
   import { isDesktop } from '$lib/stores/desktop';
-  import type { Printer } from '$lib/types';
+  import type { PrinterFull } from '$lib/types';
 
   /**
    * Settings section for enabling/disabling and testing the three printer connection modes:
    * File Handler (local .3mf opener), Direct Printer (Tauri MQTT), and Printer Pi (bridge).
    * Each connection manages its own test state internally.
    */
-  export let printers: Printer[];
+  export let printers: PrinterFull[];
 
   $: fhEnabled = $fileHandlerEnabled;
   $: dpEnabled = $directPrinterEnabled;
@@ -52,7 +52,7 @@
   }
 
   async function testPrinterPi() {
-    const serial = printers.find(p => p.secrets?.serial)?.printer_serial;
+    const serial = printers.find(p => p.secrets?.serial)?.secrets?.serial;
     if (!serial) {
       testStatus = { ...testStatus, printerPi: { testing: false, result: 'failed' } };
       return;

@@ -124,7 +124,7 @@
                 </button>
                 <form method="POST" action="?/deletePrinterModel" use:enhance={() => async ({ result, update }) => { if (result.type === 'failure') alert((result.data as any)?.error || 'Failed to delete'); await update(); }}>
                   <input type="hidden" name="modelId" value={model.id} />
-                  <button type="submit" class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors text-xs" onclick={(e) => { if (!confirm(`Delete model ${model.name}?`)) e.preventDefault(); }}>
+                  <button type="submit" class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors text-xs" onclick={(e) => { if (!confirm(`Delete model ${model.brand} ${model.model}?`)) e.preventDefault(); }}>
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                     Delete
                   </button>
@@ -241,7 +241,7 @@
 <!-- Printer Editor Modal -->
 {#if showPrinterEditor}
   <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6" onclick={closePrinterEditor} onkeydown={(e) => e.key === 'Escape' && closePrinterEditor()} role="button" tabindex="0" aria-label="Close printer editor">
-    <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg max-w-md w-full" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+    <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg max-w-md w-full" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <div class="px-6 py-4 border-b border-zinc-200 dark:border-[#262626] flex justify-between items-center">
         <div>
           <h2 class="text-xl font-medium text-zinc-900 dark:text-zinc-50">{editingPrinter ? 'Edit Printer' : 'Add Printer'}</h2>

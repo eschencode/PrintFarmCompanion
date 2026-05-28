@@ -2,7 +2,7 @@ import type {
   PrintModuleFull,
   DashboardPrinter,
   SpoolWithPreset,
-  PrintJobFull,
+  PrintJobWithDetails,
 } from "$lib/types";
 
 type CategorizedModules = {
@@ -22,8 +22,8 @@ const emptyCategorizedModules: CategorizedModules = {
 /** Returns the active (status = 'printing') job for a given printer, or undefined. */
 export function getActivePrintJob(
   printerId: number,
-  activePrintJobs: PrintJobFull[],
-): PrintJobFull | undefined {
+  activePrintJobs: PrintJobWithDetails[],
+): PrintJobWithDetails | undefined {
   return activePrintJobs.find((job) => job.printer_id === printerId);
 }
 
@@ -33,8 +33,8 @@ export function getActivePrintJob(
  */
 export function getLastPrintJob(
   printerId: number,
-  printJobs: PrintJobFull[],
-): PrintJobFull | null {
+  printJobs: PrintJobWithDetails[],
+): PrintJobWithDetails | null {
   if (!printJobs?.length) return null;
   const completed = printJobs.filter(
     (job) => job.printer_id === printerId && job.status !== "printing",

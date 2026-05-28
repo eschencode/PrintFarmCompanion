@@ -166,7 +166,7 @@
             <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-1 font-mono truncate">{module.filename}</p>
           {/if}
         </div>
-        <button onclick={close} class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 shrink-0 mt-1">
+        <button onclick={close} aria-label="Close" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 shrink-0 mt-1">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
           </svg>
