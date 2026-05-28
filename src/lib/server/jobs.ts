@@ -455,6 +455,59 @@ export async function getPrintJobByExternalTaskId(
   return row ?? null;
 }
 
+/**
+ * Backfill: link a Pi-reported task_id onto an open `printing` job that has no
+ * external_task_id yet. UI-started prints insert with NULL, so polling later
+ * sees their task_id as "unknown" — adopting it here prevents that.
+ * Returns true if an open job was linked.
+ */
+export async function linkExternalTaskToOpenJob(
+  db: D1Database,
+  printerId: number,
+  externalTaskId: string,
+): Promise<boolean> {
+  const drizzleDb = getDb(db);
+  const now = Math.floor(Date.now() / 1000);
+  const orphan = await drizzleDb.get<{ id: number }>(sql`
+    SELECT id FROM print_jobs
+    WHERE printer_id = ${printerId} AND status = 'printing' AND external_task_id IS NULL
+    ORDER BY start_time DESC LIMIT 1
+  `);
+  if (!orphan) return false;
+  await drizzleDb.run(sql`
+    UPDATE print_jobs SET external_task_id = ${externalTaskId}, updated_at = ${now}
+    WHERE id = ${orphan.id}
+  `);
+  return true;
+}
+
+/**
+ * Create a job for an externally-started print the user explicitly confirmed.
+ * Idempotent on external_task_id; never closes/fails other jobs.
+ */
+export async function adoptExternalPrintJob(
+  db: D1Database,
+  params: { printerId: number; moduleId: number | null; externalTaskId: string },
+): Promise<ServerResponse> {
+  const drizzleDb = getDb(db);
+  try {
+    const existing = await drizzleDb.get(
+      sql`SELECT id FROM print_jobs WHERE external_task_id = ${params.externalTaskId} LIMIT 1`,
+    );
+    if (existing) return { success: true };
+
+    const now = Math.floor(Date.now() / 1000);
+    const result = await drizzleDb.run(sql`
+      INSERT INTO print_jobs (module_id, printer_id, start_time, status, external_task_id, created_at, updated_at)
+      VALUES (${params.moduleId}, ${params.printerId}, ${now}, 'printing', ${params.externalTaskId}, ${now}, ${now})
+    `);
+    return { success: true, data: { id: result.meta.last_row_id } };
+  } catch (error) {
+    console.error('Error adopting external print job:', error);
+    return { success: false, error: 'Failed to adopt external print job' };
+  }
+}
+
 export async function createPrintJob(
   db: D1Database,
   job: {

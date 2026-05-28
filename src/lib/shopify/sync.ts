@@ -6,7 +6,7 @@
  */
 
 import type { D1Database } from '@cloudflare/workers-types';
-import { ShopifyClient, type ShopifyOrder } from './client';
+import { ShopifyClient, type ShopifyOrder, type ShopifyVariantRow } from './client';
 import { sql } from 'drizzle-orm';
 import { getDb } from '../db';
 
@@ -61,6 +61,32 @@ export class ShopifySyncService {
             orders_processed: 0,
             items_deducted: 0,
         };
+    }
+
+    /**
+     * Refresh the SKU catalog cache (wipe + reinsert) from Shopify products.
+     * SKUs aren't guaranteed unique per variant in Shopify, so we dedupe by sku
+     * (first occurrence wins). The catalog is disposable — re-runnable any time.
+     */
+    async syncSkus(): Promise<{ success: boolean; count: number; error?: string }> {
+        try {
+            const variants = await this.client.getAllVariants();
+            const bySku = new Map<string, ShopifyVariantRow>();
+            for (const v of variants) if (!bySku.has(v.sku)) bySku.set(v.sku, v);
+
+            const drizzleDb = getDb(this.db);
+            const now = Math.floor(Date.now() / 1000);
+            await drizzleDb.run(sql`DELETE FROM shopify_skus`);
+            for (const v of bySku.values()) {
+                await drizzleDb.run(sql`
+                    INSERT INTO shopify_skus (sku, product_title, variant_title, product_id, variant_id, synced_at)
+                    VALUES (${v.sku}, ${v.product_title}, ${v.variant_title}, ${v.product_id}, ${v.variant_id}, ${now})
+                `);
+            }
+            return { success: true, count: bySku.size };
+        } catch (err) {
+            return { success: false, count: 0, error: String(err) };
+        }
     }
 
     /**

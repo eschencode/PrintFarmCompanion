@@ -552,6 +552,30 @@ export const shopifyOrders = sqliteTable(
 );
 
 // =============================================================================
+// SHOPIFY SKUS (catalog cache)
+// SCOPE: per-workspace
+// Disposable mirror of Shopify product variants, refreshed (wipe + reinsert)
+// on demand. Powers the SKU picker in the mapping UI. NOT user data —
+// shopify_sku_mapping references the sku *string*, not a row here, so a mapping
+// can outlive a catalog entry (shown as "not in catalog").
+// =============================================================================
+export const shopifySkus = sqliteTable(
+  "shopify_skus",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sku: text("sku").notNull(),
+    productTitle: text("product_title"),
+    variantTitle: text("variant_title"),
+    productId: text("product_id"),
+    variantId: text("variant_id"),
+    syncedAt: integer("synced_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [uniqueIndex("uniq_shopify_skus_sku").on(t.sku)],
+);
+
+// =============================================================================
 // PRINTER QUEUED JOBS (per-printer recommended-next-up list)
 // SCOPE: per-workspace (inherited via printer)
 // Note: this is a *recommendation* queue, not a binding next-print contract.

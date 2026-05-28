@@ -16,6 +16,7 @@
   import SpoolSelectorModal from '$lib/components/dashboard/SpoolSelectorModal.svelte';
   import ModuleSelectorModal from '$lib/components/dashboard/ModuleSelectorModal.svelte';
   import PrinterDetailModal from '$lib/components/dashboard/PrinterDetailModal.svelte';
+  import ExternalPrintDetectedModal from '$lib/components/dashboard/ExternalPrintDetectedModal.svelte';
   import type { SubmitFunction } from '@sveltejs/kit';
   import { onMount, onDestroy } from 'svelte';
   import { writable, get } from 'svelte/store';
@@ -148,6 +149,19 @@
   // Keyed by printer_serial — receives updates from Pi polling OR direct MQTT events
   let piStatusBySerial: Record<string, PiStatus> = {};
   let piPollingIntervals: Record<string, ReturnType<typeof setTimeout>> = {};
+
+  // ── Externally-started print detection ────────────────────────────────────
+  // Pi reports a print we aren't tracking → prompt the user to add it.
+  type DetectedExternal = {
+    printer_id: number;
+    task_id: string;
+    gcode_file: string | null;
+    suggested_module_id: number | null;
+    suggested_module_name: string | null;
+  };
+  let detectedExternal: DetectedExternal | null = null;
+  // task_ids the user already acted on (added or dismissed) — don't re-prompt this session.
+  const handledExternalTasks = new Set<string>();
   // Guard: only trigger reload/auto-start once per serial per page load
   const reloadTriggered = new Set<string>();
 
@@ -216,7 +230,12 @@
           remaining_time?: number | null; nozzle_temp?: number | null; bed_temp?: number | null; chamber_temp?: number | null;
           subtask_name?: string | null; gcode_file?: string | null;
         } | null;
+        detected_external?: DetectedExternal;
       };
+      // Surface an externally-started print for confirmation (one prompt at a time).
+      if (d.detected_external && !handledExternalTasks.has(d.detected_external.task_id) && !detectedExternal) {
+        detectedExternal = d.detected_external;
+      }
       if (!d.status) return;
       const stateLabels: Record<string, string> = {
         IDLE:    'Idle',
@@ -568,6 +587,19 @@
         closePrinterModal();
         window.location.reload();
       }
+    };
+  };
+
+  function dismissDetectedExternal() {
+    if (detectedExternal) handledExternalTasks.add(detectedExternal.task_id);
+    detectedExternal = null;
+  }
+
+  const confirmExternalEnhance: SubmitFunction = () => {
+    return async ({ result }) => {
+      if (detectedExternal) handledExternalTasks.add(detectedExternal.task_id);
+      detectedExternal = null;
+      if (result.type === 'success') await invalidateAll();
     };
   };
 
@@ -1181,6 +1213,17 @@
     onEnqueue={enqueueStart}
   />
 
+{/if}
+
+{#if detectedExternal}
+  {@const ext = detectedExternal}
+  {@const detectedPrinter = data.printers.find((p) => Number(p.id) === Number(ext.printer_id))}
+  <ExternalPrintDetectedModal
+    detected={ext}
+    printerName={detectedPrinter?.name ?? `Printer ${ext.printer_id}`}
+    onClose={dismissDetectedExternal}
+    confirmEnhance={confirmExternalEnhance}
+  />
 {/if}
 
 {#if selectedPrinter && showFailureReasonModal}

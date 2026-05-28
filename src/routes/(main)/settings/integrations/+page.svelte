@@ -72,6 +72,7 @@
 
   // ── Shopify test result ─────────────────────────────────────────────────────
   let testingShopify = false;
+  let syncingSkus = false;
   let shopifyTestResult: { success: boolean; shopName?: string; error?: string } | null = null;
 
   async function testShopifyConnection() {
@@ -145,6 +146,15 @@
                 Sync now
               </button>
             </form>
+            <form method="POST" action="?/syncShopifySkus" use:enhance={() => { syncingSkus = true; return async ({ update }) => { await update(); syncingSkus = false; }; }}>
+              <button type="submit" disabled={syncingSkus} class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1a1a1a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors" aria-label="Refresh SKU list from Shopify">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                {syncingSkus ? 'Refreshing…' : 'Refresh SKUs'}
+              </button>
+            </form>
+            {#if (data.shopifySkus as any[] ?? []).length > 0}
+              <span class="text-xs text-zinc-400">{(data.shopifySkus as any[]).length} SKUs cached</span>
+            {/if}
             <button
               type="button"
               onclick={testShopifyConnection}
@@ -350,18 +360,28 @@
       >
         <div class="p-6 space-y-5">
 
-          <!-- SKU input -->
+          <!-- SKU input — pick from the synced Shopify catalog, or type a SKU not yet synced -->
           <div>
             <label for="shopifySku" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Shopify SKU *</label>
             <input
               id="shopifySku"
               type="text"
               name="shopifySku"
+              list="shopify-sku-options"
               bind:value={editingSetSkuInput}
               required
-              placeholder="e.g., WIDGET-BLK-XL"
+              autocomplete="off"
+              placeholder="Pick a synced SKU or type one…"
               class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3.5 py-2.5 text-sm font-mono text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 placeholder:font-sans focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
             />
+            <datalist id="shopify-sku-options">
+              {#each (data.shopifySkus as any[] ?? []) as s}
+                <option value={s.sku}>{[s.product_title, s.variant_title].filter(Boolean).join(' — ')}</option>
+              {/each}
+            </datalist>
+            {#if (data.shopifySkus as any[] ?? []).length === 0}
+              <p class="text-[11px] text-zinc-400 mt-1.5">No SKUs cached yet — use “Refresh SKUs” above to pull them from Shopify. You can still type a SKU manually.</p>
+            {/if}
           </div>
 
           <!-- Items -->

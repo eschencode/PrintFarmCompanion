@@ -8,7 +8,7 @@ import { getDb } from '$lib/db';
 
 export const load: PageServerLoad = async ({ platform }) => {
   const database = platform?.env?.DB;
-  if (!database) return { shopifyConfigured: false, shopifySyncState: null, shopifyRecentOrders: [], skuMappings: [], inventoryItems: [], spoolPresets: [] };
+  if (!database) return { shopifyConfigured: false, shopifySyncState: null, shopifyRecentOrders: [], skuMappings: [], shopifySkus: [], inventoryItems: [], spoolPresets: [] };
 
   const drizzleDb = getDb(database);
   const shopifyConfigured = !!(platform?.env?.SHOPIFY_STORE_DOMAIN && platform?.env?.SHOPIFY_ACCESS_TOKEN);
@@ -34,10 +34,16 @@ export const load: PageServerLoad = async ({ platform }) => {
         ORDER BY sm.shopify_sku, o.name`
   );
   const skuMappings = (skuMappingsRaw || []) as { id: number; shopify_sku: string; object_id: number; quantity: number; object_name: string }[];
+
+  const shopifySkusRaw = await drizzleDb.all(
+    sql`SELECT sku, product_title, variant_title FROM shopify_skus ORDER BY product_title, sku`
+  );
+  const shopifySkus = (shopifySkusRaw || []) as { sku: string; product_title: string | null; variant_title: string | null }[];
+
   const inventoryItems = await getAllObjects(database);
   const spoolPresets = await db.getAllSpoolPresets(database);
 
-  return { shopifyConfigured, shopifySyncState, shopifyRecentOrders, skuMappings, inventoryItems, spoolPresets };
+  return { shopifyConfigured, shopifySyncState, shopifyRecentOrders, skuMappings, shopifySkus, inventoryItems, spoolPresets };
 };
 
 export const actions: Actions = {
@@ -53,6 +59,22 @@ export const actions: Actions = {
       return { success: result.success, ordersProcessed: result.ordersProcessed, itemsDeducted: result.itemsDeducted, skippedOrders: result.skippedOrders, errors: result.errors.slice(0, 10) };
     } catch (err) {
       return fail(500, { error: `Sync failed: ${err}` });
+    }
+  },
+
+  syncShopifySkus: async ({ platform }) => {
+    const database = platform?.env?.DB;
+    const shopifyDomain = platform?.env?.SHOPIFY_STORE_DOMAIN;
+    const shopifyToken = platform?.env?.SHOPIFY_ACCESS_TOKEN;
+    if (!database || !shopifyDomain || !shopifyToken) return fail(400, { error: 'Shopify not configured' });
+    try {
+      const client = new ShopifyClient(shopifyDomain, shopifyToken);
+      const syncService = new ShopifySyncService(database, client);
+      const result = await syncService.syncSkus();
+      if (!result.success) return fail(500, { error: `SKU refresh failed: ${result.error}` });
+      return { success: true, message: `Synced ${result.count} SKU${result.count === 1 ? '' : 's'} from Shopify` };
+    } catch (err) {
+      return fail(500, { error: `SKU refresh failed: ${err}` });
     }
   },
 
