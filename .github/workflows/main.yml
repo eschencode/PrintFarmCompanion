@@ -10,6 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Shopify Sync API
+        # Hits the custom domain (behind Cloudflare Access). The Access service
+        # token gets us past Access; the Bearer token is checked by the Worker.
+        # --fail-with-body makes the job go red on any non-2xx so a broken sync
+        # is actually visible instead of silently green.
         run: |
-          curl -v -X GET "https://printfarmcompanion.pages.dev/api/cron-sync" \
+          curl --fail-with-body -sS "https://printfarm.tech/api/cron-sync" \
+            -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
+            -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

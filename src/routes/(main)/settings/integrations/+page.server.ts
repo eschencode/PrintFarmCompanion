@@ -93,7 +93,7 @@ export const actions: Actions = {
       const client = new ShopifyClient(config.storeDomain, config.accessToken);
       const syncService = new ShopifySyncService(database, client);
       const result = await syncService.baseline();
-      return { success: true, message: `Baseline set — ${result.recorded} orders marked as synced (no deductions). Future orders will deduct.` };
+      return { success: true, message: `Baseline set — recorded ${result.recorded} (${result.alreadyPresent} already present, ${result.fetched} fetched). Newest order recorded: #${result.latestOrderNumber}. Verify that matches your latest order in Shopify — only orders after it will deduct.` };
     } catch (err) {
       return fail(500, { error: `Baseline failed: ${err}` });
     }
