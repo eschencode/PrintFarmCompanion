@@ -24,7 +24,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   // Flatten secrets + derive status onto each printer for the UI
   const printers: DashboardPrinter[] = printersFull.map((p: PrinterFull) => {
     const slot0 = p.loaded_spools?.find(s => s.slot_index === 0);
-    const isActivePrinting = activePrintJobs.some((j: any) => j.printer_id === p.id);
+    const activeJob = activePrintJobs.find((j: any) => j.printer_id === p.id);
     return {
       ...p,
       printer_serial: p.secrets?.serial ?? null,
@@ -32,7 +32,13 @@ export const load: PageServerLoad = async ({ platform }) => {
       printer_access_code: p.secrets?.access_code ?? null,
       transport: p.secrets?.transport ?? 'auto',
       loaded_spool: slot0?.spool ?? null,
-      status: !p.active ? 'inactive' : isActivePrinting ? 'printing' : 'idle',
+      status: !p.active
+        ? 'inactive'
+        : activeJob?.status === 'print_finished'
+          ? 'finished'
+          : activeJob
+            ? 'printing'
+            : 'idle',
     };
   });
 

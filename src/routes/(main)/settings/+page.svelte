@@ -90,7 +90,7 @@
         </div>
         <div class="flex-1 min-w-0">
           <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Connections</p>
-          <p class="text-xs text-zinc-400 mt-0.5 leading-relaxed">Connection modes, auto-queue and quick-start behavior</p>
+          <p class="text-xs text-zinc-400 mt-0.5 leading-relaxed">Connection modes and quick-start behavior</p>
         </div>
         <svg class="w-4 h-4 text-zinc-300 dark:text-zinc-600 shrink-0 mt-0.5 group-hover:text-zinc-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>

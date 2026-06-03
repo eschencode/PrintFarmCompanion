@@ -1,15 +1,18 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { completePrintJob, distributeWeightAcrossSlots } from '$lib/server';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
 /**
  * POST /api/pi/webhook
  * Called by the Pi when a printer's MQTT status changes.
- * - Stores progress/layer data on every update
- * - On "success": auto-completes the job (spool deduction, inventory, printer reset)
- * - On "failed": auto-fails the job (failure reason recorded)
+ *
+ * The printer firmware reports FINISH whenever the gcode program ends — it
+ * can't tell a good print from spaghetti. So we never auto-complete: on a
+ * terminal state we move the job to `print_finished` ("awaiting confirmation")
+ * and the user confirms success/failure from the dashboard, which deducts spool
+ * weight and updates inventory. `failure_reason` is pre-filled when the printer
+ * itself aborted (gcode_state FAILED) as a hint for the confirmation UI.
  */
 export const POST: RequestHandler = async ({ request, platform }) => {
   const db = platform?.env?.DB;
@@ -55,36 +58,20 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   // milestones here.
 
   if (safeStatus === 'success' || safeStatus === 'failed') {
-    const job = await drizzleDb.get(sql`
-      SELECT pj.id, pj.printer_id, pj.module_id, pj.failure_reason,
-             pm.weight as module_weight
-      FROM print_jobs pj
-      LEFT JOIN print_modules pm ON pj.module_id = pm.id
-      WHERE pj.external_task_id = ${task_id}
-    `) as {
-        id: number;
-        printer_id: number;
-        module_id: number;
-        failure_reason: string | null;
-        module_weight: number | null;
-      } | null;
-
-    if (job) {
-      const isSuccess = safeStatus === 'success';
-      const failureReason = isSuccess
-        ? null
-        : (job.failure_reason ?? `Pi reported: ${gcode_state ?? 'FAILED'} (error ${error_code ?? 'unknown'})`);
-      const actualWeight = isSuccess ? (job.module_weight ?? 0) : 0;
-
-      // For multi-spool prints, split the total expected weight proportionally
-      // across the module's slots so each loaded spool gets its share deducted.
-      const usedWeightBySlot =
-        isSuccess && job.module_id
-          ? await distributeWeightAcrossSlots(db, job.module_id, actualWeight)
-          : {};
-
-      await completePrintJob(db, job.id, isSuccess, usedWeightBySlot, failureReason);
-    }
+    const now = Math.floor(Date.now() / 1000);
+    // Don't overwrite a job the user has already confirmed (successful /
+    // failed_confirmed) — only an in-flight printing job moves to awaiting.
+    const failureHint =
+      safeStatus === 'failed'
+        ? `Pi reported: ${gcode_state ?? 'FAILED'} (error ${error_code ?? 'unknown'})`
+        : null;
+    await drizzleDb.run(sql`
+      UPDATE print_jobs
+      SET status = 'print_finished',
+          failure_reason = COALESCE(${failureHint}, failure_reason),
+          updated_at = ${now}
+      WHERE external_task_id = ${task_id} AND status = 'printing'
+    `);
   }
 
   return json({ success: true });

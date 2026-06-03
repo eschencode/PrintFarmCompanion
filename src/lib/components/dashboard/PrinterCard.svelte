@@ -44,6 +44,10 @@
             <div
                 class="w-2.5 h-2.5 bg-amber-400 rounded-full animate-pulse"
             ></div>
+        {:else if printer.status === "finished"}
+            <div
+                class="w-2.5 h-2.5 bg-violet-500 rounded-full status-glow-violet animate-pulse"
+            ></div>
         {:else if liveIsPrinting || printer.status === "printing"}
             {@const activePrintForDot = getActivePrintJob(
                 Number(printer.id),
@@ -211,6 +215,8 @@
                         ? "Starting…"
                         : `Queue ${qPos + 1}/${startQueueTotal}`}
                 </span>
+            {:else if printer.status === "finished"}
+                <span class="text-violet-500 dark:text-violet-400">Confirm result</span>
             {:else if liveIsPrinting || printer.status === "printing"}
                 <span class="text-blue-500 dark:text-blue-400">Printing</span>
             {:else if printer.status === "idle"}
@@ -241,6 +247,21 @@
                     class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-400 dark:text-zinc-500 mt-1"
                 >
                     {qPos === 0 ? "Sending to printer…" : "In queue…"}
+                </p>
+            </div>
+        {:else if printer.status === "finished"}
+            <div class="mt-2 px-1">
+                <div
+                    class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden"
+                >
+                    <div
+                        class="bg-violet-500 h-full rounded-full w-full progress-shimmer"
+                    ></div>
+                </div>
+                <p
+                    class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-violet-500/80 dark:text-violet-400/80 mt-1"
+                >
+                    Tap to confirm result
                 </p>
             </div>
         {:else if liveIsPrinting || printer.status === "printing"}

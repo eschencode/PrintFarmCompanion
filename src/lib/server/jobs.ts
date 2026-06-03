@@ -210,7 +210,7 @@ export async function getActivePrintJobs(db: D1Database): Promise<PrintJobWithDe
     JOIN printers      p  ON pj.printer_id = p.id
     JOIN print_modules pm ON pj.module_id  = pm.id
     LEFT JOIN printer_secrets ps ON p.id = ps.printer_id
-    WHERE pj.status = 'printing'
+    WHERE pj.status IN ('printing', 'print_finished')
     ORDER BY pj.created_at DESC
   `);
   return (rows ?? []) as unknown as PrintJobWithDetails[];
@@ -475,7 +475,18 @@ export async function adoptExternalPrintJob(
       INSERT INTO print_jobs (module_id, printer_id, start_time, status, external_task_id, created_at, updated_at)
       VALUES (${params.moduleId}, ${params.printerId}, ${now}, 'printing', ${params.externalTaskId}, ${now}, ${now})
     `);
-    return { success: true, data: { id: result.meta.last_row_id } };
+    const jobId = result.meta.last_row_id as number;
+
+    // Snapshot loaded spools so completion can deduct used weight. Mirrors startPrintJob.
+    const loadedSlots = await getLoadedSpools(db, params.printerId);
+    for (const slot of loadedSlots) {
+      const s = slot as unknown as { slot_index: number; spool_id: number | null };
+      await drizzleDb.run(sql`
+        INSERT INTO print_job_spools (print_job_id, slot_index, spool_id, used_weight)
+        VALUES (${jobId}, ${s.slot_index}, ${s.spool_id ?? null}, NULL)
+      `);
+    }
+    return { success: true, data: { id: jobId } };
   } catch (error) {
     console.error('Error adopting external print job:', error);
     return { success: false, error: 'Failed to adopt external print job' };
