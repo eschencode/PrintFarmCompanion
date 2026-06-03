@@ -32,6 +32,7 @@ export interface SyncResult {
     lastOrderId: number | null;
     // TEMP DEBUG — breakdown of where fetched orders went. Remove once diagnosed.
     debug?: {
+        ordersInTable: number;
         fetched: number;
         cancelled: number;
         emptyLineItems: number;
@@ -125,11 +126,14 @@ export class ShopifySyncService {
      */
     async isOrderProcessed(orderId: number): Promise<boolean> {
         const drizzleDb = getDb(this.db);
-        const result = await drizzleDb.get(
-            sql`SELECT 1 FROM shopify_orders WHERE order_id = ${String(orderId)}`
+        const result = await drizzleDb.get<{ found: number }>(
+            sql`SELECT 1 AS found FROM shopify_orders WHERE order_id = ${String(orderId)} LIMIT 1`
         );
 
-        return result !== null;
+        // drizzle .get() returns `undefined` (not null) for no match — the old
+        // `!== null` was true for a missing row, flagging every order processed.
+        // Check the selected value explicitly so the result can't be ambiguous.
+        return !!result?.found;
     }
 
     /**
@@ -207,13 +211,18 @@ export class ShopifySyncService {
             errors: [],
             lastOrderId: null,
             debug: {
-                fetched: 0, cancelled: 0, emptyLineItems: 0, noSkuItems: 0,
+                ordersInTable: 0, fetched: 0, cancelled: 0, emptyLineItems: 0, noSkuItems: 0,
                 unmappedItems: 0, mappableItems: 0, alreadyProcessed: 0, sample: null,
             },
         };
         const debug = result.debug!;
 
         try {
+            const countRow = await getDb(this.db).get<{ n: number }>(
+                sql`SELECT COUNT(*) AS n FROM shopify_orders`
+            );
+            debug.ordersInTable = countRow?.n ?? -1;
+
             // Get current state
             const syncState = await this.getSyncState();
             const skuMappings = await this.getSkuMappings();
@@ -290,6 +299,31 @@ export class ShopifySyncService {
         }
 
         return result;
+    }
+
+    /**
+     * Baseline: record every currently-fetchable order as processed WITHOUT
+     * deducting any inventory. Use once when adopting the integration on a store
+     * that already has order history + stock that already reflects those sales.
+     * After this, only orders created afterwards will deduct.
+     */
+    async baseline(): Promise<{ recorded: number; alreadyPresent: number }> {
+        const orders = await this.client.getOrdersSince(null, 250, true);
+        const drizzleDb = getDb(this.db);
+        const now = Math.floor(Date.now() / 1000);
+        let recorded = 0;
+        let alreadyPresent = 0;
+        for (const order of orders) {
+            const res = await drizzleDb.run(sql`
+                INSERT OR IGNORE INTO shopify_orders
+                    (order_id, order_number, processed_at, total_items, created_at, updated_at)
+                VALUES (${String(order.id)}, ${String(order.order_number)}, ${now}, 0, ${now}, ${now})
+            `);
+            // D1 reports rows_written: 1 on insert, 0 when OR IGNORE skipped a dup.
+            if (res.meta?.changes && res.meta.changes > 0) recorded++;
+            else alreadyPresent++;
+        }
+        return { recorded, alreadyPresent };
     }
 
     /**
