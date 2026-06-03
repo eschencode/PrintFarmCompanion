@@ -109,7 +109,9 @@
   let testingShopify = false;
   let syncingSkus = false;
   let savingShopifyConfig = false;
+  let syncingShopify = false;
   let shopifyTestResult: { success: boolean; shopName?: string; error?: string } | null = null;
+  let shopifySyncResult: any = null;
 
   async function testShopifyConnection() {
     testingShopify = true;
@@ -176,10 +178,10 @@
 
           <!-- Actions -->
           <div class="flex items-center gap-2 flex-wrap">
-            <form method="POST" action="?/syncShopify" use:enhance={() => async ({ update }) => { await update(); }}>
-              <button type="submit" class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 transition-colors" aria-label="Run Shopify sync now">
+            <form method="POST" action="?/syncShopify" use:enhance={() => { syncingShopify = true; shopifySyncResult = null; return async ({ result, update }) => { if (result.type === 'success') shopifySyncResult = result.data; else if (result.type === 'failure') shopifySyncResult = result.data; syncingShopify = false; await update({ reset: false }); }; }}>
+              <button type="submit" disabled={syncingShopify} class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors" aria-label="Run Shopify sync now">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                Sync now
+                {syncingShopify ? 'Syncing…' : 'Sync now'}
               </button>
             </form>
             <form method="POST" action="?/syncShopifySkus" use:enhance={() => { syncingSkus = true; return async ({ update }) => { await update(); syncingSkus = false; }; }}>
@@ -208,6 +210,29 @@
               {/if}
             {/if}
           </div>
+
+          <!-- Sync result + TEMP DEBUG breakdown -->
+          {#if shopifySyncResult}
+            <div class="border border-zinc-100 dark:border-[#1e1e1e] rounded-lg p-4 text-xs space-y-2">
+              {#if shopifySyncResult.error}
+                <p class="text-red-500">{shopifySyncResult.error}</p>
+              {:else}
+                <p class="text-zinc-600 dark:text-zinc-300">
+                  Processed <b>{shopifySyncResult.ordersProcessed}</b> ·
+                  deducted <b>{shopifySyncResult.itemsDeducted}</b> items ·
+                  skipped <b>{shopifySyncResult.skippedOrders}</b>
+                </p>
+              {/if}
+              {#if shopifySyncResult.debug}
+                <pre class="text-[11px] text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-[#161616] rounded p-2 overflow-x-auto">{JSON.stringify(shopifySyncResult.debug, null, 2)}</pre>
+              {/if}
+              {#if shopifySyncResult.errors?.length}
+                <ul class="text-amber-600 dark:text-amber-400 list-disc pl-4">
+                  {#each shopifySyncResult.errors as e}<li>{e}</li>{/each}
+                </ul>
+              {/if}
+            </div>
+          {/if}
 
           <!-- Recent sync orders -->
           {#if data.shopifyRecentOrders && (data.shopifyRecentOrders as any[]).length > 0}

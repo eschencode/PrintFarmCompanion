@@ -30,6 +30,17 @@ export interface SyncResult {
     skippedOrders: number;
     errors: string[];
     lastOrderId: number | null;
+    // TEMP DEBUG — breakdown of where fetched orders went. Remove once diagnosed.
+    debug?: {
+        fetched: number;
+        cancelled: number;
+        emptyLineItems: number;
+        noSkuItems: number;
+        unmappedItems: number;
+        mappableItems: number;
+        alreadyProcessed: number;
+        sample: { id: number; cancelled_at: string | null; lineItems: number; firstSku: string | null } | null;
+    };
 }
 
 export class ShopifySyncService {
@@ -194,8 +205,13 @@ export class ShopifySyncService {
             itemsDeducted: 0,
             skippedOrders: 0,
             errors: [],
-            lastOrderId: null
+            lastOrderId: null,
+            debug: {
+                fetched: 0, cancelled: 0, emptyLineItems: 0, noSkuItems: 0,
+                unmappedItems: 0, mappableItems: 0, alreadyProcessed: 0, sample: null,
+            },
         };
+        const debug = result.debug!;
 
         try {
             // Get current state
@@ -210,6 +226,17 @@ export class ShopifySyncService {
                 fetchAll
             );
 
+            debug.fetched = orders.length;
+            if (orders[0]) {
+                const o = orders[0];
+                debug.sample = {
+                    id: o.id,
+                    cancelled_at: o.cancelled_at ?? null,
+                    lineItems: o.line_items?.length ?? -1,
+                    firstSku: o.line_items?.[0]?.sku ?? null,
+                };
+            }
+
             if (orders.length === 0) {
                 // Update sync timestamp even if no new orders
                 await this.updateSyncState(syncState.last_order_id, 0, 0);
@@ -220,8 +247,18 @@ export class ShopifySyncService {
             for (const order of orders) {
                 // Double-check we haven't processed this order
                 if (await this.isOrderProcessed(order.id)) {
+                    debug.alreadyProcessed++;
                     result.skippedOrders++;
                     continue;
+                }
+
+                // TEMP DEBUG — categorize where this order lands
+                if (order.cancelled_at) debug.cancelled++;
+                else if (!order.line_items || order.line_items.length === 0) debug.emptyLineItems++;
+                else for (const it of order.line_items) {
+                    if (!it.sku) debug.noSkuItems++;
+                    else if (!skuMappings.has(it.sku)) debug.unmappedItems++;
+                    else debug.mappableItems++;
                 }
 
                 const orderResult = await this.processOrder(order, skuMappings);

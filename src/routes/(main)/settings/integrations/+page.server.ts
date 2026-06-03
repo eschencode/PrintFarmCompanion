@@ -77,7 +77,7 @@ export const actions: Actions = {
       const client = new ShopifyClient(config.storeDomain, config.accessToken);
       const syncService = new ShopifySyncService(database, client);
       const result = await syncService.sync(true);
-      return { success: result.success, ordersProcessed: result.ordersProcessed, itemsDeducted: result.itemsDeducted, skippedOrders: result.skippedOrders, errors: result.errors.slice(0, 10) };
+      return { success: result.success, ordersProcessed: result.ordersProcessed, itemsDeducted: result.itemsDeducted, skippedOrders: result.skippedOrders, errors: result.errors.slice(0, 10), debug: result.debug };
     } catch (err) {
       return fail(500, { error: `Sync failed: ${err}` });
     }
