@@ -83,6 +83,22 @@ export const actions: Actions = {
     }
   },
 
+  // One-time onboarding: mark all current orders as processed without deducting,
+  // so adopting the integration on a store with history doesn't replay past sales.
+  baselineShopify: async ({ platform }) => {
+    const database = platform?.env?.DB;
+    const config = await getShopifyConfig(database, platform?.env);
+    if (!database || !config) return fail(400, { error: 'Shopify not configured' });
+    try {
+      const client = new ShopifyClient(config.storeDomain, config.accessToken);
+      const syncService = new ShopifySyncService(database, client);
+      const result = await syncService.baseline();
+      return { success: true, message: `Baseline set — ${result.recorded} orders marked as synced (no deductions). Future orders will deduct.` };
+    } catch (err) {
+      return fail(500, { error: `Baseline failed: ${err}` });
+    }
+  },
+
   syncShopifySkus: async ({ platform }) => {
     const database = platform?.env?.DB;
     const config = await getShopifyConfig(database, platform?.env);

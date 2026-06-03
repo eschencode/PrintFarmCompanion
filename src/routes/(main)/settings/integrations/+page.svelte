@@ -211,6 +211,26 @@
             {/if}
           </div>
 
+          <!-- One-time baseline (onboarding an existing store) -->
+          <div class="flex items-start gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40">
+            <svg class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-3L13.74 4a2 2 0 00-3.48 0L3.33 16a2 2 0 001.74 3z"/></svg>
+            <div class="min-w-0">
+              <p class="text-xs font-medium text-amber-800 dark:text-amber-300">First-time setup: baseline</p>
+              <p class="text-[11px] text-amber-700/80 dark:text-amber-400/70 mt-0.5">
+                Marks all existing orders as already-synced <b>without deducting</b>, so your current stock isn't reduced by past sales. Only orders placed afterwards will deduct. Run this once before your first real sync.
+              </p>
+              <form method="POST" action="?/baselineShopify" class="mt-2" use:enhance={() => { return async ({ update }) => { await update({ reset: false }); }; }}>
+                <button
+                  type="submit"
+                  onclick={(e) => { if (!confirm('Mark all current orders as synced WITHOUT deducting inventory? Do this once when first connecting an existing store.')) e.preventDefault(); }}
+                  class="h-8 px-3 rounded-lg text-xs font-medium border border-amber-300 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/40 transition-colors"
+                >
+                  Mark current orders as synced
+                </button>
+              </form>
+            </div>
+          </div>
+
           <!-- Sync result + TEMP DEBUG breakdown -->
           {#if shopifySyncResult}
             <div class="border border-zinc-100 dark:border-[#1e1e1e] rounded-lg p-4 text-xs space-y-2">
