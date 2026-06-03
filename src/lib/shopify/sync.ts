@@ -56,20 +56,21 @@ export class ShopifySyncService {
     /**
      * Get current sync state.
      *
-     * The shopify_sync table was removed in the schema cleanup. We now derive
-     * last_order_id from the most recently processed shopify_orders row, and
-     * leave the counter fields as zero (analytics live in shopify_orders /
-     * inventory_log now). Sync is still idempotent because processOrder
-     * checks isOrderProcessed before deducting anything.
+     * `last_order_id` is the pagination high-water-mark passed to Shopify as
+     * `since_id`, which fetches orders with id GREATER than it. It must be the
+     * numerically HIGHEST recorded order id — not the most recently processed.
+     * Baselined orders all share one processed_at, so ordering by processed_at
+     * returns an arbitrary (often low) id, which makes incremental sync re-scan
+     * old orders and never reach new ones. Anchor on MAX(order_id) instead.
      */
     async getSyncState(): Promise<SyncState> {
         const drizzleDb = getDb(this.db);
-        const lastOrder = await drizzleDb.get<{ order_id: string; processed_at: number }>(
-            sql`SELECT order_id, processed_at FROM shopify_orders ORDER BY processed_at DESC LIMIT 1`
+        const row = await drizzleDb.get<{ max_id: number | null; last_at: number | null }>(
+            sql`SELECT MAX(CAST(order_id AS INTEGER)) AS max_id, MAX(processed_at) AS last_at FROM shopify_orders`
         );
         return {
-            last_order_id: lastOrder?.order_id ?? null,
-            last_sync_at: lastOrder?.processed_at ?? null,
+            last_order_id: row?.max_id != null ? String(row.max_id) : null,
+            last_sync_at: row?.last_at ?? null,
             orders_processed: 0,
             items_deducted: 0,
         };
@@ -307,23 +308,41 @@ export class ShopifySyncService {
      * that already has order history + stock that already reflects those sales.
      * After this, only orders created afterwards will deduct.
      */
-    async baseline(): Promise<{ recorded: number; alreadyPresent: number }> {
+    async baseline(): Promise<{ recorded: number; alreadyPresent: number; fetched: number; latestOrderNumber: string | null; latestOrderId: string | null }> {
         const orders = await this.client.getOrdersSince(null, 250, true);
         const drizzleDb = getDb(this.db);
         const now = Math.floor(Date.now() / 1000);
-        let recorded = 0;
-        let alreadyPresent = 0;
-        for (const order of orders) {
-            const res = await drizzleDb.run(sql`
+
+        const before = await drizzleDb.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM shopify_orders`);
+
+        // Batch the inserts — one INSERT per chunk instead of one per order — so
+        // the whole baseline fits inside Cloudflare's subrequest/CPU budget and
+        // can't die partway (which would leave the high-water-mark too low).
+        const CHUNK = 100;
+        for (let i = 0; i < orders.length; i += CHUNK) {
+            const rows = orders.slice(i, i + CHUNK).map(
+                (o) => sql`(${String(o.id)}, ${String(o.order_number)}, ${now}, 0, ${now}, ${now})`
+            );
+            await drizzleDb.run(sql`
                 INSERT OR IGNORE INTO shopify_orders
                     (order_id, order_number, processed_at, total_items, created_at, updated_at)
-                VALUES (${String(order.id)}, ${String(order.order_number)}, ${now}, 0, ${now}, ${now})
+                VALUES ${sql.join(rows, sql`, `)}
             `);
-            // D1 reports rows_written: 1 on insert, 0 when OR IGNORE skipped a dup.
-            if (res.meta?.changes && res.meta.changes > 0) recorded++;
-            else alreadyPresent++;
         }
-        return { recorded, alreadyPresent };
+
+        const after = await drizzleDb.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM shopify_orders`);
+        const recorded = (after?.n ?? 0) - (before?.n ?? 0);
+
+        // Orders come back ascending by id, so the last one is the newest. This is
+        // the high-water-mark — verify it matches your most recent Shopify order.
+        const latest = orders[orders.length - 1] ?? null;
+        return {
+            recorded,
+            alreadyPresent: orders.length - recorded,
+            fetched: orders.length,
+            latestOrderNumber: latest ? String(latest.order_number) : null,
+            latestOrderId: latest ? String(latest.id) : null,
+        };
     }
 
     /**
