@@ -18,6 +18,8 @@ declare global {
                 PI_TUNNEL_URL?: string;
                 PI_SECRET?: string;
                 PI_WEBHOOK_SECRET?: string;
+                ENCRYPTION_KEY?: string;
+                CRON_SECRET?: string;
             };
         }
     }

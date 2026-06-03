@@ -3,3 +3,17 @@
 
 PI_TUNNEL_URL=https://pi.yourdomain.com
 PI_WEBHOOK_SECRET=change-me-to-a-random-string
+
+# Secret used to encrypt integration credentials at rest (Shopify token, etc.).
+# Any long, high-entropy random string. Generate one with: openssl rand -base64 32
+# Remote: set via `wrangler secret put ENCRYPTION_KEY` (do NOT commit it).
+# Changing this value makes previously-saved encrypted tokens undecryptable.
+ENCRYPTION_KEY=change-me-to-a-random-string
+
+# Shared secret guarding the /api/cron-sync endpoint. Required — the endpoint
+# rejects all requests if unset. Generate with: openssl rand -base64 32
+CRON_SECRET=change-me-to-a-random-string
+
+# Optional: Shopify credentials via env (DB-saved settings take precedence).
+# SHOPIFY_STORE_DOMAIN=your-store.myshopify.com
+# SHOPIFY_ACCESS_TOKEN=shpat_...

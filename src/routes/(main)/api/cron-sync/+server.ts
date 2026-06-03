@@ -1,6 +1,15 @@
 import { ShopifyClient, ShopifySyncService } from '$lib/shopify';
+import { getShopifyConfig } from '$lib/server/shopifyConfig';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+
+// Constant-time string comparison to avoid leaking the secret via timing.
+function safeEqual(a: string | null, b: string): boolean {
+  if (a === null || a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
 
 export const GET: RequestHandler = async ({ request, platform }) => {
   // 1. Check platform and env
@@ -9,23 +18,28 @@ export const GET: RequestHandler = async ({ request, platform }) => {
   }
 
   // 2. Security Check: Only allow requests with a specific Secret Header
-  const env = platform.env as typeof platform.env & { CRON_SECRET?: string };
+  const env = platform.env;
+  if (!env.CRON_SECRET) {
+    throw error(500, 'CRON_SECRET not configured');
+  }
   const authHeader = request.headers.get('Authorization');
-  if (authHeader !== `Bearer ${env.CRON_SECRET}`) {
+  if (!safeEqual(authHeader, `Bearer ${env.CRON_SECRET}`)) {
     throw error(401, 'Unauthorized');
   }
 
   // 3. Check required env vars
-  const { SHOPIFY_STORE_DOMAIN, SHOPIFY_ACCESS_TOKEN, DB } = platform.env;
-  if (!SHOPIFY_STORE_DOMAIN || !SHOPIFY_ACCESS_TOKEN || !DB) {
-    throw error(500, 'Missing required environment variables');
+  const { DB } = platform.env;
+  if (!DB) {
+    throw error(500, 'Missing database binding');
+  }
+
+  const config = await getShopifyConfig(DB, platform.env);
+  if (!config) {
+    throw error(500, 'Shopify not configured');
   }
 
   try {
-    const client = new ShopifyClient(
-      SHOPIFY_STORE_DOMAIN,
-      SHOPIFY_ACCESS_TOKEN
-    );
+    const client = new ShopifyClient(config.storeDomain, config.accessToken);
     const syncService = new ShopifySyncService(DB, client);
 
     const result = await syncService.sync(false);
