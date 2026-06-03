@@ -123,8 +123,9 @@ export interface DashboardPrinter extends PrinterFull {
   transport: TransportMode;
   // Convenience: slot-0 spool (the primary loaded spool for single-color printers)
   loaded_spool: SpoolWithPreset | null;
-  // Derived from active print_jobs — not stored in DB
-  status: 'printing' | 'idle' | 'inactive';
+  // Derived from active print_jobs — not stored in DB.
+  // 'finished' = print physically ended (print_finished), awaiting manual success/fail confirmation.
+  status: 'printing' | 'finished' | 'idle' | 'inactive';
   // Advisory next-up queue, fetched client-side from /api/ai-recommendations.
   suggested_queue?: SuggestedQueueItem[];
 }

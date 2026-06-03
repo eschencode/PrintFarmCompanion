@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { closeOpenPrintJobsForPrinter } from '$lib/server';
+import { closeOpenPrintJobsForPrinter, getLoadedSpools } from '$lib/server';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
@@ -85,10 +85,22 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     INSERT INTO print_jobs (module_id, printer_id, start_time, status, external_task_id, created_at, updated_at)
     VALUES (${module_id}, ${printer_id}, ${now}, 'printing', ${piResult.task_id ?? null}, ${now}, ${now})
   `);
+  const jobId = result.meta.last_row_id as number;
+
+  // Snapshot loaded spools → print_job_spools (one row per slot) so completion
+  // can deduct used weight from the physical spools. Mirrors startPrintJob.
+  const loadedSlots = await getLoadedSpools(db, printer_id);
+  for (const slot of loadedSlots) {
+    const s = slot as unknown as { slot_index: number; spool_id: number | null };
+    await drizzleDb.run(sql`
+      INSERT INTO print_job_spools (print_job_id, slot_index, spool_id, used_weight)
+      VALUES (${jobId}, ${s.slot_index}, ${s.spool_id ?? null}, NULL)
+    `);
+  }
 
   return json({
     success: true,
-    job_id: result.meta.last_row_id,
+    job_id: jobId,
     task_id: piResult.task_id,
   });
 };

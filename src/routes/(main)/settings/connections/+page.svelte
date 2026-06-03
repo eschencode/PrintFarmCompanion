@@ -17,7 +17,7 @@
         Settings
       </a>
       <h1 class="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Connections</h1>
-      <p class="text-zinc-400 dark:text-zinc-500 text-sm mt-1">Connection modes, auto-queue and quick-start behavior</p>
+      <p class="text-zinc-400 dark:text-zinc-500 text-sm mt-1">Connection modes and quick-start behavior</p>
     </div>
 
     <div class="space-y-4">

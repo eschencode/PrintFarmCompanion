@@ -19,7 +19,6 @@ The callers:
 | `QuickStartModal` | Single-tap start on a printer with a Quick Start recommendation |
 | `ModuleSelectorModal` | Manual module pick after spool/printer is set up |
 | `PrinterDetailModal` | "Print this" on a suggested-queue card inside the detail modal |
-| Auto Queue countdown | 5 s after a print finishes if `autoStartMode` is on |
 
 `enqueueStart` closes any open modal, pushes the entry into `startQueue`, persists to `localStorage` under `printfarm_start_queue`, and calls `dispatchNextStart()` if this is the only entry.
 
@@ -123,7 +122,7 @@ For Pi / direct the transition is the same, except the queue advances on the `PR
 
 `advanceStartQueue()` slices the head off, persists, and dispatches the next entry if any. It does **not** trigger a reload. Live state from polling or MQTT continues to flow into `piStatusBySerial` independently.
 
-Print *completion* (not start) is what triggers a full `window.location.reload()` — see the `FINISH`/`FAILED` transition handlers in `fetchPiStatus()` and the MQTT `printer-status` listener. That's a deliberate hard refresh so success animations, inventory updates, and the next Auto Queue recommendation all come from a clean server load.
+When a Pi-tracked print reaches `FINISH`/`FAILED`, the `FINISH`/`FAILED` transition handlers in `fetchPiStatus()` and the MQTT `printer-status` listener trigger a full `window.location.reload()` — a deliberate hard refresh from a clean server load. The reload does **not** complete the job: the Pi webhook has moved it to `print_finished` ("awaiting confirmation"), surfaced as a violet "Confirm result" card. The job is only marked `successful`/`failed` — and spool weight deducted, inventory updated — when the user confirms manually via `PrinterDetailModal`. The printer can't tell a good print from a failed one, so completion is never automatic.
 
 ## Key files
 

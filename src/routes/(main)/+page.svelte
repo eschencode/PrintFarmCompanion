@@ -7,7 +7,6 @@
   import { getActivePrintJob, getLastPrintJob, getCategorizedModules } from '$lib/utils/printerData';
   import { shine } from '$lib/actions/shine';
   import ConnectionStatusIndicator from '$lib/components/dashboard/ConnectionStatusIndicator.svelte';
-  import AutoQueueToast from '$lib/components/dashboard/AutoQueueToast.svelte';
   import StartQueueToast from '$lib/components/dashboard/StartQueueToast.svelte';
   import GridNavigation from '$lib/components/dashboard/GridNavigation.svelte';
   import PrinterCard from '$lib/components/dashboard/PrinterCard.svelte';
@@ -21,7 +20,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { writable, get } from 'svelte/store';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
-  import { quickStartMode, autoStartMode } from '$lib/stores/autoQueueStore';
+  import { quickStartMode } from '$lib/stores/autoQueueStore';
   import { fileHandlerEnabled, directPrinterEnabled, printerPiEnabled, manualModeEnabled } from '$lib/stores/connectionToggles';
   import { isDesktop } from '$lib/stores/desktop';
   import type { TransportMode } from '$lib/types';
@@ -49,11 +48,9 @@
   let showModuleSelector: boolean = false;
   let showFailureReasonModal: boolean = false;
 
-  // Auto Queue state
+  // Quick Start state
   let showQuickStart = false;
   let quickStartLoading = false;
-  type AutoQueueCountdown = { seconds: number; moduleName: string; module: any; printer: any; timer: ReturnType<typeof setInterval> };
-  let autoQueueCountdown: AutoQueueCountdown | null = null;
 
   $: fileHandlerState = $fileHandlerStore;
 
@@ -126,8 +123,7 @@
         const justFinished = isTerminal && prevState !== undefined && !prevWasTerminal;
         if (wasTrackedPrinting && justFinished && !reloadTriggered.has(s.serial)) {
           reloadTriggered.add(s.serial);
-          if ($autoStartMode && newState === 'FINISH') startAutoQueueNext(s.serial);
-          else setTimeout(() => window.location.reload(), 2000);
+          setTimeout(() => window.location.reload(), 2000);
         }
       });
 
@@ -221,7 +217,7 @@
   /**
    * Polls Pi status for one printer and updates piStatusBySerial.
    * Also detects the PREPARE→RUNNING transition to advance the start queue,
-   * and the →FINISH/FAILED transition to trigger reload or auto-queue.
+   * and the →FINISH/FAILED transition to trigger a reload.
    * Transition detection requires a previous non-terminal state so that a fresh
    * page load while the printer is already in FINISH doesn't immediately reload again.
    */
@@ -279,11 +275,7 @@
       const justFinished = isTerminal && prevState !== undefined && !prevWasTerminal;
       if (wasTrackedPrinting && justFinished && !reloadTriggered.has(serial)) {
         reloadTriggered.add(serial);
-        if ($autoStartMode && newState === 'FINISH') {
-          startAutoQueueNext(serial);
-        } else {
-          setTimeout(() => window.location.reload(), 2000);
-        }
+        setTimeout(() => window.location.reload(), 2000);
       }
       // Advance start queue when front-of-queue printer moves from PREPARE to RUNNING
       const isHeadOfQueue = startQueue.length > 0 && startQueue[0].printer.printer_serial === serial;
@@ -498,48 +490,6 @@
     printer.status = broken ? 'inactive' : 'idle';
     if (selectedPrinter?.id === printer.id) selectedPrinter = { ...printer };
     controlLoading = null;
-  }
-
-  // ── Auto Queue ────────────────────────────────────────────────────────────
-
-  /**
-   * Starts a 5-second countdown before auto-starting the next suggested print.
-   * The countdown (not an immediate start) gives the user a visible cancel window —
-   * the printer bed is still hot and they may want to abort before the next job loads.
-   */
-  function startAutoQueueNext(serial: string) {
-    const printer = (data.printers as any[]).find((p: any) => p.printer_serial === serial);
-    if (!printer) { setTimeout(() => window.location.reload(), 2000); return; }
-
-    const queue: any[] = printer.suggested_queue ?? [];
-    const nextItem = queue.find((i: any) => i.status !== 'DONE');
-    if (!nextItem) { setTimeout(() => window.location.reload(), 2000); return; }
-
-    const nextModule = (data.printModules as any[]).find((m: any) => m.id === nextItem.module_id);
-    if (!nextModule?.filename || !printer.printer_ip) {
-      setTimeout(() => window.location.reload(), 2000);
-      return;
-    }
-
-    let secsLeft = 5;
-    const timer = setInterval(() => {
-      secsLeft--;
-      if (autoQueueCountdown) autoQueueCountdown = { ...autoQueueCountdown, seconds: secsLeft };
-      if (secsLeft <= 0) {
-        clearInterval(timer);
-        autoQueueCountdown = null;
-        enqueueStart(nextModule, printer);
-      }
-    }, 1000);
-    autoQueueCountdown = { seconds: secsLeft, moduleName: nextItem.module_name, module: nextModule, printer, timer };
-  }
-
-  function cancelAutoQueue() {
-    if (autoQueueCountdown) {
-      clearInterval(autoQueueCountdown.timer);
-      autoQueueCountdown = null;
-    }
-    setTimeout(() => window.location.reload(), 300);
   }
 
   async function selectPrinter(printer: any) {
@@ -1262,10 +1212,6 @@
       </span>
     {/each}
   </div>
-{/if}
-
-{#if autoQueueCountdown}
-  <AutoQueueToast countdown={autoQueueCountdown} onCancel={cancelAutoQueue} />
 {/if}
 
 {#if startQueueTotal > 1}

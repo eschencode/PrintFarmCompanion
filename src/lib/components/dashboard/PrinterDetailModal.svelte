@@ -74,6 +74,11 @@
             <div class="w-2 h-2 bg-blue-500 rounded-full status-glow-blue"></div>
             Printing
           </span>
+        {:else if printer.status === 'finished'}
+          <span class="inline-flex items-center gap-2.5 px-4 py-1.5 bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-full text-sm font-light tracking-wide">
+            <div class="w-2 h-2 bg-violet-500 rounded-full status-glow-violet animate-pulse"></div>
+            Finished — confirm result
+          </span>
         {:else if printer.status === 'idle'}
           <span class="inline-flex items-center gap-2.5 px-4 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full text-sm font-light tracking-wide">
             <div class="w-2 h-2 bg-emerald-500 rounded-full status-glow-green"></div>
@@ -88,15 +93,27 @@
       </div>
 
       <!-- Conditional Content Based on Status -->
-      {#if printer.status === 'printing' && activePrintJob}
-        <!-- PRINTING STATUS MENU -->
-        {@const displayProgress = piLive?.progress ?? ((activePrintJob.progress ?? 0) > 0 ? (activePrintJob.progress ?? 0) : getProgress(activePrintJob.start_time ?? 0, activePrintJob.expected_time_minutes ?? 0, now))}
+      {#if (printer.status === 'printing' || printer.status === 'finished') && activePrintJob}
+        {@const isFinished = printer.status === 'finished'}
+        <!-- PRINTING / AWAITING-CONFIRMATION STATUS MENU -->
+        {@const displayProgress = isFinished ? 100 : (piLive?.progress ?? ((activePrintJob.progress ?? 0) > 0 ? (activePrintJob.progress ?? 0) : getProgress(activePrintJob.start_time ?? 0, activePrintJob.expected_time_minutes ?? 0, now)))}
         <div class="space-y-5">
+          <!-- Awaiting-confirmation banner -->
+          {#if isFinished}
+            <div class="bg-violet-500/8 border border-violet-500/15 rounded-xl p-4">
+              <p class="text-sm text-violet-600 dark:text-violet-400 font-medium">Print finished — confirm the result</p>
+              <p class="text-xs text-violet-500/70 dark:text-violet-400/70 mt-1">
+                The printer reported the job is done, but can't tell a good print from a failed one.
+                Confirm below to deduct filament and update inventory.
+                {#if activePrintJob.failure_reason}<br />Printer hint: {activePrintJob.failure_reason}{/if}
+              </p>
+            </div>
+          {/if}
           <!-- Module Name -->
           <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
             <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1.5 tracking-wide uppercase">Print Module</p>
             <p class="text-xl text-zinc-900 dark:text-zinc-50 font-light tracking-tight">{activePrintJob.module_name}</p>
-            {#if piLive}
+            {#if piLive && !isFinished}
               <p class="text-xs text-blue-500 mt-1">{piLive.label}</p>
             {/if}
           </div>
@@ -211,8 +228,8 @@
             </div>
           {/if}
 
-          <!-- Pi Controls (Cancel / Pause / Resume) — only if printer has Pi credentials -->
-          {#if printer?.printer_ip && printer?.printer_serial && printer?.printer_access_code}
+          <!-- Pi Controls (Cancel / Pause / Resume) — only while actually printing -->
+          {#if !isFinished && printer?.printer_ip && printer?.printer_serial && printer?.printer_access_code}
             <div class="grid grid-cols-2 gap-3 pt-1">
               <button
                 disabled={!!controlLoading}
