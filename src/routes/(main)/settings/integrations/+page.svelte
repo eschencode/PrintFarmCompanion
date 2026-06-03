@@ -108,6 +108,7 @@
   // ── Shopify test result ─────────────────────────────────────────────────────
   let testingShopify = false;
   let syncingSkus = false;
+  let savingShopifyConfig = false;
   let shopifyTestResult: { success: boolean; shopName?: string; error?: string } | null = null;
 
   async function testShopifyConnection() {
@@ -231,10 +232,65 @@
             <svg class="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
             <div>
               <p class="text-sm text-zinc-700 dark:text-zinc-300 font-medium">Shopify not configured</p>
-              <p class="text-xs text-zinc-400 mt-0.5">Set <code class="font-mono bg-zinc-200 dark:bg-[#2a2a2a] px-1 rounded">SHOPIFY_STORE_DOMAIN</code> and <code class="font-mono bg-zinc-200 dark:bg-[#2a2a2a] px-1 rounded">SHOPIFY_ACCESS_TOKEN</code> as environment variables to enable the Shopify integration.</p>
+              <p class="text-xs text-zinc-400 mt-0.5">Add your Shopify store domain and Admin API access token below to enable syncing.</p>
             </div>
           </div>
         {/if}
+
+        <div class="border border-zinc-100 dark:border-[#1e1e1e] rounded-lg p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <p class="text-xs font-medium text-zinc-600 dark:text-zinc-300">Shopify API credentials</p>
+            {#if data.shopifyConfig?.source === 'env'}
+              <span class="text-[10px] text-zinc-400">Using environment variables</span>
+            {:else if data.shopifyConfig?.source === 'db'}
+              <span class="text-[10px] text-zinc-400">Saved in app settings</span>
+            {/if}
+          </div>
+          <form method="POST" action="?/saveShopifyConfig" use:enhance={() => { savingShopifyConfig = true; return async ({ update }) => { await update(); savingShopifyConfig = false; }; }}>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="shopifyDomain" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Store domain *</label>
+                <input
+                  id="shopifyDomain"
+                  name="shopifyDomain"
+                  value={data.shopifyConfig?.storeDomain ?? ''}
+                  placeholder="your-store.myshopify.com"
+                  autocomplete="off"
+                  spellcheck="false"
+                  class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+                />
+              </div>
+              <div>
+                <label for="shopifyToken" class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block mb-1.5">Admin access token *</label>
+                <input
+                  id="shopifyToken"
+                  name="shopifyToken"
+                  type="password"
+                  placeholder={data.shopifyConfig?.hasToken && data.shopifyConfig?.source === 'db' ? 'Saved — leave blank to keep' : 'shpat_...'}
+                  autocomplete="off"
+                  spellcheck="false"
+                  class="w-full bg-zinc-50 dark:bg-[#161616] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+                />
+              </div>
+            </div>
+            <div class="flex items-center justify-between flex-wrap gap-2 mt-3">
+              <p class="text-[11px] text-zinc-400">
+                {#if data.shopifyConfig?.hasToken && data.shopifyConfig?.source === 'db'}
+                  Leave the token blank to keep the existing value.
+                {:else}
+                  Enter your Shopify Admin API access token.
+                {/if}
+              </p>
+              <button
+                type="submit"
+                disabled={savingShopifyConfig}
+                class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {savingShopifyConfig ? 'Saving…' : 'Save Shopify settings'}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
 

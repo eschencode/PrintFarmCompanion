@@ -493,6 +493,29 @@ export const inventoryLog = sqliteTable(
 );
 
 // =============================================================================
+// SHOPIFY SETTINGS
+// SCOPE: per-workspace
+// =============================================================================
+export const shopifySettings = sqliteTable(
+  "shopify_settings",
+  {
+    // Phase 3 (multi-user): add workspaceId NOT NULL refs workspaces.id; the
+    // saveShopifyConfig id=1 singleton upsert becomes a per-workspace upsert.
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    storeDomain: text("store_domain").notNull(),
+    // AES-256-GCM ciphertext (see src/lib/server/crypto.ts), encrypted with the
+    // ENCRYPTION_KEY Worker secret. Never store or return the raw token.
+    accessToken: text("access_token").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+);
+
+// =============================================================================
 // SHOPIFY SKU MAPPING
 // SCOPE: per-workspace
 // One Shopify SKU can map to multiple objects (bundles) — multiple rows share

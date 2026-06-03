@@ -198,7 +198,15 @@ Hook-level: `hooks.server.ts` reads `locals.workspace.id` and passes it into a r
 - Add `printer_credentials.access_code_encrypted` (replace plaintext column)
 - Add `workspace_integrations(workspace_id, type, config_encrypted, created_at, updated_at)` for Shopify tokens etc.
 - Use a Worker secret (`ENCRYPTION_KEY`) + WebCrypto AES-GCM for envelope encryption
-- Helper: `src/lib/crypto.ts` with `encrypt(plaintext)` / `decrypt(ciphertext)` using the KEK
+- Helper: ~~`src/lib/crypto.ts`~~ → **`src/lib/server/crypto.ts`** (server-only path so it
+  can't bundle into the client). `encryptSecret(plaintext, key)` / `decryptSecret(ciphertext, key)`.
+
+> **DONE EARLY (2026-06-03):** the crypto helper and Shopify-token-at-rest
+> encryption were pulled forward ahead of multi-tenancy (token was about to be
+> tested with real credentials). `shopify_settings.access_token` now stores
+> AES-256-GCM ciphertext. Remaining Phase-3 work here: `printer_credentials`
+> encryption, and moving Shopify creds into the per-workspace `workspace_integrations`
+> table (today they live in the single-row `shopify_settings`, `id=1`).
 
 ### Tasks
 
@@ -232,6 +240,57 @@ Backlog for later:
 ## Working notes & log
 
 Append entries as we go. Most recent on top.
+
+### 2026-06-03 — ⚠️ PUBLIC DEPLOY GATE (read before exposing this app)
+
+The app has **no authentication** (no `hooks.server.ts`, no `(main)` route guard).
+Every settings route + form action is open to anyone who can reach the URL.
+
+**Do not put this on an open public URL with a real Shopify token until either:**
+- **Cloudflare Access (Zero Trust)** sits in front of the Pages project (fast path —
+  gates the whole app behind a login, free ≤50 users), **or**
+- **Phase 2 auth** (better-auth + route guard) lands.
+
+Why it matters even though the token is encrypted at rest: the app *decrypts and
+uses* the token. Without auth, an attacker could previously set the store domain to
+a host they control, leave the token blank (reusing the stored one), trigger a sync,
+and have the Worker POST the decrypted token to them in the `X-Shopify-Access-Token`
+header. **Mitigated** now by strict `*.myshopify.com` domain validation
+(`normalizeShopifyDomain` in `src/lib/shopify/client.ts`, enforced in the client
+constructor + `saveShopifyConfig`), which closes the exfiltration path — but auth is
+still required to stop overwrite/vandalism of the integration. Encryption protects
+data at rest; it is not a substitute for auth.
+
+### 2026-06-03 — Shopify integration + secret encryption pulled forward
+
+DB-backed Shopify credentials added (with env fallback) to fix broken cron/manual
+sync, plus a settings UI to save them. Reviewed for multi-user + security before
+touching real credentials. Changes made:
+
+- **Encryption now (ahead of Phase 3):** `src/lib/server/crypto.ts` (AES-256-GCM,
+  WebCrypto, key = SHA-256 of `ENCRYPTION_KEY` Worker secret). `shopify_settings.access_token`
+  stores `v1:<iv>:<ciphertext>`. `saveShopifyConfig` encrypts on write and **fails
+  if `ENCRYPTION_KEY` is unset** (won't silently store plaintext). `getShopifyConfig`
+  decrypts on read; legacy unprefixed values pass through. Page `load()` swallows
+  decryption errors so a bad/missing key can't lock you out of the settings page.
+- **cron-sync hardened:** rejects when `CRON_SECRET` is unset (closed the
+  `Bearer undefined` bypass) and uses a constant-time compare.
+- **`ENCRYPTION_KEY` + `CRON_SECRET`** documented in `.dev.vars.example`.
+
+**Still open — the real multi-user blockers (not done):**
+
+1. **No auth layer at all.** No `hooks.server.ts`, no `(main)` route guard. Every
+   settings route + form action is unauthenticated — anyone reaching the URL can
+   overwrite the token, trigger syncs, edit SKU mappings. This is Phase 2 work and
+   is the hard gate before multi-user. Search marker: grep `MULTI-USER (Phase 3)`.
+2. **`shopify_settings` is a single shared row (`id=1`).** Once >1 user exists they
+   share one Shopify credential, and the "leave token blank to keep" path would
+   reuse another tenant's token. Needs `workspace_id` + per-workspace upsert. Code
+   sites tagged with `MULTI-USER (Phase 3)` comments:
+   - `src/lib/db/schema.ts` — `shopifySettings` table
+   - `src/lib/server/shopifyConfig.ts` — `getShopifyConfig` / `getShopifyConfigSummary` queries
+   - `src/routes/(main)/settings/integrations/+page.server.ts` — `saveShopifyConfig` upsert
+3. DB config silently overrides env creds — fine once auth gates writes; revisit then.
 
 ### 2026-05-18 — Plan drafted
 Schema reviewed (`schema.sql`, 278 lines). 159 `.prepare()` call sites across 18 files surveyed. Locked decisions D1–D6. Phase 0 is next session's first task — start with `src/lib/server.ts` since it's the biggest file and gating the rest.

@@ -49,17 +49,32 @@ interface ShopifyProductsResponse {
     products: ShopifyProduct[];
 }
 
+/**
+ * Normalize and strictly validate a Shopify store domain.
+ *
+ * The access token is sent as `X-Shopify-Access-Token` to `https://<domain>/...`,
+ * so the domain controls where the token goes. A loose check (e.g. substring
+ * `.myshopify.com`) lets an attacker smuggle the request to their own host via
+ * a path/query (`evil.com/x.myshopify.com`). We extract the host only and pin it
+ * to a real `*.myshopify.com` so the token can never leave Shopify.
+ */
+export function normalizeShopifyDomain(input: string): string {
+    let domain = input.trim().toLowerCase().replace(/^https?:\/\//, '');
+    domain = domain.split(/[/?#]/)[0]; // host only — drop any path/query/fragment
+    if (!domain.includes('.')) domain = `${domain}.myshopify.com`; // bare shop name
+    if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(domain)) {
+        throw new Error('Invalid Shopify store domain — must be a *.myshopify.com domain');
+    }
+    return domain;
+}
+
 export class ShopifyClient {
     private storeDomain: string;
     private accessToken: string;
     private apiVersion = '2024-01';
 
     constructor(storeDomain: string, accessToken: string) {
-        // Ensure domain is in correct format
-        this.storeDomain = storeDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-        if (!this.storeDomain.includes('.myshopify.com')) {
-            this.storeDomain = `${this.storeDomain}.myshopify.com`;
-        }
+        this.storeDomain = normalizeShopifyDomain(storeDomain);
         this.accessToken = accessToken;
     }
 
