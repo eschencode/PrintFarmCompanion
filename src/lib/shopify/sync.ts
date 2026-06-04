@@ -318,7 +318,9 @@ export class ShopifySyncService {
         // Batch the inserts — one INSERT per chunk instead of one per order — so
         // the whole baseline fits inside Cloudflare's subrequest/CPU budget and
         // can't die partway (which would leave the high-water-mark too low).
-        const CHUNK = 100;
+        // D1 caps bound parameters at 100 per query; this row binds 5 each, so
+        // 20 orders/chunk is the ceiling (100 params).
+        const CHUNK = 20;
         for (let i = 0; i < orders.length; i += CHUNK) {
             const rows = orders.slice(i, i + CHUNK).map(
                 (o) => sql`(${String(o.id)}, ${String(o.order_number)}, ${now}, 0, ${now}, ${now})`
