@@ -22,9 +22,17 @@ export const load: PageServerLoad = async ({ platform }) => {
   ]);
 
   // Flatten secrets + derive status onto each printer for the UI
+  const nowSec = Math.floor(Date.now() / 1000);
   const printers: DashboardPrinter[] = printersFull.map((p: PrinterFull) => {
     const slot0 = p.loaded_spools?.find(s => s.slot_index === 0);
     const activeJob = activePrintJobs.find((j: any) => j.printer_id === p.id);
+    // Manual/direct/fallback prints have no printer that reports FINISH — their
+    // only completion signal is the estimated end time elapsing. (Pi prints leave
+    // expected_end_time null and rely on the webhook to set print_finished.)
+    const timedOut =
+      activeJob?.status === 'printing' &&
+      activeJob.expected_end_time != null &&
+      (activeJob.expected_end_time as number) <= nowSec;
     return {
       ...p,
       printer_serial: p.secrets?.serial ?? null,
@@ -34,7 +42,7 @@ export const load: PageServerLoad = async ({ platform }) => {
       loaded_spool: slot0?.spool ?? null,
       status: !p.active
         ? 'inactive'
-        : activeJob?.status === 'print_finished'
+        : activeJob?.status === 'print_finished' || timedOut
           ? 'finished'
           : activeJob
             ? 'printing'
