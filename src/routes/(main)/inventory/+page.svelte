@@ -347,12 +347,11 @@
   // Change type labels
   function getChangeTypeLabel(type: string): { label: string; color: string } {
     switch (type) {
-      case 'add': return { label: '+', color: 'text-green-600' };
-      case 'remove': return { label: '−', color: 'text-red-600' };
-      case 'sold_b2c': return { label: 'B2C', color: 'text-blue-600' };
-      case 'sold_b2b': return { label: 'B2B', color: 'text-purple-400' };
-      case 'count_adjust': return { label: '✓', color: 'text-amber-600' };
-      case 'defect': return { label: '✗', color: 'text-red-600' };
+      case '+ printed': return { label: '+', color: 'text-green-600' };
+      case '+ stock count': return { label: '✓', color: 'text-amber-600' };
+      case '- stock count': return { label: '−', color: 'text-red-600' };
+      case '- sold b2c': return { label: 'B2C', color: 'text-blue-600' };
+      case '- sold b2b': return { label: 'B2B', color: 'text-purple-400' };
       default: return { label: '?', color: 'text-zinc-500' };
     }
   }
@@ -651,6 +650,7 @@
             <div class="divide-y divide-zinc-50 dark:divide-[#171717] max-h-130 overflow-y-auto">
               {#each data.logs as log}
                 {@const changeType = getChangeTypeLabel(log.change_type)}
+                {@const isOutflow = log.change_type.startsWith('-')}
                 <div class="px-5 py-3 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
                   <div class="flex items-start gap-3">
                     <span class="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold shrink-0 {changeType.color}">
@@ -660,8 +660,8 @@
                       <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate leading-snug">{log.object_name}</p>
                     </div>
                     <div class="text-right shrink-0">
-                      <span class="text-xs font-semibold tabular-nums {log.quantity >= 0 ? 'text-emerald-500' : 'text-red-500'}">
-                        {log.quantity >= 0 ? '+' : ''}{log.quantity}
+                      <span class="text-xs font-semibold tabular-nums {isOutflow ? 'text-red-500' : 'text-emerald-500'}">
+                        {isOutflow ? '−' : '+'}{Math.abs(log.quantity)}
                       </span>
                       <p class="text-[10px] text-zinc-400 mt-0.5">{formatTime(log.created_at)}</p>
                     </div>
