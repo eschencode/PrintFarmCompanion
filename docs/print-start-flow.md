@@ -49,7 +49,9 @@ await invalidateAll()
 setTimeout(advanceStartQueue, 3_000)
 ```
 
-No printer connection. The DB row is created, the page loader re-runs (so `data.activePrintJobs` and the derived `printer.status === 'printing'` flip), and the queue advances blindly after 3 s. Progress on the card becomes time-based via `getProgress(start_time, expected_time_minutes)`. The user confirms or fails the print manually via the detail modal.
+No printer connection. The DB row is created (with `expected_end_time = start_time + expected_time_minutes`), the page loader re-runs (so `data.activePrintJobs` and the derived `printer.status === 'printing'` flip), and the queue advances blindly after 3 s. Progress on the card becomes time-based via `getProgress(start_time, expected_time_minutes)`.
+
+There's no printer to report FINISH, so the only completion signal is the clock: once `expected_end_time` passes, `+page.svelte` triggers a one-shot `invalidateAll()` and `+page.server.ts` derives `printer.status === 'finished'` (any active `printing` job with `expected_end_time` in the past). The card flips to the violet "Confirm result" prompt and the user confirms success/failure via the detail modal. Pi prints leave `expected_end_time` null and rely on the webhook instead, so this time fallback only governs the manual/direct/fallback paths.
 
 ### 2. Pi bridge (`hasPi`, default when a Pi is configured)
 

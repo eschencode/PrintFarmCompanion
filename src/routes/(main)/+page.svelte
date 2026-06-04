@@ -58,6 +58,25 @@
   const nowStore = writable(Date.now());
   $: now = $nowStore;
   let tickerInterval: ReturnType<typeof setInterval>;
+
+  // Manual/direct/fallback prints have no printer to report FINISH — their only
+  // completion signal is the estimated end time elapsing. When it passes, refresh
+  // once so the server re-derives the printer as 'finished' (awaiting confirmation)
+  // and the card surfaces the "Confirm result" prompt.
+  const timedOutJobs = new Set<number>();
+  $: if (now) {
+    for (const job of (data.activePrintJobs as any[])) {
+      if (
+        job.status === 'printing' &&
+        job.expected_end_time != null &&
+        job.expected_end_time * 1000 <= now &&
+        !timedOutJobs.has(job.id)
+      ) {
+        timedOutJobs.add(job.id);
+        invalidateAll();
+      }
+    }
+  }
   onMount(async () => {
     // Restore start queue from localStorage
     const restored = loadStartQueue();
