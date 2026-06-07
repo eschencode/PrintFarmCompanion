@@ -31,6 +31,20 @@
   export let onEnqueue: (module: PrintModuleFull, printer: DashboardPrinter) => void;
   /** enhance callback defined in parent — closes over selectedPrinter, data, and closePrinterModal. */
   export let completePrintSuccessEnhance: SubmitFunction;
+  /** enhance callback for manual spool weight deduction — refreshes data on success. */
+  export let adjustWeightEnhance: SubmitFunction;
+
+  // Manual weight deduction slider state. Reset when the spool or its weight
+  // changes (e.g. after a successful deduction refreshes the data).
+  let deductGrams = 0;
+  let lastSpoolKey = '';
+  $: {
+    const key = `${loadedSpool?.id ?? ''}:${loadedSpool?.remaining_weight ?? ''}`;
+    if (key !== lastSpoolKey) {
+      lastSpoolKey = key;
+      deductGrams = 0;
+    }
+  }
 </script>
 
 <div
@@ -316,6 +330,47 @@
                 <span class="text-2xl text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{loadedSpool.remaining_weight}g</span>
                 <span class="text-sm text-zinc-400 dark:text-zinc-500 tabular-nums">{pct}% of {capacity}g</span>
               </div>
+
+              <!-- Manual weight deduction -->
+              <form
+                method="POST"
+                action="?/adjustSpoolWeight"
+                use:enhance={adjustWeightEnhance}
+                class="mt-5 pt-5 border-t border-zinc-200/60 dark:border-[#1a1a22]"
+              >
+                <input type="hidden" name="spoolId" value={loadedSpool.id} />
+                <input type="hidden" name="remainingWeight" value={loadedSpool.remaining_weight - deductGrams} />
+
+                <div class="flex items-center justify-between mb-3">
+                  <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase">Deduct Weight</p>
+                  <span class="text-sm font-medium tabular-nums {deductGrams > 0 ? 'text-amber-500' : 'text-zinc-400 dark:text-zinc-600'}">
+                    −{deductGrams}g
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min="0"
+                  max={loadedSpool.remaining_weight}
+                  step="1"
+                  bind:value={deductGrams}
+                  class="weight-slider w-full"
+                  style="--pct: {loadedSpool.remaining_weight > 0 ? (deductGrams / loadedSpool.remaining_weight) * 100 : 0}%"
+                />
+
+                <div class="flex items-center justify-between mt-3">
+                  <span class="text-sm text-zinc-400 dark:text-zinc-500 tabular-nums">
+                    After: <span class="text-zinc-900 dark:text-zinc-100 font-medium">{loadedSpool.remaining_weight - deductGrams}g</span>
+                  </span>
+                  <button
+                    type="submit"
+                    disabled={deductGrams <= 0}
+                    class="bg-amber-500/8 hover:bg-amber-500/15 text-amber-600 dark:text-amber-400 px-4 py-2 rounded-lg transition-all duration-200 text-sm font-medium border border-amber-500/10 hover:border-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Deduct
+                  </button>
+                </div>
+              </form>
             </div>
           {:else}
             <div class="bg-amber-500/5 border border-amber-500/10 rounded-xl p-5">
@@ -432,3 +487,61 @@
     </div>
   </div>
 </div>
+
+<style>
+  /* Manual weight-deduction slider — amber fill up to the thumb, zinc track after. */
+  .weight-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 9999px;
+    background: linear-gradient(
+      to right,
+      rgb(245 158 11) 0%,
+      rgb(245 158 11) var(--pct),
+      rgb(228 228 231) var(--pct),
+      rgb(228 228 231) 100%
+    );
+    cursor: pointer;
+    outline: none;
+  }
+  @media (prefers-color-scheme: dark) {
+    .weight-slider {
+      background: linear-gradient(
+        to right,
+        rgb(245 158 11) 0%,
+        rgb(245 158 11) var(--pct),
+        rgb(39 39 42) var(--pct),
+        rgb(39 39 42) 100%
+      );
+    }
+    .weight-slider::-webkit-slider-thumb {
+      border-color: rgb(12 12 15);
+    }
+    .weight-slider::-moz-range-thumb {
+      border-color: rgb(12 12 15);
+    }
+  }
+  .weight-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: rgb(245 158 11);
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+    transition: transform 0.15s ease;
+  }
+  .weight-slider::-webkit-slider-thumb:active {
+    transform: scale(1.15);
+  }
+  .weight-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: rgb(245 158 11);
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  }
+</style>

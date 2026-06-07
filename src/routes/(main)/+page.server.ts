@@ -94,6 +94,22 @@ export const actions: Actions = {
     return { success: true, message: 'Spool unloaded' };
   },
 
+  adjustSpoolWeight: async ({ platform, request }) => {
+    const database = platform?.env?.DB;
+    if (!database) return { success: false, error: 'Database not available' };
+
+    const formData = await request.formData();
+    const spoolId = Number(formData.get('spoolId'));
+    const remainingWeight = Number(formData.get('remainingWeight'));
+
+    if (!spoolId) return { success: false, error: 'No spool loaded' };
+    if (!Number.isFinite(remainingWeight) || remainingWeight < 0)
+      return { success: false, error: 'Invalid weight' };
+
+    await db.updateSpoolWeight(database, spoolId, Math.round(remainingWeight));
+    return { success: true, message: 'Spool weight updated' };
+  },
+
   startPrint: async ({ platform, request }) => {
     const database = platform?.env?.DB;
     if (!database) return { success: false, error: 'Database not available' };

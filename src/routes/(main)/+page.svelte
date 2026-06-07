@@ -882,6 +882,20 @@
     };
   };
 
+  // enhance callback for manual spool weight deduction in PrinterDetailModal
+  const adjustWeightEnhance: SubmitFunction = () => {
+    return async ({ result }) => {
+      if (result.type === 'success') {
+        await invalidateAll();
+        // Re-sync the open modal's printer from refreshed data
+        if (selectedPrinter) {
+          const fresh = data.printers.find(p => Number(p.id) === Number(selectedPrinter!.id));
+          if (fresh) selectedPrinter = fresh;
+        }
+      }
+    };
+  };
+
   async function handleStartPrint() {
     if (!selectedPrinter?.loaded_spool) {
       alert('Please load a spool first');
@@ -1152,6 +1166,7 @@
     onToggleBroken={togglePrinterBroken}
     onEnqueue={enqueueStart}
     completePrintSuccessEnhance={completePrintSuccessEnhance}
+    adjustWeightEnhance={adjustWeightEnhance}
   />
 
 {/if}
