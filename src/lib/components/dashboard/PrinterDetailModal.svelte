@@ -73,6 +73,13 @@
     }
     return slotIndex === 0 ? total : 0;
   }
+
+  // A print is "done" (awaiting confirmation) when the server has flipped it to
+  // `finished`, OR it's still tracked as printing but live status already reports
+  // FINISH (webhook lag — the screen the user sees the moment the print ends). In
+  // both cases we show the confirmation layout, not the live printing chrome.
+  $: liveDone = piLive?.gcode_state === 'FINISH';
+  $: isDone = printer.status === 'finished' || (printer.status === 'printing' && liveDone);
 </script>
 
 <div
@@ -111,15 +118,15 @@
 
       <!-- Status Badge -->
       <div class="mb-8">
-        {#if printer.status === 'printing'}
-          <span class="inline-flex items-center gap-2.5 px-4 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full text-sm font-light tracking-wide">
-            <div class="w-2 h-2 bg-blue-500 rounded-full status-glow-blue"></div>
-            Printing
-          </span>
-        {:else if printer.status === 'finished'}
+        {#if isDone}
           <span class="inline-flex items-center gap-2.5 px-4 py-1.5 bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-full text-sm font-light tracking-wide">
             <div class="w-2 h-2 bg-violet-500 rounded-full status-glow-violet animate-pulse"></div>
             Finished — confirm result
+          </span>
+        {:else if printer.status === 'printing'}
+          <span class="inline-flex items-center gap-2.5 px-4 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full text-sm font-light tracking-wide">
+            <div class="w-2 h-2 bg-blue-500 rounded-full status-glow-blue"></div>
+            Printing
           </span>
         {:else if printer.status === 'idle'}
           <span class="inline-flex items-center gap-2.5 px-4 py-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full text-sm font-light tracking-wide">
@@ -136,95 +143,105 @@
 
       <!-- Conditional Content Based on Status -->
       {#if (printer.status === 'printing' || printer.status === 'finished') && activePrintJob}
-        {@const isFinished = printer.status === 'finished'}
         <!-- PRINTING / AWAITING-CONFIRMATION STATUS MENU -->
-        {@const displayProgress = isFinished ? 100 : (piLive?.progress ?? ((activePrintJob.progress ?? 0) > 0 ? (activePrintJob.progress ?? 0) : getProgress(activePrintJob.start_time ?? 0, activePrintJob.expected_time_minutes ?? 0, now)))}
+        {@const displayProgress = isDone ? 100 : (piLive?.progress ?? ((activePrintJob.progress ?? 0) > 0 ? (activePrintJob.progress ?? 0) : getProgress(activePrintJob.start_time ?? 0, activePrintJob.expected_time_minutes ?? 0, now)))}
         <div class="space-y-5">
-          <!-- Awaiting-confirmation banner -->
-          {#if isFinished}
-            <div class="bg-violet-500/8 border border-violet-500/15 rounded-xl p-4">
-              <p class="text-sm text-violet-600 dark:text-violet-400 font-medium">Print finished — confirm the result</p>
-              <p class="text-xs text-violet-500/70 dark:text-violet-400/70 mt-1">
-                The printer reported the job is done, but can't tell a good print from a failed one.
-                Confirm below to deduct filament and update inventory.
-                {#if activePrintJob.failure_reason}<br />Printer hint: {activePrintJob.failure_reason}{/if}
-              </p>
+          <!-- Printer-reported hint (only when the printer flagged something) -->
+          {#if isDone && activePrintJob.failure_reason}
+            <div class="bg-amber-500/8 border border-amber-500/15 rounded-xl px-4 py-3">
+              <p class="text-xs text-amber-600 dark:text-amber-400">Printer hint: {activePrintJob.failure_reason}</p>
             </div>
           {/if}
           <!-- Module Name -->
           <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
             <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1.5 tracking-wide uppercase">Print Module</p>
             <p class="text-xl text-zinc-900 dark:text-zinc-50 font-light tracking-tight">{activePrintJob.module_name}</p>
-            {#if piLive && !isFinished}
+            {#if piLive && !isDone}
               <p class="text-xs text-blue-500 mt-1">{piLive.label}</p>
             {/if}
           </div>
 
-          <!-- Print Progress -->
-          <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
-            <div class="flex justify-between text-sm mb-3">
-              <span class="text-zinc-400 dark:text-zinc-600 tracking-wide">Progress</span>
-              <span class="text-zinc-900 dark:text-zinc-50 font-medium tabular-nums">{displayProgress}%</span>
-            </div>
-            <div class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-2 overflow-hidden">
-              <div
-                class="bg-blue-500 h-full rounded-full transition-all duration-500 progress-shimmer"
-                style="width: {displayProgress}%"
-              ></div>
-            </div>
-            <div class="flex justify-between text-xs text-zinc-400 dark:text-zinc-600 mt-3 tabular-nums">
-              <span>{getElapsedTime(activePrintJob.start_time ?? 0, now)} elapsed</span>
-              {#if (piLive?.total_layer_num ?? 0) > 0}
-                <span>Layer {piLive?.layer_num} / {piLive?.total_layer_num}</span>
-              {:else}
-                <span>{getRemainingTime(activePrintJob.start_time ?? 0, activePrintJob.expected_time_minutes ?? 0, now)} remaining</span>
-              {/if}
-            </div>
-          </div>
-
-          <!-- Live Temps + Remaining Time (from Pi) -->
-          {#if piLive && (piLive.remaining_time != null || piLive.nozzle_temp != null)}
-            <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22]">
-              <div class="flex flex-wrap gap-5">
-                {#if piLive.remaining_time != null && piLive.remaining_time > 0}
-                  <div>
-                    <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">Remaining</p>
-                    <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{formatRemainingTime(piLive.remaining_time)}</p>
-                  </div>
-                {/if}
-                {#if piLive.nozzle_temp != null}
-                  <div>
-                    <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">Nozzle</p>
-                    <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{Math.round(piLive.nozzle_temp)}°C</p>
-                  </div>
-                {/if}
-                {#if piLive.bed_temp != null}
-                  <div>
-                    <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">Bed</p>
-                    <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{Math.round(piLive.bed_temp)}°C</p>
-                  </div>
-                {/if}
-                {#if piLive.chamber_temp != null}
-                  <div>
-                    <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">Chamber</p>
-                    <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{Math.round(piLive.chamber_temp)}°C</p>
-                  </div>
+          {#if !isDone}
+            <!-- Print Progress -->
+            <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
+              <div class="flex justify-between text-sm mb-3">
+                <span class="text-zinc-400 dark:text-zinc-600 tracking-wide">Progress</span>
+                <span class="text-zinc-900 dark:text-zinc-50 font-medium tabular-nums">{displayProgress}%</span>
+              </div>
+              <div class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-2 overflow-hidden">
+                <div
+                  class="bg-blue-500 h-full rounded-full transition-all duration-500 progress-shimmer"
+                  style="width: {displayProgress}%"
+                ></div>
+              </div>
+              <div class="flex justify-between text-xs text-zinc-400 dark:text-zinc-600 mt-3 tabular-nums">
+                <span>{getElapsedTime(activePrintJob.start_time ?? 0, now)} elapsed</span>
+                {#if (piLive?.total_layer_num ?? 0) > 0}
+                  <span>Layer {piLive?.layer_num} / {piLive?.total_layer_num}</span>
+                {:else}
+                  <span>{getRemainingTime(activePrintJob.start_time ?? 0, activePrintJob.expected_time_minutes ?? 0, now)} remaining</span>
                 {/if}
               </div>
             </div>
-          {/if}
 
-          <!-- Time Info -->
-          <div class="grid grid-cols-2 gap-4">
-            <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22]">
-              <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1.5 tracking-wide uppercase">Total Time</p>
-              <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{formatTime(activePrintJob.expected_time_minutes ?? 0)}</p>
+            <!-- Live Temps + Remaining Time (from Pi) -->
+            {#if piLive && (piLive.remaining_time != null || piLive.nozzle_temp != null)}
+              <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22]">
+                <div class="flex flex-wrap gap-5">
+                  {#if piLive.remaining_time != null && piLive.remaining_time > 0}
+                    <div>
+                      <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">Remaining</p>
+                      <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{formatRemainingTime(piLive.remaining_time)}</p>
+                    </div>
+                  {/if}
+                  {#if piLive.nozzle_temp != null}
+                    <div>
+                      <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">Nozzle</p>
+                      <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{Math.round(piLive.nozzle_temp)}°C</p>
+                    </div>
+                  {/if}
+                  {#if piLive.bed_temp != null}
+                    <div>
+                      <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">Bed</p>
+                      <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{Math.round(piLive.bed_temp)}°C</p>
+                    </div>
+                  {/if}
+                  {#if piLive.chamber_temp != null}
+                    <div>
+                      <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">Chamber</p>
+                      <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{Math.round(piLive.chamber_temp)}°C</p>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+
+            <!-- Time Info -->
+            <div class="grid grid-cols-2 gap-4">
+              <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22]">
+                <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1.5 tracking-wide uppercase">Total Time</p>
+                <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{formatTime(activePrintJob.expected_time_minutes ?? 0)}</p>
+              </div>
+              <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22]">
+                <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1.5 tracking-wide uppercase">Remaining</p>
+                <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{getRemainingTime(activePrintJob.start_time ?? 0, activePrintJob.expected_time_minutes ?? 0, now)}</p>
+              </div>
             </div>
-            <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22]">
-              <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1.5 tracking-wide uppercase">Remaining</p>
-              <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{getRemainingTime(activePrintJob.start_time ?? 0, activePrintJob.expected_time_minutes ?? 0, now)}</p>
+          {:else}
+            <!-- Completed summary — planned vs. actual print time -->
+            <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1.5 tracking-wide uppercase">Print Time</p>
+                  <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{formatTime(activePrintJob.expected_time_minutes ?? 0)}</p>
+                </div>
+                <div class="text-right">
+                  <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1.5 tracking-wide uppercase">Completed in</p>
+                  <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{getElapsedTime(activePrintJob.start_time ?? 0, now)}</p>
+                </div>
+              </div>
             </div>
-          </div>
+          {/if}
 
           <!-- Spool Weight Info (per loaded slot) -->
           {#if loadedSlots.length > 0}
@@ -232,6 +249,9 @@
               {@const sp = slot.spool!}
               {@const usage = slotUsage(slot.slot_index)}
               {@const after = Math.max(0, sp.remaining_weight - usage)}
+              {@const capacity = sp.initial_weight > 0 ? sp.initial_weight : sp.remaining_weight}
+              {@const remainingPct = capacity > 0 ? Math.min(100, (sp.remaining_weight / capacity) * 100) : 0}
+              {@const staysShare = sp.remaining_weight > 0 ? Math.max(0, Math.min(100, (after / sp.remaining_weight) * 100)) : 0}
               <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
                 <div class="flex items-center justify-between mb-3">
                   <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase">Spool Weight · Slot {slot.slot_index + 1}</p>
@@ -241,15 +261,13 @@
                   </span>
                 </div>
 
-                <!-- Gauge with after-print marker -->
-                <SpoolGauge
-                  remaining={sp.remaining_weight}
-                  initial={sp.initial_weight}
-                  color={resolveSpoolColor(sp.preset)}
-                  projected={after}
-                  size="lg"
-                  showLabel={false}
-                />
+                <!-- Usage bar: spool colour = filament that stays, striped amber = what this print consumes, track = empty spool -->
+                <div class="relative w-full h-3 rounded-full bg-zinc-200/80 dark:bg-zinc-800 border border-zinc-300/40 dark:border-white/10 overflow-hidden">
+                  <div class="absolute inset-y-0 left-0 flex overflow-hidden rounded-full" style="width: {remainingPct}%">
+                    <div class="h-full" style="width: {staysShare}%; background-color: {resolveSpoolColor(sp.preset)}"></div>
+                    <div class="h-full flex-1 usage-stripe"></div>
+                  </div>
+                </div>
 
                 <div class="grid grid-cols-3 gap-4 mt-4">
                   <div>
@@ -274,7 +292,7 @@
           {/if}
 
           <!-- Pi Controls (Cancel / Pause / Resume) — only while actually printing -->
-          {#if !isFinished && printer?.printer_ip && printer?.printer_serial && printer?.printer_access_code}
+          {#if !isDone && printer?.printer_ip && printer?.printer_serial && printer?.printer_access_code}
             <div class="grid grid-cols-2 gap-3 pt-1">
               <button
                 disabled={!!controlLoading}
@@ -303,11 +321,14 @@
             </div>
           {/if}
 
-          <!-- Manual Override Buttons -->
-          <div class="grid grid-cols-2 gap-4 pt-3">
+          <!-- Result decision — a manual override while printing; the primary action once done -->
+          {#if isDone}
+            <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase pt-1">How did it turn out?</p>
+          {/if}
+          <div class="grid grid-cols-2 gap-4 {isDone ? 'pt-1' : 'pt-3'}">
             <button
               onclick={onPrintFailed}
-              class="w-full bg-red-500/8 hover:bg-red-500/15 text-red-600 dark:text-red-400 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium border border-red-500/10 hover:border-red-500/20"
+              class="w-full {isDone ? 'bg-red-500/12 hover:bg-red-500/20 py-4' : 'bg-red-500/8 hover:bg-red-500/15 py-3.5'} text-red-600 dark:text-red-400 px-4 rounded-xl transition-all duration-200 font-medium border border-red-500/10 hover:border-red-500/20"
             >
               Print Failed
             </button>
@@ -323,7 +344,7 @@
 
               <button
                 type="submit"
-                class="w-full bg-emerald-500/8 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-4 py-3.5 rounded-xl transition-all duration-200 font-medium border border-emerald-500/10 hover:border-emerald-500/20"
+                class="w-full {isDone ? 'bg-emerald-500/12 hover:bg-emerald-500/20 py-4' : 'bg-emerald-500/8 hover:bg-emerald-500/15 py-3.5'} text-emerald-600 dark:text-emerald-400 px-4 rounded-xl transition-all duration-200 font-medium border border-emerald-500/10 hover:border-emerald-500/20"
               >
                 Print Successful
               </button>
@@ -539,6 +560,19 @@
 </div>
 
 <style>
+  /* Usage segment of the spool-weight bar — amber with diagonal stripes so the
+     consumed filament reads as "removed" regardless of the spool's own colour. */
+  .usage-stripe {
+    background-color: rgb(245 158 11);
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.22) 0,
+      rgba(255, 255, 255, 0.22) 3px,
+      transparent 3px,
+      transparent 6px
+    );
+  }
+
   /* Manual weight-deduction slider — filled in the target spool's colour up to the
      thumb (falls back to amber), zinc track after. Colour comes from --spool-color. */
   .weight-slider {
