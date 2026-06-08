@@ -1147,11 +1147,9 @@
 
 {#if selectedPrinter && !showSpoolSelector && !showModuleSelector && !showQuickStart}
   {@const activePrintJob = getActivePrintJob(selectedPrinter.id, data.activePrintJobs)}
-  {@const loadedSpool = selectedPrinter.loaded_spool}
   <PrinterDetailModal
     printer={selectedPrinter}
     activePrintJob={activePrintJob}
-    loadedSpool={loadedSpool}
     piLive={piStatusBySerial[selectedPrinter.printer_serial as string]}
     controlLoading={controlLoading}
     startingPrinterIds={startingPrinterIds}

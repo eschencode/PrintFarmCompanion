@@ -5,7 +5,7 @@
   import { getLastPrintJob } from '$lib/utils/printerData';
   import { resolveSpoolColor } from '$lib/utils/spoolColor';
   import SpoolGauge from '$lib/components/dashboard/SpoolGauge.svelte';
-  import type { DashboardPrinter, SpoolWithPreset, PrintModuleFull, PrintJobWithDetails, PiStatus } from '$lib/types';
+  import type { DashboardPrinter, PrintModuleFull, PrintJobWithDetails, PiStatus } from '$lib/types';
 
   /**
    * Detail modal for a selected printer. Shows real-time print status when printing,
@@ -13,7 +13,6 @@
    */
   export let printer: DashboardPrinter;
   export let activePrintJob: PrintJobWithDetails | undefined;
-  export let loadedSpool: SpoolWithPreset | null;
   /** Live Pi/MQTT status for this printer — drives real-time progress and temps. */
   export let piLive: PiStatus | undefined;
   export let controlLoading: string | null;
@@ -34,16 +33,45 @@
   /** enhance callback for manual spool weight deduction — refreshes data on success. */
   export let adjustWeightEnhance: SubmitFunction;
 
-  // Manual weight deduction slider state. Reset when the spool or its weight
-  // changes (e.g. after a successful deduction refreshes the data).
+  // All loaded slots that actually hold a spool, ordered by slot index.
+  $: loadedSlots = (printer.loaded_spools ?? [])
+    .filter((s) => s.spool)
+    .sort((a, b) => a.slot_index - b.slot_index);
+
+  // Manual deduction targets one spool at a time, via a single slider. Default to
+  // the first loaded slot; keep the selection valid as loaded spools change.
+  let selectedSpoolId: number | null = null;
+  $: if (loadedSlots.length > 0 && !loadedSlots.some((s) => s.spool!.id === selectedSpoolId)) {
+    selectedSpoolId = loadedSlots[0].spool!.id;
+  }
+  $: selectedSlot = loadedSlots.find((s) => s.spool!.id === selectedSpoolId) ?? null;
+  $: selectedSpool = selectedSlot?.spool ?? null;
+
+  // Slider amount. Reset when the selected spool or its weight changes (e.g. after
+  // switching spools, or a successful deduction refreshes the data).
   let deductGrams = 0;
   let lastSpoolKey = '';
   $: {
-    const key = `${loadedSpool?.id ?? ''}:${loadedSpool?.remaining_weight ?? ''}`;
+    const key = `${selectedSpool?.id ?? ''}:${selectedSpool?.remaining_weight ?? ''}`;
     if (key !== lastSpoolKey) {
       lastSpoolKey = key;
       deductGrams = 0;
     }
+  }
+
+  // Expected grams used on a given slot for the active job's module. Distributes
+  // the module's total weight across slots by each slot's planned weight; falls
+  // back to putting the whole amount on slot 0 when no per-slot weights exist.
+  function slotUsage(slotIndex: number): number {
+    const total = activePrintJob?.module_weight ?? 0;
+    const mod = printModules.find((m) => m.id === activePrintJob?.module_id);
+    const slots = mod?.filament_slots ?? [];
+    const planned = slots.reduce((sum, s) => sum + (s.weight ?? 0), 0);
+    if (planned > 0) {
+      const w = slots.find((s) => s.slot_index === slotIndex)?.weight ?? 0;
+      return Math.round((w / planned) * total);
+    }
+    return slotIndex === 0 ? total : 0;
   }
 </script>
 
@@ -198,44 +226,47 @@
             </div>
           </div>
 
-          <!-- Spool Weight Info -->
-          {#if loadedSpool}
-            {@const usage = activePrintJob.module_weight ?? 0}
-            {@const after = Math.max(0, loadedSpool.remaining_weight - usage)}
-            <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
-              <div class="flex items-center justify-between mb-3">
-                <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase">Spool Weight</p>
-                <span class="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                  <span class="w-2.5 h-2.5 rounded-full border border-zinc-300/50 dark:border-white/15" style="background-color: {resolveSpoolColor(loadedSpool.preset)}"></span>
-                  {loadedSpool.preset?.brand ?? ''} {loadedSpool.preset?.material ?? ''}
-                </span>
-              </div>
+          <!-- Spool Weight Info (per loaded slot) -->
+          {#if loadedSlots.length > 0}
+            {#each loadedSlots as slot (slot.slot_index)}
+              {@const sp = slot.spool!}
+              {@const usage = slotUsage(slot.slot_index)}
+              {@const after = Math.max(0, sp.remaining_weight - usage)}
+              <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
+                <div class="flex items-center justify-between mb-3">
+                  <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase">Spool Weight · Slot {slot.slot_index + 1}</p>
+                  <span class="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                    <span class="w-2.5 h-2.5 rounded-full border border-zinc-300/50 dark:border-white/15" style="background-color: {resolveSpoolColor(sp.preset)}"></span>
+                    {sp.preset?.brand ?? ''} {sp.preset?.material ?? ''}
+                  </span>
+                </div>
 
-              <!-- Gauge with after-print marker -->
-              <SpoolGauge
-                remaining={loadedSpool.remaining_weight}
-                initial={loadedSpool.initial_weight}
-                color={resolveSpoolColor(loadedSpool.preset)}
-                projected={after}
-                size="lg"
-                showLabel={false}
-              />
+                <!-- Gauge with after-print marker -->
+                <SpoolGauge
+                  remaining={sp.remaining_weight}
+                  initial={sp.initial_weight}
+                  color={resolveSpoolColor(sp.preset)}
+                  projected={after}
+                  size="lg"
+                  showLabel={false}
+                />
 
-              <div class="grid grid-cols-3 gap-4 mt-4">
-                <div>
-                  <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">Before</p>
-                  <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{loadedSpool.remaining_weight}g</p>
-                </div>
-                <div>
-                  <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">Usage</p>
-                  <p class="text-lg text-amber-500 font-light tabular-nums">−{usage}g</p>
-                </div>
-                <div>
-                  <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">After</p>
-                  <p class="text-lg text-blue-500 dark:text-blue-400 font-light tabular-nums">{after.toFixed(0)}g</p>
+                <div class="grid grid-cols-3 gap-4 mt-4">
+                  <div>
+                    <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">Before</p>
+                    <p class="text-lg text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{sp.remaining_weight}g</p>
+                  </div>
+                  <div>
+                    <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">Usage</p>
+                    <p class="text-lg text-amber-500 font-light tabular-nums">−{usage}g</p>
+                  </div>
+                  <div>
+                    <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1">After</p>
+                    <p class="text-lg text-blue-500 dark:text-blue-400 font-light tabular-nums">{after.toFixed(0)}g</p>
+                  </div>
                 </div>
               </div>
-            </div>
+            {/each}
           {:else}
             <div class="bg-red-500/5 border border-red-500/10 rounded-xl p-4">
               <p class="text-sm text-red-500 dark:text-red-400 font-light">No spool loaded</p>
@@ -305,72 +336,91 @@
         {@const lastPrintJob = getLastPrintJob(printer.id, printJobs)}
         <div class="space-y-5">
 
-          <!-- Loaded Spool Info -->
-          {#if loadedSpool}
-            {@const capacity = loadedSpool.initial_weight > 0 ? loadedSpool.initial_weight : loadedSpool.remaining_weight}
-            {@const pct = capacity > 0 ? Math.round((loadedSpool.remaining_weight / capacity) * 100) : 0}
+          <!-- Loaded Spools (per slot) + single manual deduction control -->
+          {#if loadedSlots.length > 0}
+            {@const multi = loadedSlots.length > 1}
             <div class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-5 border border-zinc-100 dark:border-[#1a1a22]">
-              <div class="flex items-center justify-between mb-3">
-                <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase">Loaded Spool</p>
-                <span class="flex items-center gap-1.5 text-sm text-zinc-900 dark:text-zinc-100 font-medium">
-                  <span class="w-2.5 h-2.5 rounded-full border border-zinc-300/50 dark:border-white/15" style="background-color: {resolveSpoolColor(loadedSpool.preset)}"></span>
-                  {loadedSpool.preset?.brand ?? ''} {loadedSpool.preset?.material ?? ''}
-                </span>
-              </div>
-
-              <SpoolGauge
-                remaining={loadedSpool.remaining_weight}
-                initial={loadedSpool.initial_weight}
-                color={resolveSpoolColor(loadedSpool.preset)}
-                size="lg"
-                showLabel={false}
-              />
-
-              <div class="flex items-baseline justify-between mt-3">
-                <span class="text-2xl text-zinc-900 dark:text-zinc-50 font-light tabular-nums">{loadedSpool.remaining_weight}g</span>
-                <span class="text-sm text-zinc-400 dark:text-zinc-500 tabular-nums">{pct}% of {capacity}g</span>
-              </div>
-
-              <!-- Manual weight deduction -->
-              <form
-                method="POST"
-                action="?/adjustSpoolWeight"
-                use:enhance={adjustWeightEnhance}
-                class="mt-5 pt-5 border-t border-zinc-200/60 dark:border-[#1a1a22]"
-              >
-                <input type="hidden" name="spoolId" value={loadedSpool.id} />
-                <input type="hidden" name="remainingWeight" value={loadedSpool.remaining_weight - deductGrams} />
-
-                <div class="flex items-center justify-between mb-3">
-                  <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase">Deduct Weight</p>
-                  <span class="text-sm font-medium tabular-nums {deductGrams > 0 ? 'text-amber-500' : 'text-zinc-400 dark:text-zinc-600'}">
-                    −{deductGrams}g
-                  </span>
-                </div>
-
-                <input
-                  type="range"
-                  min="0"
-                  max={loadedSpool.remaining_weight}
-                  step="1"
-                  bind:value={deductGrams}
-                  class="weight-slider w-full"
-                  style="--pct: {loadedSpool.remaining_weight > 0 ? (deductGrams / loadedSpool.remaining_weight) * 100 : 0}%"
-                />
-
-                <div class="flex items-center justify-between mt-3">
-                  <span class="text-sm text-zinc-400 dark:text-zinc-500 tabular-nums">
-                    After: <span class="text-zinc-900 dark:text-zinc-100 font-medium">{loadedSpool.remaining_weight - deductGrams}g</span>
-                  </span>
+              <!-- Spool rows. With >1 spool each row is the deduction target selector. -->
+              <div class="space-y-2">
+                {#each loadedSlots as slot (slot.slot_index)}
+                  {@const sp = slot.spool!}
+                  {@const capacity = sp.initial_weight > 0 ? sp.initial_weight : sp.remaining_weight}
+                  {@const pct = capacity > 0 ? Math.round((sp.remaining_weight / capacity) * 100) : 0}
                   <button
-                    type="submit"
-                    disabled={deductGrams <= 0}
-                    class="bg-amber-500/8 hover:bg-amber-500/15 text-amber-600 dark:text-amber-400 px-4 py-2 rounded-lg transition-all duration-200 text-sm font-medium border border-amber-500/10 hover:border-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                    type="button"
+                    disabled={!multi}
+                    onclick={() => (selectedSpoolId = sp.id)}
+                    aria-pressed={selectedSpoolId === sp.id}
+                    class="w-full text-left rounded-lg transition-all {multi
+                      ? `p-3 border cursor-pointer ${selectedSpoolId === sp.id ? 'border-amber-500/30 bg-amber-500/[0.04]' : 'border-transparent hover:bg-black/[0.02] dark:hover:bg-white/[0.02]'}`
+                      : 'cursor-default'}"
                   >
-                    Deduct
+                    <div class="flex items-center justify-between gap-3 mb-2">
+                      <span class="flex items-center gap-2 min-w-0">
+                        <span class="w-2.5 h-2.5 rounded-full border border-zinc-300/50 dark:border-white/15 shrink-0" style="background-color: {resolveSpoolColor(sp.preset)}"></span>
+                        <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100 shrink-0">Slot {slot.slot_index + 1}</span>
+                        <span class="text-xs text-zinc-400 dark:text-zinc-500 truncate">{sp.preset?.brand ?? ''} {sp.preset?.material ?? ''}</span>
+                      </span>
+                      <span class="flex items-baseline gap-1.5 shrink-0 tabular-nums">
+                        <span class="text-base font-light text-zinc-900 dark:text-zinc-50">{sp.remaining_weight}g</span>
+                        <span class="text-xs text-zinc-400 dark:text-zinc-600">{pct}%</span>
+                      </span>
+                    </div>
+                    <SpoolGauge
+                      remaining={sp.remaining_weight}
+                      initial={sp.initial_weight}
+                      color={resolveSpoolColor(sp.preset)}
+                      size="sm"
+                      showLabel={false}
+                    />
                   </button>
-                </div>
-              </form>
+                {/each}
+              </div>
+
+              <!-- Manual weight deduction — one slider, targets the selected spool. -->
+              {#if selectedSpool}
+                <form
+                  method="POST"
+                  action="?/adjustSpoolWeight"
+                  use:enhance={adjustWeightEnhance}
+                  class="mt-4 pt-4 border-t border-zinc-200/60 dark:border-[#1a1a22]"
+                >
+                  <input type="hidden" name="spoolId" value={selectedSpool.id} />
+                  <input type="hidden" name="remainingWeight" value={selectedSpool.remaining_weight - deductGrams} />
+
+                  <div class="flex items-center justify-between mb-3">
+                    <p class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase">
+                      Deduct{#if multi} · Slot {(selectedSlot?.slot_index ?? 0) + 1}{/if}
+                    </p>
+                    <span class="text-sm font-medium tabular-nums {deductGrams > 0 ? 'text-amber-500' : 'text-zinc-400 dark:text-zinc-600'}">
+                      −{deductGrams}g
+                    </span>
+                  </div>
+
+                  <input
+                    type="range"
+                    min="0"
+                    max={selectedSpool.remaining_weight}
+                    step="1"
+                    bind:value={deductGrams}
+                    class="weight-slider w-full"
+                    style="--pct: {selectedSpool.remaining_weight > 0 ? (deductGrams / selectedSpool.remaining_weight) * 100 : 0}%; --spool-color: {resolveSpoolColor(selectedSpool.preset)}"
+                  />
+
+                  <div class="flex items-center justify-between mt-3">
+                    <span class="text-sm text-zinc-400 dark:text-zinc-500 tabular-nums">
+                      After: <span class="text-zinc-900 dark:text-zinc-100 font-medium">{selectedSpool.remaining_weight - deductGrams}g</span>
+                    </span>
+                    <button
+                      type="submit"
+                      disabled={deductGrams <= 0}
+                      class="bg-amber-500/8 hover:bg-amber-500/15 text-amber-600 dark:text-amber-400 px-4 py-2 rounded-lg transition-all duration-200 text-sm font-medium border border-amber-500/10 hover:border-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Deduct
+                    </button>
+                  </div>
+                </form>
+              {/if}
             </div>
           {:else}
             <div class="bg-amber-500/5 border border-amber-500/10 rounded-xl p-5">
@@ -489,7 +539,8 @@
 </div>
 
 <style>
-  /* Manual weight-deduction slider — amber fill up to the thumb, zinc track after. */
+  /* Manual weight-deduction slider — filled in the target spool's colour up to the
+     thumb (falls back to amber), zinc track after. Colour comes from --spool-color. */
   .weight-slider {
     -webkit-appearance: none;
     appearance: none;
@@ -497,8 +548,8 @@
     border-radius: 9999px;
     background: linear-gradient(
       to right,
-      rgb(245 158 11) 0%,
-      rgb(245 158 11) var(--pct),
+      var(--spool-color, rgb(245 158 11)) 0%,
+      var(--spool-color, rgb(245 158 11)) var(--pct),
       rgb(228 228 231) var(--pct),
       rgb(228 228 231) 100%
     );
@@ -509,8 +560,8 @@
     .weight-slider {
       background: linear-gradient(
         to right,
-        rgb(245 158 11) 0%,
-        rgb(245 158 11) var(--pct),
+        var(--spool-color, rgb(245 158 11)) 0%,
+        var(--spool-color, rgb(245 158 11)) var(--pct),
         rgb(39 39 42) var(--pct),
         rgb(39 39 42) 100%
       );
@@ -528,7 +579,7 @@
     width: 18px;
     height: 18px;
     border-radius: 9999px;
-    background: rgb(245 158 11);
+    background: var(--spool-color, rgb(245 158 11));
     border: 2px solid white;
     box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
     transition: transform 0.15s ease;
@@ -540,7 +591,7 @@
     width: 18px;
     height: 18px;
     border-radius: 9999px;
-    background: rgb(245 158 11);
+    background: var(--spool-color, rgb(245 158 11));
     border: 2px solid white;
     box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
   }
