@@ -2,9 +2,19 @@
   import type { PageData, ActionData } from './$types';
   import type { GridCell } from '$lib/types';
   import { enhance } from '$app/forms';
+  import { printingEffect, type PrintingEffect } from '$lib/stores/dashboardPrefs';
 
   export let data: PageData;
   export let form: ActionData;
+
+  // Printing-card visual effect options (live-previewed below).
+  const effectOptions: { id: PrintingEffect; label: string; desc: string }[] = [
+    { id: 'solid', label: 'Solid', desc: 'Flat green tint' },
+    { id: 'aurora', label: 'Aurora', desc: 'Drifting gradient' },
+    { id: 'breathing', label: 'Breathing', desc: 'Slow fade in/out' },
+    { id: 'progress', label: 'Progress fill', desc: 'Fills with progress' },
+    { id: 'scan', label: 'Scan line', desc: 'Sweeping line' },
+  ];
 
   const cellTypes: GridCell['type'][] = ['empty', 'printer', 'stats', 'settings', 'spools', 'inventory', 'products'];
 
@@ -123,7 +133,7 @@
         Settings
       </a>
       <h1 class="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Dashboard</h1>
-      <p class="text-zinc-400 dark:text-zinc-500 text-sm mt-1">Grid layout presets for the dashboard view</p>
+      <p class="text-zinc-400 dark:text-zinc-500 text-sm mt-1">Printer-card appearance and grid layout presets</p>
     </div>
 
     {#if form?.success}
@@ -138,6 +148,44 @@
         <p class="text-sm text-red-700 dark:text-red-400">{form.error}</p>
       </div>
     {/if}
+
+    <!-- ── Printing Card Style ─────────────────────────────────────── -->
+    <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-4">
+      <div class="px-5 py-4 border-b border-zinc-50 dark:border-[#1a1a1a]">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Printing Card Style</p>
+        <p class="text-xs text-zinc-400 mt-1">How a card looks while its printer is actively printing.</p>
+      </div>
+      <div class="p-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {#each effectOptions as opt}
+          {@const selected = $printingEffect === opt.id}
+          <button
+            type="button"
+            onclick={() => printingEffect.set(opt.id)}
+            aria-pressed={selected}
+            class="rounded-lg border p-3 text-left transition-all {selected
+              ? 'border-emerald-500/50 ring-1 ring-emerald-500/30'
+              : 'border-zinc-200 dark:border-[#262626] hover:border-zinc-300 dark:hover:border-[#333]'}"
+          >
+            <!-- Live preview -->
+            <div class="relative h-12 rounded-md overflow-hidden bg-zinc-100 dark:bg-[#0c0c0f] mb-2">
+              {#if opt.id === 'aurora'}
+                <div class="absolute inset-0 ring-1 ring-inset ring-indigo-500/40 printing-aurora"></div>
+              {:else if opt.id === 'breathing'}
+                <div class="absolute inset-0 ring-1 ring-inset ring-emerald-500/40 printing-breathe"></div>
+              {:else if opt.id === 'scan'}
+                <div class="absolute inset-0 ring-1 ring-inset ring-sky-500/40 overflow-hidden bg-sky-500/[0.05]"><div class="printing-scan"></div></div>
+              {:else if opt.id === 'progress'}
+                <div class="absolute inset-0 ring-1 ring-inset ring-blue-500/40 overflow-hidden"><div class="absolute inset-x-0 bottom-0 h-3/5 bg-blue-500/15"></div></div>
+              {:else}
+                <div class="absolute inset-0 ring-1 ring-inset ring-emerald-500/40 bg-emerald-500/10"></div>
+              {/if}
+            </div>
+            <p class="text-xs font-medium text-zinc-800 dark:text-zinc-200">{opt.label}</p>
+            <p class="text-[10px] text-zinc-400">{opt.desc}</p>
+          </button>
+        {/each}
+      </div>
+    </div>
 
     <!-- ── Grid Presets ────────────────────────────────────────────── -->
     <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-4">

@@ -966,9 +966,9 @@
       class:duration-300={!isSwiping}
       style="transform: translateX({swipeOffset}px);"
     >
-      <!-- Dynamic Grid -->
+      <!-- Dynamic Grid (py-2 gives the top/bottom rows room for the hover-lift) -->
       <div
-        class="grid gap-5 h-full"
+        class="grid gap-5 h-full py-2"
         style="grid-template-columns: repeat({gridCols}, minmax(0, 1fr)); grid-template-rows: repeat({gridRows}, minmax(0, 1fr));"
       >
 
@@ -985,7 +985,6 @@
             activePrintJobs={data.activePrintJobs}
             printModules={data.printModules}
             startQueue={startQueue}
-            startQueueTotal={startQueueTotal}
             now={now}
             onSelect={() => selectPrinter(printer)}
           />

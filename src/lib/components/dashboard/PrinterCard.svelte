@@ -4,6 +4,7 @@
     import { getProgress } from "$lib/utils/time";
     import { getActivePrintJob } from "$lib/utils/printerData";
     import { resolveSpoolColor } from "$lib/utils/spoolColor";
+    import { printingEffect } from "$lib/stores/dashboardPrefs";
     import SpoolGauge from "$lib/components/dashboard/SpoolGauge.svelte";
     import type {
         DashboardPrinter,
@@ -21,13 +22,79 @@
     export let printModules: PrintModuleFull[];
     /** Full start queue — used to compute this printer's queue position. */
     export let startQueue: any[]; // complex queue entry shape not yet in types.ts
-    export let startQueueTotal: number;
     export let now: number;
     export let onSelect: () => void;
 
     $: liveIsPrinting =
         !!piLive &&
         ["RUNNING", "PREPARE", "PAUSE"].includes(piLive.gcode_state);
+
+    // Single source of truth for the card's visual status — drives the dot and tint.
+    $: cardStatus = liveIsStarting
+        ? "starting"
+        : liveIsPrinting || printer.status === "printing"
+          ? "printing"
+          : printer.status; // 'finished' | 'idle' | 'inactive'
+
+    // Background tint + inset ring per status. Idle is deliberately untinted.
+    // Printing is handled separately (animated effect chosen in settings).
+    const STATUS_TINT: Record<string, string> = {
+        starting: "bg-amber-500/10 ring-amber-500/40",
+        finished: "bg-violet-500/[0.13] ring-violet-500/45",
+        inactive: "bg-red-500/10 ring-red-500/40",
+    };
+    $: tint = STATUS_TINT[cardStatus] ?? "";
+
+    // Live print progress (0–100) — drives the "progress" printing effect.
+    $: printProgress =
+        cardStatus !== "printing"
+            ? 0
+            : piLive
+              ? Math.min(100, piLive.progress)
+              : (() => {
+                    const job = getActivePrintJob(
+                        Number(printer.id),
+                        activePrintJobs,
+                    );
+                    return job
+                        ? Math.min(
+                              100,
+                              getProgress(
+                                  Number(job.start_time),
+                                  Number((job as any).expected_time_minutes),
+                                  now,
+                              ),
+                          )
+                        : 0;
+                })();
+
+    // How many of the cheapest compatible modules this spool can still print.
+    // Drives the gram-label colour: red = none left, amber = exactly one.
+    function printsForSpool(spool: {
+        preset_id: number | null;
+        remaining_weight: number;
+    }): number {
+        const compat = printModules.filter((m) => {
+            if (m.printer_preset_id !== printer.printer_preset_id) return false;
+            const slot0 = m.filament_slots?.find((s) => s.slot_index === 0);
+            if (!slot0) return true; // no filament requirement — any spool works
+            return spool.preset_id === slot0.spool_preset_id;
+        });
+        if (compat.length === 0) return 0;
+        const minW = Math.min(...compat.map((m) => m.weight));
+        return minW > 0 ? Math.floor(spool.remaining_weight / minW) : 0;
+    }
+    function gramClass(spool: {
+        preset_id: number | null;
+        remaining_weight: number;
+    }): string {
+        const n = printsForSpool(spool);
+        return n <= 0
+            ? "text-red-500 dark:text-red-400"
+            : n === 1
+              ? "text-amber-500 dark:text-amber-400"
+              : "text-zinc-500 dark:text-zinc-300";
+    }
 </script>
 
 <!-- Active Printer Card -->
@@ -38,130 +105,43 @@
          rounded-xl p-3 card-lift card-shine
          flex flex-col items-center justify-center overflow-hidden min-h-0"
 >
-    <!-- Status Indicator — larger, with glow -->
-    <div class="absolute top-3 right-3">
-        {#if liveIsStarting}
-            <div
-                class="w-2.5 h-2.5 bg-amber-400 rounded-full animate-pulse"
-            ></div>
-        {:else if printer.status === "finished"}
-            <div
-                class="w-2.5 h-2.5 bg-violet-500 rounded-full status-glow-violet animate-pulse"
-            ></div>
-        {:else if liveIsPrinting || printer.status === "printing"}
-            {@const activePrintForDot = getActivePrintJob(
-                Number(printer.id),
-                activePrintJobs,
-            )}
-            {@const progressForDot = activePrintForDot
-                ? getProgress(
-                      Number(activePrintForDot.start_time),
-                      Number((activePrintForDot as any).expected_time_minutes),
-                      now,
-                  )
-                : 0}
-            {#if progressForDot >= 100}
+    <!-- Status background. Printing uses the effect chosen in dashboard settings;
+         other statuses get a flat tint + inset ring. Idle is untinted. -->
+    {#if cardStatus === "printing"}
+        {#if $printingEffect === "aurora"}
+            <div class="absolute inset-0 rounded-xl ring-1 ring-inset ring-indigo-500/40 pointer-events-none printing-aurora"></div>
+        {:else if $printingEffect === "breathing"}
+            <div class="absolute inset-0 rounded-xl ring-1 ring-inset ring-emerald-500/40 pointer-events-none printing-breathe"></div>
+        {:else if $printingEffect === "scan"}
+            <div class="absolute inset-0 rounded-xl ring-1 ring-inset ring-sky-500/40 pointer-events-none overflow-hidden bg-sky-500/[0.05]">
+                <div class="printing-scan"></div>
+            </div>
+        {:else if $printingEffect === "progress"}
+            <div class="absolute inset-0 rounded-xl ring-1 ring-inset ring-blue-500/40 pointer-events-none overflow-hidden">
                 <div
-                    class="w-2.5 h-2.5 bg-violet-500 rounded-full status-glow-violet"
+                    class="absolute inset-x-0 bottom-0 bg-blue-500/15 transition-[height] duration-700 ease-out"
+                    style="height: {printProgress}%"
                 ></div>
-            {:else}
-                {@const spoolForDot = printer.loaded_spool}
-                {@const weightAfterPrint = spoolForDot
-                    ? spoolForDot.remaining_weight -
-                      ((activePrintForDot as any)?.module_weight || 0)
-                    : 0}
-                {@const compatModules = printModules.filter((m) => {
-                    if (m.printer_preset_id !== printer.printer_preset_id)
-                        return false;
-                    const slot0 = m.filament_slots?.find(
-                        (s) => s.slot_index === 0,
-                    );
-                    if (!slot0) return true; // no requirement — any spool ok
-                    return (
-                        spoolForDot &&
-                        spoolForDot.preset_id === slot0.spool_preset_id
-                    );
-                })}
-                {@const minWeight =
-                    compatModules.length > 0
-                        ? Math.min(...compatModules.map((m) => m.weight))
-                        : Infinity}
-                {@const printsPossible =
-                    minWeight > 0 && minWeight !== Infinity
-                        ? Math.floor(weightAfterPrint / minWeight)
-                        : 0}
-                {#if !spoolForDot || printsPossible <= 0}
-                    <div
-                        class="w-2.5 h-2.5 bg-red-500 rounded-full status-glow-red"
-                    ></div>
-                {:else if printsPossible === 1}
-                    <div
-                        class="w-2.5 h-2.5 bg-yellow-500 rounded-full status-glow-yellow"
-                    ></div>
-                {:else}
-                    <div
-                        class="w-2.5 h-2.5 bg-green-500 rounded-full status-glow-green"
-                    ></div>
-                {/if}
-            {/if}
-        {:else if printer.status === "idle"}
-            {@const loadedSpool = printer.loaded_spool}
-            {@const remainingWeight = loadedSpool?.remaining_weight ?? 0}
-            {@const compatibleModules = printModules.filter((m) => {
-                if (m.printer_preset_id !== printer.printer_preset_id)
-                    return false;
-                const slot0 = m.filament_slots?.find((s) => s.slot_index === 0);
-                if (!slot0) return true;
-                return (
-                    loadedSpool &&
-                    loadedSpool.preset_id === slot0.spool_preset_id
-                );
-            })}
-            {@const minModuleWeight =
-                compatibleModules.length > 0
-                    ? Math.min(...compatibleModules.map((m) => m.weight))
-                    : Infinity}
-            {@const maxPrintsPossible =
-                minModuleWeight > 0 && minModuleWeight !== Infinity
-                    ? Math.floor(remainingWeight / minModuleWeight)
-                    : 0}
-            {#if !loadedSpool}
-                <div
-                    class="w-2.5 h-2.5 bg-red-500 rounded-full status-glow-red"
-                ></div>
-            {:else if maxPrintsPossible === 0}
-                <div
-                    class="w-2.5 h-2.5 bg-red-500 rounded-full status-glow-red"
-                ></div>
-            {:else if maxPrintsPossible === 1}
-                <div
-                    class="w-2.5 h-2.5 bg-yellow-500 rounded-full status-glow-yellow"
-                ></div>
-            {:else}
-                <div
-                    class="w-2.5 h-2.5 bg-green-500 rounded-full status-glow-green"
-                ></div>
-            {/if}
-        {:else if printer.status === "inactive"}
-            <div
-                class="w-2.5 h-2.5 bg-red-500 rounded-full status-glow-red animate-pulse"
-            ></div>
+            </div>
         {:else}
-            <div
-                class="w-2.5 h-2.5 bg-zinc-400 dark:bg-zinc-600 rounded-full"
-            ></div>
+            <!-- solid -->
+            <div class="absolute inset-0 rounded-xl ring-1 ring-inset ring-emerald-500/40 pointer-events-none bg-emerald-500/10"></div>
         {/if}
-    </div>
+    {:else if tint}
+        <div
+            class="absolute inset-0 rounded-xl ring-1 ring-inset pointer-events-none {tint}"
+        ></div>
+    {/if}
 
     <!-- Printer Image with vertical spool gauges on the left -->
-    <div class="flex-1 flex items-stretch justify-center min-h-0 w-full gap-2">
+    <div class="relative z-[1] flex-1 flex items-stretch justify-center min-h-0 w-full gap-2">
         {#if printer.loaded_spools && printer.loaded_spools.length > 0}
             {@const slots = [...printer.loaded_spools].sort((a, b) => a.slot_index - b.slot_index)}
-            <div class="flex items-stretch gap-1.5 py-2 shrink-0">
+            <div class="flex items-stretch gap-2 py-2 shrink-0">
                 {#each slots as slot (slot.slot_index)}
                     {#if slot.spool}
                         <div
-                            class="flex flex-col items-center h-full"
+                            class="flex flex-col items-center h-full gap-1"
                             title="Slot {slot.slot_index + 1}: {slot.spool.preset?.brand ?? ''} {slot.spool.preset?.material ?? ''} {slot.spool.preset?.color ?? ''} — {slot.spool.remaining_weight}g"
                         >
                             <SpoolGauge
@@ -169,12 +149,18 @@
                                 initial={slot.spool.initial_weight}
                                 color={resolveSpoolColor(slot.spool.preset)}
                                 orientation="vertical"
-                                size="sm"
+                                size="lg"
+                                showLabel={false}
                             />
+                            <span
+                                class="shrink-0 leading-none font-medium tabular-nums text-[clamp(0.4rem,1.2vw,0.6rem)] {gramClass(slot.spool)}"
+                            >
+                                {slot.spool.remaining_weight}
+                            </span>
                         </div>
                     {:else}
                         <div
-                            class="w-1.5 my-2 self-stretch rounded-full border border-dashed border-zinc-300 dark:border-zinc-700"
+                            class="w-2.5 my-2 self-stretch rounded-full border border-dashed border-zinc-300 dark:border-zinc-700"
                             title="Slot {slot.slot_index + 1}: empty"
                         ></div>
                     {/if}
@@ -195,7 +181,7 @@
 
     <!-- Printer Name & Status -->
     <div
-        class="w-full text-center border-t border-zinc-200/60 dark:border-[#1a1a22] pt-2 mt-2 min-h-0 flex-shrink-0"
+        class="relative z-[1] w-full text-center border-t border-zinc-200/60 dark:border-[#1a1a22] pt-2 mt-2 min-h-0 flex-shrink-0"
     >
         <h3
             class="text-[clamp(0.55rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-100 truncate px-1 tracking-tight"
@@ -203,39 +189,14 @@
             {printer.name}
         </h3>
 
-        <p
-            class="text-[clamp(0.4rem,1.5vw,0.7rem)] font-light tracking-wide uppercase mt-0.5"
-        >
-            {#if liveIsStarting}
-                {@const qPos = startQueue.findIndex(
-                    (e: any) => Number(e.printer.id) === Number(printer.id),
-                )}
-                <span class="text-amber-500 dark:text-amber-400">
-                    {qPos === 0
-                        ? "Starting…"
-                        : `Queue ${qPos + 1}/${startQueueTotal}`}
-                </span>
-            {:else if printer.status === "finished"}
-                <span class="text-violet-500 dark:text-violet-400">Confirm result</span>
-            {:else if liveIsPrinting || printer.status === "printing"}
-                <span class="text-blue-500 dark:text-blue-400">Printing</span>
-            {:else if printer.status === "idle"}
-                <span class="text-emerald-500 dark:text-emerald-400">Idle</span>
-            {:else if printer.status === "inactive"}
-                <span class="text-red-500 dark:text-red-400">Inactive</span>
-            {:else}
-                <span class="text-zinc-400 dark:text-zinc-500"
-                    >{printer.status}</span
-                >
-            {/if}
-        </p>
-
-        <!-- Progress Bar for Active Prints -->
+        <!-- Reserved progress area — fixed min-height keeps the name at a
+             consistent height across idle / printing / finished cards. -->
+        <div class="mt-2 min-h-[26px]">
         {#if liveIsStarting}
             {@const qPos = startQueue.findIndex(
                 (e: any) => Number(e.printer.id) === Number(printer.id),
             )}
-            <div class="mt-2 px-1">
+            <div class="px-1">
                 <div
                     class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden"
                 >
@@ -250,7 +211,7 @@
                 </p>
             </div>
         {:else if printer.status === "finished"}
-            <div class="mt-2 px-1">
+            <div class="px-1">
                 <div
                     class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden"
                 >
@@ -259,9 +220,9 @@
                     ></div>
                 </div>
                 <p
-                    class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-violet-500/80 dark:text-violet-400/80 mt-1"
+                    class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-violet-500/80 dark:text-violet-400/80 mt-1 tabular-nums"
                 >
-                    Tap to confirm result
+                    100%
                 </p>
             </div>
         {:else if liveIsPrinting || printer.status === "printing"}
@@ -277,7 +238,7 @@
                           Number((activePrint as any).expected_time_minutes),
                           now,
                       )}
-                <div class="mt-2 px-1">
+                <div class="px-1">
                     <div
                         class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden"
                     >
@@ -296,7 +257,7 @@
                 </div>
             {:else if piLive}
                 <!-- External / un-reconciled print: show whatever Pi gives us -->
-                <div class="mt-2 px-1">
+                <div class="px-1">
                     {#if piLive.subtask_name}
                         <p
                             class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-500 dark:text-zinc-400 truncate mb-1"
@@ -320,5 +281,6 @@
                 </div>
             {/if}
         {/if}
+        </div>
     </div>
 </button>

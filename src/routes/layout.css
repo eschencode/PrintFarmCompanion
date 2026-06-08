@@ -127,6 +127,49 @@ html, body {
   animation: shimmer 2s ease-in-out infinite;
 }
 
+/* Printing card "aurora" — a slow drifting gradient that signals an active print */
+@keyframes aurora-pan {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.printing-aurora {
+  background-image: linear-gradient(
+    120deg,
+    rgba(59, 130, 246, 0.03) 0%,
+    rgba(99, 102, 241, 0.14) 30%,
+    rgba(34, 211, 238, 0.11) 50%,
+    rgba(99, 102, 241, 0.14) 70%,
+    rgba(59, 130, 246, 0.03) 100%
+  );
+  background-size: 220% 220%;
+  animation: aurora-pan 6s ease-in-out infinite;
+}
+
+/* Printing card "breathing" — a tint that slowly fades in and out */
+@keyframes breathe {
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 1; }
+}
+.printing-breathe {
+  background-color: rgba(16, 185, 129, 0.13); /* emerald */
+  animation: breathe 3.5s ease-in-out infinite;
+}
+
+/* Printing card "scan" — a soft line sweeping down the card like a print head */
+@keyframes scan-down {
+  0%   { top: -18%; }
+  100% { top: 100%; }
+}
+.printing-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 18%;
+  background: linear-gradient(to bottom, transparent, rgba(56, 189, 248, 0.22), transparent);
+  animation: scan-down 3s ease-in-out infinite;
+}
+
 @keyframes float-up {
   0%   { transform: translateY(0) translateX(0) rotate(0deg) scale(var(--scale)); opacity: 1; }
   20%  { opacity: 1; }
