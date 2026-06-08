@@ -3,6 +3,7 @@
   import type { GridCell, SpoolSuggestion, DashboardPrinter, PiStatus } from '$lib/types';
   import { enhance } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
+  import { browser } from '$app/environment';
   import { formatTime, formatRemainingTime, getElapsedTime, getRemainingTime, getProgress } from '$lib/utils/time';
   import { getActivePrintJob, getLastPrintJob, getCategorizedModules } from '$lib/utils/printerData';
   import { shine } from '$lib/actions/shine';
@@ -64,7 +65,7 @@
   // once so the server re-derives the printer as 'finished' (awaiting confirmation)
   // and the card surfaces the "Confirm result" prompt.
   const timedOutJobs = new Set<number>();
-  $: if (now) {
+  $: if (browser && now) {
     for (const job of (data.activePrintJobs as any[])) {
       if (
         job.status === 'printing' &&
