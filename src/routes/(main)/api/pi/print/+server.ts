@@ -55,6 +55,20 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     return json({ success: false, error: 'Printer missing Pi credentials (IP/serial/access code)' }, { status: 400 });
   }
 
+  // Create the print_jobs row BEFORE telling the Pi to start. The Pi upload +
+  // preheat window is seconds long; if the row were inserted afterwards, a
+  // concurrent /api/pi/status poll would see the printer RUNNING with no open
+  // job and misfire `detected_external` for our own print (and the card would
+  // sit idle until the row landed). Inserting first closes that race.
+  await closeOpenPrintJobsForPrinter(db, printer_id, module_id);
+
+  const now = Math.floor(Date.now() / 1000);
+  const insert = await drizzleDb.run(sql`
+    INSERT INTO print_jobs (module_id, printer_id, start_time, status, created_at, updated_at)
+    VALUES (${module_id}, ${printer_id}, ${now}, 'printing', ${now}, ${now})
+  `);
+  const jobId = insert.meta.last_row_id as number;
+
   let piResult: { success: boolean; task_id?: string; error?: string };
   try {
     const piResp = await fetch(`${piUrl}/print`, {
@@ -71,24 +85,24 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     });
     piResult = await piResp.json() as typeof piResult;
   } catch (e) {
+    // Pi never started the print — drop the placeholder so it can't be adopted.
+    await drizzleDb.run(sql`DELETE FROM print_jobs WHERE id = ${jobId}`);
     return json({ success: false, error: `Pi unreachable: ${e}` }, { status: 502 });
   }
 
   if (!piResult.success) {
+    await drizzleDb.run(sql`DELETE FROM print_jobs WHERE id = ${jobId}`);
     return json({ success: false, error: piResult.error ?? 'Pi print failed' }, { status: 502 });
   }
 
-  await closeOpenPrintJobsForPrinter(db, printer_id, module_id);
-
-  const now = Math.floor(Date.now() / 1000);
-  const result = await drizzleDb.run(sql`
-    INSERT INTO print_jobs (module_id, printer_id, start_time, status, external_task_id, created_at, updated_at)
-    VALUES (${module_id}, ${printer_id}, ${now}, 'printing', ${piResult.task_id ?? null}, ${now}, ${now})
+  // Pi accepted the job — attach its task_id and snapshot loaded spools (one row
+  // per slot) so completion can deduct used weight from the physical spools.
+  await drizzleDb.run(sql`
+    UPDATE print_jobs
+    SET external_task_id = ${piResult.task_id ?? null}, updated_at = ${Math.floor(Date.now() / 1000)}
+    WHERE id = ${jobId}
   `);
-  const jobId = result.meta.last_row_id as number;
 
-  // Snapshot loaded spools → print_job_spools (one row per slot) so completion
-  // can deduct used weight from the physical spools. Mirrors startPrintJob.
   const loadedSlots = await getLoadedSpools(db, printer_id);
   for (const slot of loadedSlots) {
     const s = slot as unknown as { slot_index: number; spool_id: number | null };
