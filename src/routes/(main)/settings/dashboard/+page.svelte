@@ -2,19 +2,37 @@
   import type { PageData, ActionData } from './$types';
   import type { GridCell } from '$lib/types';
   import { enhance } from '$app/forms';
-  import { printingEffect, type PrintingEffect } from '$lib/stores/dashboardPrefs';
+  import {
+    printingEffect,
+    stateColors,
+    hexToRgb,
+    type PrintingEffect,
+    type CardStatus,
+  } from '$lib/stores/dashboardPrefs';
 
   export let data: PageData;
   export let form: ActionData;
 
   // Printing-card visual effect options (live-previewed below).
   const effectOptions: { id: PrintingEffect; label: string; desc: string }[] = [
-    { id: 'solid', label: 'Solid', desc: 'Flat green tint' },
+    { id: 'solid', label: 'Solid', desc: 'Flat tint' },
     { id: 'aurora', label: 'Aurora', desc: 'Drifting gradient' },
     { id: 'breathing', label: 'Breathing', desc: 'Slow fade in/out' },
-    { id: 'progress', label: 'Progress fill', desc: 'Fills with progress' },
+    { id: 'progress', label: 'Progress fill', desc: 'Fills L→R with progress' },
     { id: 'scan', label: 'Scan line', desc: 'Sweeping line' },
   ];
+
+  // Customisable per-status colours.
+  const statusList: { id: CardStatus; label: string }[] = [
+    { id: 'idle', label: 'Idle' },
+    { id: 'printing', label: 'Printing' },
+    { id: 'starting', label: 'Starting' },
+    { id: 'finished', label: 'Finished' },
+    { id: 'inactive', label: 'Inactive' },
+  ];
+
+  // Printing colour drives the live effect previews below.
+  $: printingRgb = hexToRgb($stateColors.printing.color);
 
   const cellTypes: GridCell['type'][] = ['empty', 'printer', 'stats', 'settings', 'spools', 'inventory', 'products'];
 
@@ -149,11 +167,61 @@
       </div>
     {/if}
 
+    <!-- ── Status Colours ──────────────────────────────────────────── -->
+    <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-4">
+      <div class="px-5 py-4 flex items-center justify-between border-b border-zinc-50 dark:border-[#1a1a1a]">
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Status Colours</p>
+          <p class="text-xs text-zinc-400 mt-1">Tint colour for each printer state on the dashboard.</p>
+        </div>
+        <button
+          type="button"
+          onclick={() => stateColors.reset()}
+          class="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+        >
+          Reset
+        </button>
+      </div>
+      <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a]">
+        {#each statusList as s}
+          {@const cfg = $stateColors[s.id]}
+          <div class="px-5 py-3 flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3 min-w-0">
+              <span
+                class="w-6 h-6 rounded-md border border-zinc-200 dark:border-[#262626] shrink-0"
+                style="background-color: {cfg.enabled ? cfg.color : 'transparent'}"
+              ></span>
+              <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{s.label}</p>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+              <input
+                type="color"
+                value={cfg.color}
+                oninput={(e) => stateColors.setStatus(s.id, { color: e.currentTarget.value })}
+                class="w-8 h-8 rounded cursor-pointer bg-transparent border-0 p-0"
+                aria-label="{s.label} colour"
+              />
+              <button
+                type="button"
+                onclick={() => stateColors.setStatus(s.id, { enabled: !cfg.enabled })}
+                class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {cfg.enabled ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'}"
+                role="switch"
+                aria-checked={cfg.enabled}
+                aria-label="Toggle {s.label} tint"
+              >
+                <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform {cfg.enabled ? 'translate-x-4' : 'translate-x-0.5'}"></span>
+              </button>
+            </div>
+          </div>
+        {/each}
+      </div>
+    </div>
+
     <!-- ── Printing Card Style ─────────────────────────────────────── -->
     <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-4">
       <div class="px-5 py-4 border-b border-zinc-50 dark:border-[#1a1a1a]">
         <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Printing Card Style</p>
-        <p class="text-xs text-zinc-400 mt-1">How a card looks while its printer is actively printing.</p>
+        <p class="text-xs text-zinc-400 mt-1">Animation while a printer is printing (uses the Printing colour above).</p>
       </div>
       <div class="p-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
         {#each effectOptions as opt}
@@ -166,18 +234,18 @@
               ? 'border-emerald-500/50 ring-1 ring-emerald-500/30'
               : 'border-zinc-200 dark:border-[#262626] hover:border-zinc-300 dark:hover:border-[#333]'}"
           >
-            <!-- Live preview -->
-            <div class="relative h-12 rounded-md overflow-hidden bg-zinc-100 dark:bg-[#0c0c0f] mb-2">
+            <!-- Live preview (tinted with the chosen Printing colour) -->
+            <div class="relative h-12 rounded-md overflow-hidden bg-zinc-100 dark:bg-[#0c0c0f] mb-2" style="--c-rgb: {printingRgb}; box-shadow: inset 0 0 0 1.5px rgba({printingRgb}, 0.4);">
               {#if opt.id === 'aurora'}
-                <div class="absolute inset-0 ring-1 ring-inset ring-indigo-500/40 printing-aurora"></div>
+                <div class="absolute inset-0 printing-aurora"></div>
               {:else if opt.id === 'breathing'}
-                <div class="absolute inset-0 ring-1 ring-inset ring-emerald-500/40 printing-breathe"></div>
+                <div class="absolute inset-0 printing-breathe"></div>
               {:else if opt.id === 'scan'}
-                <div class="absolute inset-0 ring-1 ring-inset ring-sky-500/40 overflow-hidden bg-sky-500/[0.05]"><div class="printing-scan"></div></div>
+                <div class="absolute inset-0 overflow-hidden" style="background-color: rgba({printingRgb}, 0.05);"><div class="printing-scan"></div></div>
               {:else if opt.id === 'progress'}
-                <div class="absolute inset-0 ring-1 ring-inset ring-blue-500/40 overflow-hidden"><div class="absolute inset-x-0 bottom-0 h-3/5 bg-blue-500/15"></div></div>
+                <div class="absolute inset-y-0 left-0 w-3/5" style="background-color: rgba({printingRgb}, 0.15);"></div>
               {:else}
-                <div class="absolute inset-0 ring-1 ring-inset ring-emerald-500/40 bg-emerald-500/10"></div>
+                <div class="absolute inset-0" style="background-color: rgba({printingRgb}, 0.10);"></div>
               {/if}
             </div>
             <p class="text-xs font-medium text-zinc-800 dark:text-zinc-200">{opt.label}</p>

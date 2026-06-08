@@ -509,6 +509,8 @@
     });
     printer.status = broken ? 'inactive' : 'idle';
     if (selectedPrinter?.id === printer.id) selectedPrinter = { ...printer };
+    // Refresh data.printers so the dashboard card re-derives status (and its tint).
+    await invalidateAll();
     controlLoading = null;
   }
 

@@ -133,14 +133,15 @@ html, body {
   50%  { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
+/* All printing effects take their colour from --c-rgb ("r, g, b"), set inline. */
 .printing-aurora {
   background-image: linear-gradient(
     120deg,
-    rgba(59, 130, 246, 0.03) 0%,
-    rgba(99, 102, 241, 0.14) 30%,
-    rgba(34, 211, 238, 0.11) 50%,
-    rgba(99, 102, 241, 0.14) 70%,
-    rgba(59, 130, 246, 0.03) 100%
+    rgba(var(--c-rgb), 0.03) 0%,
+    rgba(var(--c-rgb), 0.16) 30%,
+    rgba(var(--c-rgb), 0.10) 50%,
+    rgba(var(--c-rgb), 0.16) 70%,
+    rgba(var(--c-rgb), 0.03) 100%
   );
   background-size: 220% 220%;
   animation: aurora-pan 6s ease-in-out infinite;
@@ -152,7 +153,7 @@ html, body {
   50%      { opacity: 1; }
 }
 .printing-breathe {
-  background-color: rgba(16, 185, 129, 0.13); /* emerald */
+  background-color: rgba(var(--c-rgb), 0.14);
   animation: breathe 3.5s ease-in-out infinite;
 }
 
@@ -166,7 +167,7 @@ html, body {
   left: 0;
   right: 0;
   height: 18%;
-  background: linear-gradient(to bottom, transparent, rgba(56, 189, 248, 0.22), transparent);
+  background: linear-gradient(to bottom, transparent, rgba(var(--c-rgb), 0.24), transparent);
   animation: scan-down 3s ease-in-out infinite;
 }
 

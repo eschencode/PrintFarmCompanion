@@ -4,7 +4,11 @@
     import { getProgress } from "$lib/utils/time";
     import { getActivePrintJob } from "$lib/utils/printerData";
     import { resolveSpoolColor } from "$lib/utils/spoolColor";
-    import { printingEffect } from "$lib/stores/dashboardPrefs";
+    import {
+        printingEffect,
+        stateColors,
+        hexToRgb,
+    } from "$lib/stores/dashboardPrefs";
     import SpoolGauge from "$lib/components/dashboard/SpoolGauge.svelte";
     import type {
         DashboardPrinter,
@@ -36,14 +40,11 @@
           ? "printing"
           : printer.status; // 'finished' | 'idle' | 'inactive'
 
-    // Background tint + inset ring per status. Idle is deliberately untinted.
-    // Printing is handled separately (animated effect chosen in settings).
-    const STATUS_TINT: Record<string, string> = {
-        starting: "bg-amber-500/10 ring-amber-500/40",
-        finished: "bg-violet-500/[0.13] ring-violet-500/45",
-        inactive: "bg-red-500/10 ring-red-500/40",
-    };
-    $: tint = STATUS_TINT[cardStatus] ?? "";
+    // Per-status colour config (customisable in settings). Drives the tint/effect.
+    $: stateCfg = ($stateColors as Record<string, { color: string; enabled: boolean }>)[cardStatus];
+    $: tintEnabled = !!stateCfg?.enabled;
+    $: tintRgb = stateCfg ? hexToRgb(stateCfg.color) : "113, 113, 122";
+    $: ringShadow = `inset 0 0 0 1.5px rgba(${tintRgb}, 0.4)`;
 
     // Live print progress (0–100) — drives the "progress" printing effect.
     $: printProgress =
@@ -105,31 +106,48 @@
          rounded-xl p-3 card-lift card-shine
          flex flex-col items-center justify-center overflow-hidden min-h-0"
 >
-    <!-- Status background. Printing uses the effect chosen in dashboard settings;
-         other statuses get a flat tint + inset ring. Idle is untinted. -->
-    {#if cardStatus === "printing"}
+    <!-- Status background (colours customisable in dashboard settings). Printing
+         uses the chosen animated effect; other statuses get a flat tint + ring.
+         All effects sit behind the printer image (this layer is below z-[1]). -->
+    {#if cardStatus === "printing" && tintEnabled}
         {#if $printingEffect === "aurora"}
-            <div class="absolute inset-0 rounded-xl ring-1 ring-inset ring-indigo-500/40 pointer-events-none printing-aurora"></div>
+            <div
+                class="absolute inset-0 rounded-xl pointer-events-none printing-aurora"
+                style="--c-rgb: {tintRgb}; box-shadow: {ringShadow};"
+            ></div>
         {:else if $printingEffect === "breathing"}
-            <div class="absolute inset-0 rounded-xl ring-1 ring-inset ring-emerald-500/40 pointer-events-none printing-breathe"></div>
+            <div
+                class="absolute inset-0 rounded-xl pointer-events-none printing-breathe"
+                style="--c-rgb: {tintRgb}; box-shadow: {ringShadow};"
+            ></div>
         {:else if $printingEffect === "scan"}
-            <div class="absolute inset-0 rounded-xl ring-1 ring-inset ring-sky-500/40 pointer-events-none overflow-hidden bg-sky-500/[0.05]">
+            <div
+                class="absolute inset-0 rounded-xl pointer-events-none overflow-hidden"
+                style="--c-rgb: {tintRgb}; background-color: rgba({tintRgb}, 0.05); box-shadow: {ringShadow};"
+            >
                 <div class="printing-scan"></div>
             </div>
         {:else if $printingEffect === "progress"}
-            <div class="absolute inset-0 rounded-xl ring-1 ring-inset ring-blue-500/40 pointer-events-none overflow-hidden">
+            <div
+                class="absolute inset-0 rounded-xl pointer-events-none overflow-hidden"
+                style="box-shadow: {ringShadow};"
+            >
                 <div
-                    class="absolute inset-x-0 bottom-0 bg-blue-500/15 transition-[height] duration-700 ease-out"
-                    style="height: {printProgress}%"
+                    class="absolute inset-y-0 left-0 transition-[width] duration-700 ease-out"
+                    style="width: {printProgress}%; background-color: rgba({tintRgb}, 0.15);"
                 ></div>
             </div>
         {:else}
             <!-- solid -->
-            <div class="absolute inset-0 rounded-xl ring-1 ring-inset ring-emerald-500/40 pointer-events-none bg-emerald-500/10"></div>
+            <div
+                class="absolute inset-0 rounded-xl pointer-events-none"
+                style="background-color: rgba({tintRgb}, 0.10); box-shadow: {ringShadow};"
+            ></div>
         {/if}
-    {:else if tint}
+    {:else if cardStatus !== "printing" && tintEnabled}
         <div
-            class="absolute inset-0 rounded-xl ring-1 ring-inset pointer-events-none {tint}"
+            class="absolute inset-0 rounded-xl pointer-events-none"
+            style="background-color: rgba({tintRgb}, 0.10); box-shadow: {ringShadow};"
         ></div>
     {/if}
 
