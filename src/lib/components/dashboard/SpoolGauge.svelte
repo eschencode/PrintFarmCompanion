@@ -52,12 +52,12 @@
                box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);"
       ></div>
 
-      <!-- Projected-after marker -->
+      <!-- Striped band = filament the running print is expected to consume -->
       {#if projectedPct != null && projectedPct < pct}
         <div
-          class="absolute inset-x-0 h-px bg-zinc-900/50 dark:bg-white/60"
-          style="bottom: {projectedPct}%;"
-          title="After print: {projected}g"
+          class="gauge-stripe absolute inset-x-0 rounded-full"
+          style="bottom: {projectedPct}%; height: {pct - projectedPct}%;"
+          title="Print will use {Math.round(remaining - (projected ?? 0))}g → {projected}g left"
         ></div>
       {/if}
     </div>
@@ -85,9 +85,9 @@
 
       {#if projectedPct != null && projectedPct < pct}
         <div
-          class="absolute inset-y-0 w-px bg-zinc-900/50 dark:bg-white/60"
-          style="left: {projectedPct}%;"
-          title="After print: {projected}g"
+          class="gauge-stripe absolute inset-y-0 rounded-full"
+          style="left: {projectedPct}%; width: {pct - projectedPct}%;"
+          title="Print will use {Math.round(remaining - (projected ?? 0))}g → {projected}g left"
         ></div>
       {/if}
     </div>
@@ -102,3 +102,15 @@
     {/if}
   </div>
 {/if}
+
+<style>
+  /* Static barber-pole hatch over the colour fill: semi-transparent so the
+     spool's tint still reads through. Marks filament the running print will use. */
+  .gauge-stripe {
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(0, 0, 0, 0.25) 0 3px,
+      rgba(255, 255, 255, 0.3) 3px 6px
+    );
+  }
+</style>

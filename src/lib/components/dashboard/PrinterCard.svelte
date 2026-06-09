@@ -96,6 +96,35 @@
               ? "text-amber-500 dark:text-amber-400"
               : "text-zinc-500 dark:text-zinc-300";
     }
+
+    // The in-flight print's module — its per-slot filament_slots tell us how much
+    // each loaded spool will be down to. Shown while starting/printing (projected)
+    // and while finished/awaiting confirmation (predicted-used, not yet deducted).
+    // The job row exists from the moment startPrint runs, so show it immediately
+    // rather than waiting for the start queue to advance to the printing state.
+    $: activeModule =
+        !["starting", "printing", "finished"].includes(cardStatus)
+            ? null
+            : (() => {
+                  const job = getActivePrintJob(
+                      Number(printer.id),
+                      activePrintJobs as any,
+                  );
+                  return job?.module_id
+                      ? (printModules.find(
+                            (m) => Number(m.id) === Number(job.module_id),
+                        ) ?? null)
+                      : null;
+              })();
+
+    /** Remaining grams on a slot after the running print, or null if unknown. */
+    function projectedAfter(slotIndex: number, remaining: number): number | null {
+        const ms = activeModule?.filament_slots?.find(
+            (s) => s.slot_index === slotIndex,
+        );
+        if (!ms || ms.weight == null) return null;
+        return Math.max(0, remaining - ms.weight);
+    }
 </script>
 
 <!-- Active Printer Card -->
@@ -158,14 +187,19 @@
             <div class="flex items-stretch gap-2 py-2 shrink-0">
                 {#each slots as slot (slot.slot_index)}
                     {#if slot.spool}
+                        {@const after = projectedAfter(slot.slot_index, slot.spool.remaining_weight)}
                         <div
                             class="flex flex-col items-center h-full gap-1"
-                            title="Slot {slot.slot_index + 1}: {slot.spool.preset?.brand ?? ''} {slot.spool.preset?.material ?? ''} {slot.spool.preset?.color ?? ''} — {slot.spool.remaining_weight}g"
+                            title="Slot {slot.slot_index + 1}: {slot.spool.preset?.brand ?? ''} {slot.spool.preset?.material ?? ''} {slot.spool.preset?.color ?? ''} — {slot.spool.remaining_weight}g{after != null ? (cardStatus === 'finished' ? ` — ~${Math.round(slot.spool.remaining_weight - after)}g predicted used (unconfirmed)` : ` → ${Math.round(after)}g after print`) : ''}"
                         >
                             <SpoolGauge
                                 remaining={slot.spool.remaining_weight}
                                 initial={slot.spool.initial_weight}
                                 color={resolveSpoolColor(slot.spool.preset)}
+                                projected={projectedAfter(
+                                    slot.slot_index,
+                                    slot.spool.remaining_weight,
+                                )}
                                 orientation="vertical"
                                 size="lg"
                                 showLabel={false}
