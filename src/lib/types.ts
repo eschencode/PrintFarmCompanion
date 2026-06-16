@@ -299,6 +299,8 @@ export interface InventoryLog {
   quantity: number;
   /** Links "+ printed" entries back to the job that produced them. */
   print_job_id: number | null;
+  /** Links "- sold b2c" entries back to the Shopify order (matches shopify_orders.order_id). */
+  shopify_order_id: string | null;
   created_at: number;
 }
 
