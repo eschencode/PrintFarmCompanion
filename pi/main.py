@@ -206,6 +206,15 @@ def trigger_print(req: PrintRequest):
             "chamber_temp": None,
             "subtask_name": None,
             "gcode_file": None,
+            "hms": None,
+            "nozzle_target_temp": None,
+            "bed_target_temp": None,
+            "cooling_fan_speed": None,
+            "aux_fan_speed": None,
+            "chamber_fan_speed": None,
+            "speed_level": None,
+            "speed_mag": None,
+            "wifi_signal": None,
         }
 
     # 2. Send MQTT command + start monitor in background so HTTP response returns immediately
@@ -265,6 +274,15 @@ def get_status(serial: str, request: Request):
                 "chamber_temp": status.raw.get("chamber_temper"),
                 "subtask_name": status.raw.get("subtask_name"),
                 "gcode_file": status.raw.get("gcode_file"),
+                "hms": status.raw.get("hms"),
+                "nozzle_target_temp": status.raw.get("nozzle_target_temper"),
+                "bed_target_temp": status.raw.get("bed_target_temper"),
+                "cooling_fan_speed": status.raw.get("cooling_fan_speed"),
+                "aux_fan_speed": status.raw.get("big_fan1_speed"),
+                "chamber_fan_speed": status.raw.get("big_fan2_speed"),
+                "speed_level": status.raw.get("spd_lvl"),
+                "speed_mag": status.raw.get("spd_mag"),
+                "wifi_signal": status.raw.get("wifi_signal"),
             },
         }
 
@@ -361,6 +379,15 @@ def _start_monitor(credentials: PrinterCredentials, task_id: str):
                 "chamber_temp": status.raw.get("chamber_temper"),
                 "subtask_name": status.raw.get("subtask_name"),
                 "gcode_file": status.raw.get("gcode_file"),
+                "hms": status.raw.get("hms"),
+                "nozzle_target_temp": status.raw.get("nozzle_target_temper"),
+                "bed_target_temp": status.raw.get("bed_target_temper"),
+                "cooling_fan_speed": status.raw.get("cooling_fan_speed"),
+                "aux_fan_speed": status.raw.get("big_fan1_speed"),
+                "chamber_fan_speed": status.raw.get("big_fan2_speed"),
+                "speed_level": status.raw.get("spd_lvl"),
+                "speed_mag": status.raw.get("spd_mag"),
+                "wifi_signal": status.raw.get("wifi_signal"),
             }
 
         if not WEBHOOK_URL:
@@ -462,6 +489,15 @@ def _poll_idle_printer(credentials: PrinterCredentials):
                     "chamber_temp": print_data.get("chamber_temper"),
                     "subtask_name": print_data.get("subtask_name"),
                     "gcode_file": print_data.get("gcode_file"),
+                    "hms": print_data.get("hms"),
+                    "nozzle_target_temp": print_data.get("nozzle_target_temper"),
+                    "bed_target_temp": print_data.get("bed_target_temper"),
+                    "cooling_fan_speed": print_data.get("cooling_fan_speed"),
+                    "aux_fan_speed": print_data.get("big_fan1_speed"),
+                    "chamber_fan_speed": print_data.get("big_fan2_speed"),
+                    "speed_level": print_data.get("spd_lvl"),
+                    "speed_mag": print_data.get("spd_mag"),
+                    "wifi_signal": print_data.get("wifi_signal"),
                 }
             log("info", "Idle", f"gcode_state={print_data.get('gcode_state')} progress={print_data.get('mc_percent')}%",
                 printer_serial=credentials.serial, printer_name=credentials.name)

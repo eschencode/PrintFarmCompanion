@@ -681,17 +681,16 @@
                   <!-- Shopify order block: header + line items -->
                   {@const orderQty = group.items.reduce((s, l) => s + Math.abs(l.quantity), 0)}
                   <div class="bg-zinc-50/60 dark:bg-[#0d0d0d]">
-                    <div class="px-5 pt-3 pb-1.5 flex items-center justify-between">
+                    <div class="px-5 pt-3 pb-1.5 flex items-center justify-between gap-3">
                       <div class="flex items-center gap-2 min-w-0">
                         <span class="inline-flex items-center justify-center px-1.5 h-4 rounded bg-blue-500/10 text-[9px] font-bold text-blue-500 shrink-0">B2C</span>
                         <span class="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 truncate">
                           {group.orderNumber ? `Order #${group.orderNumber}` : 'Shopify order'}
                         </span>
+                        <span class="text-zinc-300 dark:text-zinc-700 shrink-0">·</span>
+                        <span class="text-[10px] text-zinc-400 dark:text-zinc-600 shrink-0">{formatTime(group.created_at)}</span>
                       </div>
-                      <div class="text-right shrink-0">
-                        <span class="text-[11px] font-semibold tabular-nums text-red-500">−{orderQty}</span>
-                        <p class="text-[10px] text-zinc-400 mt-0.5">{formatTime(group.created_at)}</p>
-                      </div>
+                      <span class="text-[11px] font-semibold tabular-nums text-red-500 shrink-0">−{orderQty}</span>
                     </div>
                     <div class="pb-2">
                       {#each group.items as log}
@@ -708,19 +707,17 @@
                   {@const changeType = getChangeTypeLabel(log.change_type)}
                   {@const isOutflow = log.change_type.startsWith('-')}
                   <div class="px-5 py-3 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
-                    <div class="flex items-start gap-3">
-                      <span class="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold shrink-0 {changeType.color}">
+                    <div class="flex items-center gap-3">
+                      <span class="inline-flex items-center justify-center w-5 h-5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold shrink-0 {changeType.color}">
                         {changeType.label}
                       </span>
                       <div class="flex-1 min-w-0">
                         <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate leading-snug">{log.object_name}</p>
+                        <p class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-0.5">{formatTime(log.created_at)}</p>
                       </div>
-                      <div class="text-right shrink-0">
-                        <span class="text-xs font-semibold tabular-nums {isOutflow ? 'text-red-500' : 'text-emerald-500'}">
-                          {isOutflow ? '−' : '+'}{Math.abs(log.quantity)}
-                        </span>
-                        <p class="text-[10px] text-zinc-400 mt-0.5">{formatTime(log.created_at)}</p>
-                      </div>
+                      <span class="text-xs font-semibold tabular-nums shrink-0 {isOutflow ? 'text-red-500' : 'text-emerald-500'}">
+                        {isOutflow ? '−' : '+'}{Math.abs(log.quantity)}
+                      </span>
                     </div>
                   </div>
                 {/if}
