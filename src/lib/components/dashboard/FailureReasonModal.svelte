@@ -2,6 +2,7 @@
   import { enhance } from '$app/forms';
   import type { SubmitFunction } from '@sveltejs/kit';
   import type { SpoolWithPreset, PrintJobWithDetails } from '$lib/types';
+  import { failureReasons } from '$lib/stores/failureReasons';
 
   /**
    * Modal for recording why a print failed and whether material was consumed.
@@ -15,20 +16,20 @@
   export let completePrintEnhance: SubmitFunction;
 
   // Local state — reset automatically when component is destroyed (modal closed)
-  let selectedFailureReason = '';
+  // Default the material decision to "used" so a spool failure deducts unless changed.
+  let selectedFailureReason = 'deduct';
   let customFailureReason = '';
-  let showCustomInput = false;
+  let newReason = '';
+  let manageMode = false;
 
-  const failureReasons = [
-    'Spaghetti / Layer Adhesion Failure',
-    'Werkzeug kopf abgefallen',
-    'Filament Runout',
-    'Poor quality',
-    'Power Outage',
-    'Poor First Layer',
-    'Stringing / Oozing',
-    'Custom'
-  ];
+  /** Add a typed reason to the persisted list and select it. */
+  function addReason() {
+    const r = newReason.trim();
+    if (!r) return;
+    failureReasons.add(r);
+    customFailureReason = r;
+    newReason = '';
+  }
 </script>
 
 <div
@@ -117,55 +118,85 @@
 
       <!-- Failure Reasons List -->
       <div class="mb-6">
-        <p class="text-sm text-zinc-400 dark:text-zinc-600 mb-4">What caused the failure?</p>
+        <div class="flex items-center justify-between mb-4">
+          <p class="text-sm text-zinc-400 dark:text-zinc-600">What caused the failure?</p>
+          <button
+            type="button"
+            onclick={() => (manageMode = !manageMode)}
+            class="p-1 -m-1 transition-colors {manageMode ? 'text-red-500' : 'text-zinc-300 dark:text-zinc-700 hover:text-zinc-500 dark:hover:text-zinc-500'}"
+            aria-label="Manage reasons"
+            title="Edit reasons"
+          >
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" />
+            </svg>
+          </button>
+        </div>
         <div class="space-y-2">
-          {#each failureReasons as reason}
+          {#each $failureReasons as reason}
+            {@const selected = customFailureReason === reason}
+            <div
+              class="group relative w-full bg-zinc-50 dark:bg-[#111114] hover:bg-zinc-100 dark:hover:bg-[#151518] border-2 rounded-xl transition-all duration-200
+                     {selected && !manageMode ? 'border-red-500 bg-red-500/5 dark:bg-red-500/5' : 'border-transparent'}"
+            >
+              <button
+                type="button"
+                disabled={manageMode}
+                onclick={() => (customFailureReason = reason)}
+                class="w-full text-left p-4"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="text-zinc-900 dark:text-zinc-100 text-sm">{reason}</span>
+                  {#if selected && !manageMode}
+                    <div class="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  {/if}
+                </div>
+              </button>
+              {#if manageMode}
+                <button
+                  type="button"
+                  onclick={() => {
+                    failureReasons.remove(reason);
+                    if (customFailureReason === reason) customFailureReason = '';
+                  }}
+                  class="absolute top-1/2 right-3 -translate-y-1/2 p-1.5 text-zinc-400 dark:text-zinc-600 hover:text-red-500 transition-colors"
+                  aria-label="Remove failure reason"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              {/if}
+            </div>
+          {/each}
+
+          <!-- Type a new reason — adds it to the list (and remembers it) -->
+          <div class="flex gap-2 pt-1">
+            <input
+              type="text"
+              bind:value={newReason}
+              onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addReason(); } }}
+              placeholder="Add a reason…"
+              class="flex-1 bg-zinc-50 dark:bg-[#111114] border-2 border-dashed border-zinc-200 dark:border-[#1a1a22] rounded-xl px-4 py-3 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:outline-none focus:border-red-500 transition-colors"
+            />
             <button
               type="button"
-              onclick={() => {
-                if (reason === 'Custom') {
-                  showCustomInput = true;
-                  customFailureReason = '';
-                } else {
-                  showCustomInput = false;
-                  customFailureReason = reason;
-                }
-              }}
-              class="w-full text-left bg-zinc-50 dark:bg-[#111114] hover:bg-zinc-100 dark:hover:bg-[#151518] border-2 rounded-xl p-4 transition-all duration-200
-                     {(customFailureReason === reason && !showCustomInput) || (reason === 'Custom' && showCustomInput) ? 'border-red-500 bg-red-500/5 dark:bg-red-500/5' : 'border-transparent'}"
+              onclick={addReason}
+              disabled={!newReason.trim()}
+              class="px-4 rounded-xl bg-zinc-100 dark:bg-[#151518] hover:bg-zinc-200 dark:hover:bg-zinc-800/50 text-zinc-600 dark:text-zinc-300 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              aria-label="Add failure reason"
             >
-              <div class="flex items-center justify-between">
-                <span class="text-zinc-900 dark:text-zinc-100 text-sm">{reason}</span>
-                {#if (customFailureReason === reason && !showCustomInput) || (reason === 'Custom' && showCustomInput)}
-                  <div class="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0">
-                    <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                {/if}
-              </div>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4v16m8-8H4" />
+              </svg>
             </button>
-          {/each}
+          </div>
         </div>
       </div>
-
-      <!-- Custom input -->
-      {#if showCustomInput}
-        <div class="mb-8 p-5 bg-zinc-50 dark:bg-[#111114] rounded-xl border border-zinc-100 dark:border-[#1a1a22]">
-          <label for="customReason" class="block text-sm text-zinc-400 dark:text-zinc-600 mb-2">
-            Enter custom failure reason:
-          </label>
-          <!-- svelte-ignore a11y_autofocus -->
-          <input
-            id="customReason"
-            type="text"
-            bind:value={customFailureReason}
-            placeholder="e.g., User cancelled, Testing issue..."
-            class="w-full bg-white dark:bg-[#0c0c0f] border border-zinc-200/80 dark:border-[#1a1a22] rounded-xl px-4 py-3 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-300 dark:placeholder:text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-900/20 dark:focus:ring-zinc-100/20 transition-shadow"
-            autofocus
-          />
-        </div>
-      {/if}
 
       <!-- Action Buttons -->
       <div class="flex gap-4">
@@ -199,6 +230,7 @@
 
           <button
             type="submit"
+            onclick={() => failureReasons.touch(customFailureReason)}
             disabled={!selectedFailureReason || !customFailureReason}
             class="w-full bg-red-500 hover:bg-red-600 text-white px-4 py-3.5 rounded-xl transition-all duration-200 font-medium
                    disabled:opacity-30 disabled:cursor-not-allowed"
