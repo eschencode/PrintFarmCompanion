@@ -380,13 +380,16 @@ class BambuMQTTClient:
             raw=merged_raw,
         )
 
+        # Log from merged state, not the raw delta — Bambu only re-sends changed
+        # fields, so reading print_data here would show None for anything absent
+        # from this particular message.
         log("info", "MQTT",
             f"state={status.gcode_state} progress={status.progress}% "
             f"layer={status.layer_num}/{status.total_layer_num} "
-            f"remaining={print_data.get('mc_remaining_time')}min "
-            f"nozzle={print_data.get('nozzle_temper')}°C "
-            f"bed={print_data.get('bed_temper')}°C "
-            f"chamber={print_data.get('chamber_temper')}°C",
+            f"remaining={merged_raw.get('mc_remaining_time')}min "
+            f"nozzle={merged_raw.get('nozzle_temper')}°C "
+            f"bed={merged_raw.get('bed_temper')}°C "
+            f"chamber={merged_raw.get('chamber_temper')}°C",
             printer_serial=self.credentials.serial, printer_name=self.credentials.name)
 
         with self._lock:

@@ -4,6 +4,7 @@
     import { getProgress } from "$lib/utils/time";
     import { getActivePrintJob } from "$lib/utils/printerData";
     import { resolveSpoolColor } from "$lib/utils/spoolColor";
+    import { decodeHms } from "$lib/utils/hms";
     import {
         printingEffect,
         stateColors,
@@ -32,6 +33,12 @@
     $: liveIsPrinting =
         !!piLive &&
         ["RUNNING", "PREPARE", "PAUSE"].includes(piLive.gcode_state);
+
+    // Active printer health warnings (HMS). Empty unless the printer is reporting issues.
+    $: hmsAlerts = decodeHms(piLive?.hms).filter((d) => d.severity !== "info");
+    $: topAlert = hmsAlerts[0];
+    // A serious/fatal alert puts the card into a visible error state (red ring).
+    $: hasError = hmsAlerts.some((d) => d.severity !== "common");
 
     // Single source of truth for the card's visual status — drives the dot and tint.
     $: cardStatus = liveIsStarting
@@ -135,6 +142,33 @@
          rounded-xl p-3 card-lift card-shine
          flex flex-col items-center justify-center overflow-hidden min-h-0"
 >
+    <!-- Health alert badge — shown when the printer reports an HMS warning/error. -->
+    {#if topAlert}
+        <div
+            class="absolute top-1.5 right-1.5 z-[2] flex items-center gap-1 rounded-full pl-1 pr-1.5 py-0.5
+                   {topAlert.severity === 'common'
+                       ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                       : 'bg-red-500/15 text-red-600 dark:text-red-400'}"
+            title={hmsAlerts.map((d) => d.text).join('\n')}
+        >
+            <span class="relative flex h-1.5 w-1.5">
+                <span class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping {topAlert.severity === 'common' ? 'bg-amber-500' : 'bg-red-500'}"></span>
+                <span class="relative inline-flex h-1.5 w-1.5 rounded-full {topAlert.severity === 'common' ? 'bg-amber-500' : 'bg-red-500'}"></span>
+            </span>
+            {#if hmsAlerts.length > 1}
+                <span class="text-[9px] font-bold tabular-nums leading-none">{hmsAlerts.length}</span>
+            {/if}
+        </div>
+    {/if}
+
+    <!-- Error ring — overrides the status tint when a serious/fatal HMS alert is active. -->
+    {#if hasError}
+        <div
+            class="absolute inset-0 rounded-xl pointer-events-none z-[1]"
+            style="box-shadow: inset 0 0 0 1.5px rgba(239, 68, 68, 0.55); background-color: rgba(239, 68, 68, 0.06);"
+        ></div>
+    {/if}
+
     <!-- Status background (colours customisable in dashboard settings). Printing
          uses the chosen animated effect; other statuses get a flat tint + ring.
          All effects sit behind the printer image (this layer is below z-[1]). -->

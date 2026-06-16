@@ -10,12 +10,14 @@
     } from "$lib/utils/time";
     import { getLastPrintJob } from "$lib/utils/printerData";
     import { resolveSpoolColor } from "$lib/utils/spoolColor";
+    import { decodeHms } from "$lib/utils/hms";
     import SpoolGauge from "$lib/components/dashboard/SpoolGauge.svelte";
     import type {
         DashboardPrinter,
         PrintModuleFull,
         PrintJobWithDetails,
         PiStatus,
+        FailurePrefill,
     } from "$lib/types";
 
     /**
@@ -35,7 +37,7 @@
     export let onClose: () => void;
     export let onLoadSpool: () => void;
     export let onStartPrint: () => void;
-    export let onPrintFailed: () => void;
+    export let onPrintFailed: (prefill?: FailurePrefill) => void;
     export let onSendControl: (
         action: string,
         printerId: number,
@@ -106,6 +108,49 @@
     // FINISH (webhook lag — the screen the user sees the moment the print ends). In
     // both cases we show the confirmation layout, not the live printing chrome.
     $: liveDone = piLive?.gcode_state === "FINISH";
+
+    // Printer health warnings (HMS), most urgent first.
+    $: hmsAlerts = decodeHms(piLive?.hms);
+    // Actionable alerts (exclude info) — these put the printer into an error state.
+    $: activeAlerts = hmsAlerts.filter((a) => a.severity !== "info");
+    $: hasError = activeAlerts.length > 0;
+
+    // Speed profile names + fan gear→percent (Bambu reports fans on a 0–15 scale).
+    const SPEED_LEVELS: Record<number, string> = {
+        1: "Silent",
+        2: "Standard",
+        3: "Sport",
+        4: "Ludicrous",
+    };
+    function fanPct(v: number | null | undefined): number | null {
+        if (v == null) return null;
+        return Math.round((v / 15) * 100);
+    }
+    // Any mechanics/connectivity telemetry to show in the second row?
+    $: hasMechTelemetry =
+        !!piLive &&
+        (piLive.cooling_fan_speed != null ||
+            piLive.aux_fan_speed != null ||
+            piLive.chamber_fan_speed != null ||
+            piLive.speed_level != null ||
+            piLive.wifi_signal != null);
+
+    // Cancel the running print and jump straight to the fail window with the
+    // top HMS error pre-filled as the reason.
+    async function cancelToFailure() {
+        const top = activeAlerts[0];
+        await onSendControl("cancel", printer.id);
+        onPrintFailed(
+            top
+                ? {
+                      reason: top.text,
+                      code: top.code,
+                      wikiUrl: top.wikiUrl,
+                      severity: top.severity,
+                  }
+                : undefined,
+        );
+    }
     $: isDone =
         printer.status === "finished" ||
         (printer.status === "printing" && liveDone);
@@ -301,75 +346,201 @@
                             </div>
                         </div>
 
-                        <!-- Live Temps + Remaining Time (from Pi) -->
-                        {#if piLive && (piLive.remaining_time != null || piLive.nozzle_temp != null)}
+                        <!-- Printer Health (HMS). Active (non-info) alerts put the
+                             printer into an error state with Resume / Cancel actions. -->
+                        {#if hmsAlerts.length > 0}
                             <div
-                                class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22]"
+                                class="rounded-xl border p-4 {hasError
+                                    ? 'bg-red-500/5 border-red-500/20'
+                                    : 'bg-zinc-50 dark:bg-[#111114] border-zinc-100 dark:border-[#1a1a22]'}"
                             >
-                                <div class="flex flex-wrap gap-5">
+                                <p
+                                    class="text-[10px] uppercase tracking-wide font-semibold mb-3 {hasError
+                                        ? 'text-red-500/80'
+                                        : 'text-zinc-400 dark:text-zinc-600'}"
+                                >
+                                    {hasError ? "Printer error" : "Printer notice"}
+                                </p>
+                                <div class="space-y-2">
+                                    {#each hmsAlerts as alert}
+                                        <a
+                                            href={alert.wikiUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            class="group flex items-start gap-3 rounded-lg p-2 -m-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                        >
+                                            <span
+                                                class="mt-1 inline-flex h-2 w-2 shrink-0 rounded-full {alert.severity ===
+                                                'common'
+                                                    ? 'bg-amber-500'
+                                                    : alert.severity === 'info'
+                                                      ? 'bg-zinc-400'
+                                                      : 'bg-red-500'}"
+                                            ></span>
+                                            <div class="min-w-0 flex-1">
+                                                <p class="text-sm text-zinc-800 dark:text-zinc-200 leading-snug">
+                                                    {alert.text}
+                                                </p>
+                                                <p class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-0.5 font-mono uppercase tracking-wide">
+                                                    {alert.severity} · {alert.code} · Bambu wiki
+                                                </p>
+                                            </div>
+                                            <svg
+                                                class="w-3.5 h-3.5 mt-0.5 text-zinc-300 dark:text-zinc-600 group-hover:text-zinc-500 shrink-0"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                            </svg>
+                                        </a>
+                                    {/each}
+                                </div>
+
+                                {#if hasError && !isDone && printer?.printer_ip && printer?.printer_serial && printer?.printer_access_code}
+                                    <div class="grid grid-cols-2 gap-3 mt-4">
+                                        <button
+                                            disabled={!!controlLoading}
+                                            onclick={cancelToFailure}
+                                            class="bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl transition-all duration-200 font-medium border border-red-500/15 hover:border-red-500/25 text-sm disabled:opacity-50"
+                                        >
+                                            {controlLoading === "cancel"
+                                                ? "Cancelling…"
+                                                : "Cancel & Mark Failed"}
+                                        </button>
+                                        <button
+                                            disabled={!!controlLoading}
+                                            onclick={async () =>
+                                                await onSendControl("resume", printer.id)}
+                                            class="bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 px-4 py-3 rounded-xl transition-all duration-200 font-medium border border-blue-500/15 hover:border-blue-500/25 text-sm disabled:opacity-50"
+                                        >
+                                            {controlLoading === "resume"
+                                                ? "Resuming…"
+                                                : "Resume Print"}
+                                        </button>
+                                    </div>
+                                {/if}
+                            </div>
+                        {/if}
+
+                        <!-- Live telemetry (from Pi): temps + targets, fans, speed, Wi-Fi -->
+                        {#if piLive && (piLive.remaining_time != null || piLive.nozzle_temp != null || hasMechTelemetry)}
+                            <div
+                                class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22] space-y-4"
+                            >
+                                <!-- Temps + remaining time -->
+                                <div class="flex flex-wrap gap-x-6 gap-y-3">
                                     {#if piLive.remaining_time != null && piLive.remaining_time > 0}
                                         <div>
-                                            <p
-                                                class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase"
-                                            >
+                                            <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                 Remaining
                                             </p>
-                                            <p
-                                                class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums"
-                                            >
-                                                {formatRemainingTime(
-                                                    piLive.remaining_time,
-                                                )}
+                                            <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
+                                                {formatRemainingTime(piLive.remaining_time)}
                                             </p>
                                         </div>
                                     {/if}
                                     {#if piLive.nozzle_temp != null}
                                         <div>
-                                            <p
-                                                class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase"
-                                            >
+                                            <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                 Nozzle
                                             </p>
-                                            <p
-                                                class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums"
-                                            >
-                                                {Math.round(
-                                                    piLive.nozzle_temp,
-                                                )}°C
+                                            <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
+                                                {Math.round(piLive.nozzle_temp)}°C{#if piLive.nozzle_target_temp != null && piLive.nozzle_target_temp > 0}<span
+                                                        class="text-zinc-400 dark:text-zinc-600"
+                                                    >
+                                                        → {Math.round(piLive.nozzle_target_temp)}°</span
+                                                    >{/if}
                                             </p>
                                         </div>
                                     {/if}
                                     {#if piLive.bed_temp != null}
                                         <div>
-                                            <p
-                                                class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase"
-                                            >
+                                            <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                 Bed
                                             </p>
-                                            <p
-                                                class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums"
-                                            >
-                                                {Math.round(piLive.bed_temp)}°C
+                                            <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
+                                                {Math.round(piLive.bed_temp)}°C{#if piLive.bed_target_temp != null && piLive.bed_target_temp > 0}<span
+                                                        class="text-zinc-400 dark:text-zinc-600"
+                                                    >
+                                                        → {Math.round(piLive.bed_target_temp)}°</span
+                                                    >{/if}
                                             </p>
                                         </div>
                                     {/if}
                                     {#if piLive.chamber_temp != null}
                                         <div>
-                                            <p
-                                                class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase"
-                                            >
+                                            <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                 Chamber
                                             </p>
-                                            <p
-                                                class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums"
-                                            >
-                                                {Math.round(
-                                                    piLive.chamber_temp,
-                                                )}°C
+                                            <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
+                                                {Math.round(piLive.chamber_temp)}°C
                                             </p>
                                         </div>
                                     {/if}
                                 </div>
+
+                                <!-- Fans + speed profile + connectivity -->
+                                {#if hasMechTelemetry}
+                                    <div
+                                        class="flex flex-wrap gap-x-6 gap-y-3 pt-3 border-t border-zinc-100 dark:border-[#1a1a22]"
+                                    >
+                                        {#if piLive.speed_level != null}
+                                            <div>
+                                                <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
+                                                    Speed
+                                                </p>
+                                                <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
+                                                    {SPEED_LEVELS[piLive.speed_level] ?? `L${piLive.speed_level}`}{#if piLive.speed_mag != null}<span
+                                                            class="text-zinc-400 dark:text-zinc-600"
+                                                        >
+                                                            {piLive.speed_mag}%</span
+                                                        >{/if}
+                                                </p>
+                                            </div>
+                                        {/if}
+                                        {#if fanPct(piLive.cooling_fan_speed) != null}
+                                            <div>
+                                                <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
+                                                    Part fan
+                                                </p>
+                                                <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
+                                                    {fanPct(piLive.cooling_fan_speed)}%
+                                                </p>
+                                            </div>
+                                        {/if}
+                                        {#if fanPct(piLive.aux_fan_speed) != null}
+                                            <div>
+                                                <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
+                                                    Aux fan
+                                                </p>
+                                                <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
+                                                    {fanPct(piLive.aux_fan_speed)}%
+                                                </p>
+                                            </div>
+                                        {/if}
+                                        {#if fanPct(piLive.chamber_fan_speed) != null}
+                                            <div>
+                                                <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
+                                                    Chamber fan
+                                                </p>
+                                                <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
+                                                    {fanPct(piLive.chamber_fan_speed)}%
+                                                </p>
+                                            </div>
+                                        {/if}
+                                        {#if piLive.wifi_signal}
+                                            <div>
+                                                <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
+                                                    Wi-Fi
+                                                </p>
+                                                <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
+                                                    {piLive.wifi_signal}
+                                                </p>
+                                            </div>
+                                        {/if}
+                                    </div>
+                                {/if}
                             </div>
                         {/if}
 
@@ -585,8 +756,9 @@
                         </div>
                     {/if}
 
-                    <!-- Pi Controls (Cancel / Pause / Resume) — only while actually printing -->
-                    {#if !isDone && printer?.printer_ip && printer?.printer_serial && printer?.printer_access_code}
+                    <!-- Pi Controls (Cancel / Pause / Resume) — only while actually
+                         printing and not in an error state (error has its own actions). -->
+                    {#if !isDone && !hasError && printer?.printer_ip && printer?.printer_serial && printer?.printer_access_code}
                         <div class="grid grid-cols-2 gap-3 pt-1">
                             <button
                                 disabled={!!controlLoading}
@@ -633,55 +805,59 @@
                         </div>
                     {/if}
 
-                    <!-- Result decision — a manual override while printing; the primary action once done -->
-                    {#if isDone}
-                        <p
-                            class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase pt-1"
-                        >
-                            How did it turn out?
-                        </p>
-                    {/if}
-                    <div
-                        class="grid grid-cols-2 gap-4 {isDone
-                            ? 'pt-1'
-                            : 'pt-3'}"
-                    >
-                        <button
-                            onclick={onPrintFailed}
-                            class="w-full {isDone
-                                ? 'bg-red-500/12 hover:bg-red-500/20 py-4'
-                                : 'bg-red-500/8 hover:bg-red-500/15 py-3.5'} text-red-600 dark:text-red-400 px-4 rounded-xl transition-all duration-200 font-medium border border-red-500/10 hover:border-red-500/20"
-                        >
-                            Print Failed
-                        </button>
-
-                        <form
-                            method="POST"
-                            action="?/completePrint"
-                            use:enhance={completePrintSuccessEnhance}
-                        >
-                            <input
-                                type="hidden"
-                                name="jobId"
-                                value={activePrintJob.id}
-                            />
-                            <input type="hidden" name="success" value="true" />
-                            <input
-                                type="hidden"
-                                name="actualWeight"
-                                value={activePrintJob.module_weight ?? 0}
-                            />
-
-                            <button
-                                type="submit"
-                                class="w-full {isDone
-                                    ? 'bg-emerald-500/12 hover:bg-emerald-500/20 py-4'
-                                    : 'bg-emerald-500/8 hover:bg-emerald-500/15 py-3.5'} text-emerald-600 dark:text-emerald-400 px-4 rounded-xl transition-all duration-200 font-medium border border-emerald-500/10 hover:border-emerald-500/20"
+                    <!-- Result decision — a manual override while printing; the primary
+                         action once done. Hidden during an error (the error panel above
+                         drives Resume / Cancel instead). -->
+                    {#if isDone || !hasError}
+                        {#if isDone}
+                            <p
+                                class="text-xs text-zinc-400 dark:text-zinc-600 tracking-wide uppercase pt-1"
                             >
-                                Print Successful
+                                How did it turn out?
+                            </p>
+                        {/if}
+                        <div
+                            class="grid grid-cols-2 gap-4 {isDone
+                                ? 'pt-1'
+                                : 'pt-3'}"
+                        >
+                            <button
+                                onclick={() => onPrintFailed()}
+                                class="w-full {isDone
+                                    ? 'bg-red-500/12 hover:bg-red-500/20 py-4'
+                                    : 'bg-red-500/8 hover:bg-red-500/15 py-3.5'} text-red-600 dark:text-red-400 px-4 rounded-xl transition-all duration-200 font-medium border border-red-500/10 hover:border-red-500/20"
+                            >
+                                Print Failed
                             </button>
-                        </form>
-                    </div>
+
+                            <form
+                                method="POST"
+                                action="?/completePrint"
+                                use:enhance={completePrintSuccessEnhance}
+                            >
+                                <input
+                                    type="hidden"
+                                    name="jobId"
+                                    value={activePrintJob.id}
+                                />
+                                <input type="hidden" name="success" value="true" />
+                                <input
+                                    type="hidden"
+                                    name="actualWeight"
+                                    value={activePrintJob.module_weight ?? 0}
+                                />
+
+                                <button
+                                    type="submit"
+                                    class="w-full {isDone
+                                        ? 'bg-emerald-500/12 hover:bg-emerald-500/20 py-4'
+                                        : 'bg-emerald-500/8 hover:bg-emerald-500/15 py-3.5'} text-emerald-600 dark:text-emerald-400 px-4 rounded-xl transition-all duration-200 font-medium border border-emerald-500/10 hover:border-emerald-500/20"
+                                >
+                                    Print Successful
+                                </button>
+                            </form>
+                        </div>
+                    {/if}
                 </div>
             {:else if printer.status === "idle"}
                 <!-- IDLE STATUS MENU -->

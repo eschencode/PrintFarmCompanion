@@ -1,7 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import type { SubmitFunction } from '@sveltejs/kit';
-  import type { SpoolWithPreset, PrintJobWithDetails } from '$lib/types';
+  import type { SpoolWithPreset, PrintJobWithDetails, FailurePrefill } from '$lib/types';
   import { failureReasons } from '$lib/stores/failureReasons';
 
   /**
@@ -14,11 +14,14 @@
   export let onClose: () => void;
   /** enhance callback defined in parent — closes over selectedPrinter and close functions. */
   export let completePrintEnhance: SubmitFunction;
+  /** Pre-fill from an HMS error when the print was cancelled due to a printer fault. */
+  export let prefill: FailurePrefill | null = null;
 
   // Local state — reset automatically when component is destroyed (modal closed)
   // Default the material decision to "used" so a spool failure deducts unless changed.
   let selectedFailureReason = 'deduct';
-  let customFailureReason = '';
+  // Seed the reason from an HMS error if one was passed in.
+  let customFailureReason = prefill?.reason ?? '';
   let newReason = '';
   let manageMode = false;
 
@@ -65,6 +68,33 @@
           </svg>
         </button>
       </div>
+
+      <!-- Printer-reported error (HMS) — pre-fills the reason and links the wiki. -->
+      {#if prefill}
+        <div class="mb-8 rounded-xl p-5 border bg-red-500/5 border-red-500/20">
+          <div class="flex items-start gap-3">
+            <span class="mt-1 inline-flex h-2 w-2 shrink-0 rounded-full bg-red-500"></span>
+            <div class="min-w-0 flex-1">
+              <p class="text-[10px] uppercase tracking-wide text-red-500/80 font-semibold mb-1">Reported by printer</p>
+              <p class="text-sm text-zinc-800 dark:text-zinc-200 leading-snug">{prefill.reason}</p>
+              <div class="flex items-center gap-2 mt-2">
+                <span class="text-[10px] font-mono uppercase tracking-wide text-zinc-400 dark:text-zinc-600">{prefill.severity} · {prefill.code}</span>
+                <a
+                  href={prefill.wikiUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1 text-[11px] text-red-600 dark:text-red-400 hover:underline"
+                >
+                  Bambu wiki
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      {/if}
 
       <!-- Material Usage Decision -->
       {#if loadedSpool && activePrintJob}

@@ -380,6 +380,39 @@ export interface PiStatus {
   chamber_temp?: number | null;
   subtask_name?: string | null;
   gcode_file?: string | null;
+  /** Raw Bambu Health-Management-System entries (decode via $lib/utils/hms). */
+  hms?: HmsEntry[] | null;
+  // Temps + targets
+  nozzle_target_temp?: number | null;
+  bed_target_temp?: number | null;
+  // Fans (Bambu reports a 0–15 gear value) + speed profile
+  cooling_fan_speed?: number | null;
+  aux_fan_speed?: number | null;
+  chamber_fan_speed?: number | null;
+  /** Speed profile: 1 Silent, 2 Standard, 3 Sport, 4 Ludicrous. */
+  speed_level?: number | null;
+  /** Speed magnitude as a percentage. */
+  speed_mag?: number | null;
+  // Connectivity
+  wifi_signal?: string | null;
+}
+
+/** Raw HMS entry as the printer reports it. `attr`/`code` combine into a lookup code. */
+export interface HmsEntry {
+  attr: number;
+  code: number;
+}
+
+/** Failure-reason modal pre-fill, e.g. when cancelling a print from an HMS error. */
+export interface FailurePrefill {
+  /** Pre-selected failure reason text. */
+  reason: string;
+  /** Canonical HMS code, e.g. "0700_8000_0001_0001". */
+  code: string;
+  /** Bambu wiki page explaining the code. */
+  wikiUrl: string;
+  /** HMS severity (fatal | serious | common | info). */
+  severity: string;
 }
 
 // ============================================================================
