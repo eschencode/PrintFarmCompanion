@@ -51,16 +51,17 @@ export async function getInventoryLogs(
 export async function getAllRecentLogs(
   db: D1Database,
   limit = 100,
-): Promise<(InventoryLog & { object_name: string })[]> {
+): Promise<(InventoryLog & { object_name: string; order_number: string | null })[]> {
   const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all<InventoryLog & { object_name: string }>(sql`
-    SELECT il.*, o.name as object_name
+  const rows = await drizzleDb.all<InventoryLog & { object_name: string; order_number: string | null }>(sql`
+    SELECT il.*, o.name as object_name, so.order_number
     FROM inventory_log il
     JOIN objects o ON il.object_id = o.id
+    LEFT JOIN shopify_orders so ON so.order_id = il.shopify_order_id
     ORDER BY il.created_at DESC
     LIMIT ${limit}
   `);
-  return (rows ?? []) as unknown as (InventoryLog & { object_name: string })[];
+  return (rows ?? []) as unknown as (InventoryLog & { object_name: string; order_number: string | null })[];
 }
 
 // ─── Create / Update / Delete ─────────────────────────────────────────────────
@@ -213,9 +214,10 @@ export async function recordSaleB2C(db: D1Database, objectId: number, quantity: 
   const drizzleDb = getDb(db);
   try {
     const now = Math.floor(Date.now() / 1000);
+    // No clamp: stock may go negative to reflect oversells.
     await drizzleDb.run(sql`
       UPDATE objects
-      SET in_stock = MAX(0, in_stock - ${quantity}), updated_at = ${now}
+      SET in_stock = in_stock - ${quantity}, updated_at = ${now}
       WHERE id = ${objectId}
     `);
     await logInventoryChange(db, objectId, '- sold b2c', quantity);
@@ -230,9 +232,10 @@ export async function recordSaleB2B(db: D1Database, objectId: number, quantity: 
   const drizzleDb = getDb(db);
   try {
     const now = Math.floor(Date.now() / 1000);
+    // No clamp: stock may go negative to reflect oversells.
     await drizzleDb.run(sql`
       UPDATE objects
-      SET in_stock = MAX(0, in_stock - ${quantity}), updated_at = ${now}
+      SET in_stock = in_stock - ${quantity}, updated_at = ${now}
       WHERE id = ${objectId}
     `);
     await logInventoryChange(db, objectId, '- sold b2b', quantity);

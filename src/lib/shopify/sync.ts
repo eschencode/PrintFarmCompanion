@@ -172,14 +172,20 @@ export class ShopifySyncService {
 
                 try {
                     const now = Math.floor(Date.now() / 1000);
-                    await drizzleDb.run(sql`
+                    // No MAX(0, …) clamp: stock is allowed to go negative so oversells
+                    // are visible and net out correctly against later restocks.
+                    const res = await drizzleDb.run(sql`
                         UPDATE objects
-                        SET in_stock = MAX(0, in_stock - ${deductAmount}), updated_at = ${now}
+                        SET in_stock = in_stock - ${deductAmount}, updated_at = ${now}
                         WHERE id = ${mapping.object_id}
                     `);
+                    if (!res.meta.changes) {
+                        errors.push(`Order ${order.name}: mapping points to missing object #${mapping.object_id}`);
+                        continue;
+                    }
                     await drizzleDb.run(sql`
-                        INSERT INTO inventory_log (object_id, change_type, quantity, created_at)
-                        VALUES (${mapping.object_id}, '- sold b2c', ${deductAmount}, ${now})
+                        INSERT INTO inventory_log (object_id, change_type, quantity, shopify_order_id, created_at)
+                        VALUES (${mapping.object_id}, '- sold b2c', ${deductAmount}, ${String(order.id)}, ${now})
                     `);
                     itemsDeducted += deductAmount;
                 } catch (err) {

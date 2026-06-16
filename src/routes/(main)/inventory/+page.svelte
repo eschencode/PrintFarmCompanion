@@ -25,9 +25,11 @@
     weight_per_unit: number;
   }
 
+  type ActivityLog = InventoryLog & { object_name: string; order_number: string | null };
+
   interface PageData {
     items: ObjectItemUI[];
-    logs: (InventoryLog & { object_name: string })[];
+    logs: ActivityLog[];
     setDefinitions: SetDefinition[];
     unitWeights: UnitWeight[];
   }
@@ -243,7 +245,7 @@
       }
 
       const groupedItem = { item, color };
-      const isOutOfStock = item.in_stock === 0;
+      const isOutOfStock = item.in_stock <= 0;
       // Low stock = below threshold BUT not out of stock
       const isLowStock = item.in_stock > 0 && item.in_stock < item.min_threshold;
 
@@ -276,9 +278,9 @@
 
   const totalItems = $derived(filteredItems().length);
   const totalStock = $derived(filteredItems().reduce((sum, i) => sum + i.in_stock, 0));
-  // Low stock = below threshold but NOT zero
+  // Low stock = below threshold but NOT out (out = zero or negative on oversell)
   const lowStockCount = $derived(filteredItems().filter(i => i.in_stock > 0 && i.in_stock < i.min_threshold).length);
-  const outOfStockCount = $derived(filteredItems().filter(i => i.in_stock === 0).length);
+  const outOfStockCount = $derived(filteredItems().filter(i => i.in_stock <= 0).length);
 
   // Toggle functions
   function toggleCategory(categoryName: string) {
@@ -312,9 +314,9 @@
     }
   }
 
-  // Stock level indicator
+  // Stock level indicator. <= 0 counts as out (stock can go negative on oversell).
   function getStockLevel(item: ObjectItem): 'ok' | 'low' | 'out' {
-    if (item.in_stock === 0) return 'out';
+    if (item.in_stock <= 0) return 'out';
     if (item.in_stock < item.min_threshold) return 'low';
     return 'ok';
   }
@@ -327,11 +329,12 @@
     }
   }
 
-  // Format timestamp
+  // Format timestamp. created_at is stored in Unix SECONDS — convert to ms for Date.
   function formatTime(timestamp: number): string {
-    const date = new Date(timestamp);
+    const ms = timestamp * 1000;
+    const date = new Date(ms);
     const now = new Date();
-    const diff = now.getTime() - timestamp;
+    const diff = now.getTime() - ms;
 
     if (diff < 60 * 60 * 1000) {
       const mins = Math.floor(diff / 60000);
@@ -366,6 +369,31 @@
     if (d > 999) return '∞';
     return `${Math.round(d * 10) / 10}d`;
   }
+
+  // Group the activity feed: consecutive "- sold b2c" entries sharing a Shopify
+  // order id collapse into one order block (its line items listed underneath);
+  // everything else (printed, stock count, b2b) stays a standalone entry.
+  interface ActivityGroup {
+    orderId: string | null;
+    orderNumber: string | null;
+    created_at: number;
+    items: ActivityLog[];
+  }
+  const activityGroups = $derived(() => {
+    const groups: ActivityGroup[] = [];
+    let current: ActivityGroup | null = null;
+    for (const log of data.logs || []) {
+      const oid = log.shopify_order_id ?? null;
+      if (oid && current && current.orderId === oid) {
+        current.items.push(log);
+        continue;
+      }
+      current = { orderId: oid, orderNumber: log.order_number ?? null, created_at: log.created_at, items: [log] };
+      groups.push(current);
+      if (!oid) current = null; // non-order rows never absorb following entries
+    }
+    return groups;
+  });
 </script>
 
 <svelte:head>
@@ -648,25 +676,54 @@
             </div>
           {:else}
             <div class="divide-y divide-zinc-50 dark:divide-[#171717] max-h-130 overflow-y-auto">
-              {#each data.logs as log}
-                {@const changeType = getChangeTypeLabel(log.change_type)}
-                {@const isOutflow = log.change_type.startsWith('-')}
-                <div class="px-5 py-3 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
-                  <div class="flex items-start gap-3">
-                    <span class="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold shrink-0 {changeType.color}">
-                      {changeType.label}
-                    </span>
-                    <div class="flex-1 min-w-0">
-                      <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate leading-snug">{log.object_name}</p>
+              {#each activityGroups() as group}
+                {#if group.orderId}
+                  <!-- Shopify order block: header + line items -->
+                  {@const orderQty = group.items.reduce((s, l) => s + Math.abs(l.quantity), 0)}
+                  <div class="bg-zinc-50/60 dark:bg-[#0d0d0d]">
+                    <div class="px-5 pt-3 pb-1.5 flex items-center justify-between">
+                      <div class="flex items-center gap-2 min-w-0">
+                        <span class="inline-flex items-center justify-center px-1.5 h-4 rounded bg-blue-500/10 text-[9px] font-bold text-blue-500 shrink-0">B2C</span>
+                        <span class="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300 truncate">
+                          {group.orderNumber ? `Order #${group.orderNumber}` : 'Shopify order'}
+                        </span>
+                      </div>
+                      <div class="text-right shrink-0">
+                        <span class="text-[11px] font-semibold tabular-nums text-red-500">−{orderQty}</span>
+                        <p class="text-[10px] text-zinc-400 mt-0.5">{formatTime(group.created_at)}</p>
+                      </div>
                     </div>
-                    <div class="text-right shrink-0">
-                      <span class="text-xs font-semibold tabular-nums {isOutflow ? 'text-red-500' : 'text-emerald-500'}">
-                        {isOutflow ? '−' : '+'}{Math.abs(log.quantity)}
-                      </span>
-                      <p class="text-[10px] text-zinc-400 mt-0.5">{formatTime(log.created_at)}</p>
+                    <div class="pb-2">
+                      {#each group.items as log}
+                        <div class="pl-9 pr-5 py-1 flex items-center justify-between">
+                          <span class="text-xs text-zinc-600 dark:text-zinc-400 truncate">{log.object_name}</span>
+                          <span class="text-xs font-medium tabular-nums text-red-400 shrink-0">−{Math.abs(log.quantity)}</span>
+                        </div>
+                      {/each}
                     </div>
                   </div>
-                </div>
+                {:else}
+                  <!-- Standalone entry (printed / stock count / b2b) -->
+                  {@const log = group.items[0]}
+                  {@const changeType = getChangeTypeLabel(log.change_type)}
+                  {@const isOutflow = log.change_type.startsWith('-')}
+                  <div class="px-5 py-3 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
+                    <div class="flex items-start gap-3">
+                      <span class="mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold shrink-0 {changeType.color}">
+                        {changeType.label}
+                      </span>
+                      <div class="flex-1 min-w-0">
+                        <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate leading-snug">{log.object_name}</p>
+                      </div>
+                      <div class="text-right shrink-0">
+                        <span class="text-xs font-semibold tabular-nums {isOutflow ? 'text-red-500' : 'text-emerald-500'}">
+                          {isOutflow ? '−' : '+'}{Math.abs(log.quantity)}
+                        </span>
+                        <p class="text-[10px] text-zinc-400 mt-0.5">{formatTime(log.created_at)}</p>
+                      </div>
+                    </div>
+                  </div>
+                {/if}
               {/each}
             </div>
           {/if}

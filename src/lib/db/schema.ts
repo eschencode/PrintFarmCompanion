@@ -480,6 +480,10 @@ export const inventoryLog = sqliteTable(
     printJobId: integer("print_job_id").references(() => printJobs.id, {
       onDelete: "set null",
     }),
+    // Optional link back to the Shopify order that caused this change ("- sold b2c"
+    // entries from the sync). Stores the Shopify order id (matches shopify_orders.order_id),
+    // letting the activity feed group line items under their order.
+    shopifyOrderId: text("shopify_order_id"),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
@@ -488,6 +492,7 @@ export const inventoryLog = sqliteTable(
     index("idx_inventory_log_object").on(t.objectId),
     index("idx_inventory_log_change_type").on(t.changeType),
     index("idx_inventory_log_print_job").on(t.printJobId),
+    index("idx_inventory_log_shopify_order").on(t.shopifyOrderId),
     index("idx_inventory_log_created_at").on(t.createdAt),
   ],
 );

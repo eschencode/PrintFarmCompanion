@@ -13,10 +13,14 @@ import {
 } from './forecast';
 
 function computeStockout(stock: number, velocity: number): number {
-  return velocity > 0 ? Math.round((stock / velocity) * 10) / 10 : 999;
+  if (velocity <= 0) return 999;
+  // Already out (or oversold) → 0 days, never negative.
+  return Math.max(0, Math.round((stock / velocity) * 10) / 10);
 }
 
-const MS_PER_DAY = 86_400_000;
+// inventory_log.created_at is stored in Unix SECONDS, so all bucketing math
+// here works in seconds — not milliseconds.
+const SEC_PER_DAY = 86_400;
 
 export class AIContextBuilder {
   private db: D1Database;
@@ -36,19 +40,20 @@ export class AIContextBuilder {
       SELECT id, name, in_stock, min_threshold FROM objects
     `);
 
-    const cutoffMs = Date.now() - FORECAST_LOOKBACK_DAYS * MS_PER_DAY;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const cutoffSec = nowSec - FORECAST_LOOKBACK_DAYS * SEC_PER_DAY;
     const dailyRows = await drizzleDb.all<{ object_id: number; day_bucket: number; daily_sold: number }>(sql`
       SELECT
         l.object_id,
-        CAST(l.created_at / ${MS_PER_DAY} AS INTEGER) as day_bucket,
+        CAST(l.created_at / ${SEC_PER_DAY} AS INTEGER) as day_bucket,
         SUM(ABS(l.quantity)) as daily_sold
       FROM inventory_log l
       WHERE l.change_type IN ('- sold b2c', '- sold b2b')
-        AND l.created_at > ${cutoffMs}
+        AND l.created_at > ${cutoffSec}
       GROUP BY l.object_id, day_bucket
     `);
 
-    const todayBucket = Math.floor(Date.now() / MS_PER_DAY);
+    const todayBucket = Math.floor(nowSec / SEC_PER_DAY);
     const startBucket = todayBucket - (FORECAST_LOOKBACK_DAYS - 1);
 
     const salesByObject = new Map<number, number[]>();
