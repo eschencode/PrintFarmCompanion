@@ -61,7 +61,14 @@ export function getCategorizedModules(
 ): CategorizedModules {
   if (!printer || !loadedSpool) return emptyCategorizedModules;
 
-  const categories: CategorizedModules = { ...emptyCategorizedModules };
+  // Fresh arrays — spreading emptyCategorizedModules would alias its arrays and
+  // accumulate modules across every call until a page reload.
+  const categories: CategorizedModules = {
+    compatiblePrintable: [],
+    compatibleInsufficientMaterial: [],
+    anySpoolPrintable: [],
+    anySpoolInsufficientMaterial: [],
+  };
 
   for (const module of printModules) {
     if (!module.active) continue;

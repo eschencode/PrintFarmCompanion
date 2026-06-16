@@ -515,6 +515,14 @@
   }
 
   async function selectPrinter(printer: any) {
+    // Recommendations (suggested_queue / suggestedSpools) are mutated onto the
+    // printer object client-side and never repopulated by load(). Flush the prior
+    // printer's so stale recommendations don't bleed across printers until a reload.
+    if (selectedPrinter && Number(selectedPrinter.id) !== Number(printer.id)) {
+      delete selectedPrinter.suggested_queue;
+    }
+    suggestedSpools = [];
+    spoolInitialPresetId = null;
     selectedPrinter = printer;
     showQuickStart = false;
     if (printer.printer_serial) fetchPiStatus(printer.printer_serial);
@@ -540,6 +548,9 @@
   }
 
   function closePrinterModal() {
+    if (selectedPrinter) delete selectedPrinter.suggested_queue;
+    suggestedSpools = [];
+    spoolInitialPresetId = null;
     selectedPrinter = null;
     showSpoolSelector = false;
     showModuleSelector = false;
