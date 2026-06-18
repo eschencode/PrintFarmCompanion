@@ -279,9 +279,19 @@ export interface ObjectItem {
   min_threshold: number;
   last_count_date: number | null;
   last_count_discrepancy: number | null;
+  /** Legacy free-text category (superseded by category_id). */
   category: string | null;
+  category_id: number | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface Category {
+  id: number;
+  name: string;
+  parent_id: number | null;
+  sort_order: number;
+  created_at: number;
 }
 
 export type InventoryChangeType =
@@ -431,6 +441,9 @@ export interface ObjectWithVelocity {
   stockout_risk: number;
   confidence: 'high' | 'medium' | 'low';
   days_with_sales: number;
+  // Bootstrap cumulative-demand quantiles over the forecast horizon.
+  demand_p50: number;
+  demand_p90: number;
 }
 
 export interface SalesVelocity {
@@ -473,6 +486,8 @@ export interface SpoolSuggestion {
   module_id: number;
   module_name: string;
   reason: string;
+  /** Other inventory items this preset would also relieve, most urgent first. */
+  also_relieves?: { object_name: string; priority: InventoryPriority }[];
 }
 
 export interface ModuleContext {

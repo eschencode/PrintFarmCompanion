@@ -7,6 +7,13 @@ import {
   performManualCount,
   recordSaleB2B,
 } from '$lib/inventory_handler';
+import {
+  getAllCategories,
+  createCategory,
+  renameCategory,
+  deleteCategory,
+  assignObjectCategory,
+} from '$lib/server';
 import { AIContextBuilder } from '$lib/recomendation/context-builder';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
@@ -74,10 +81,11 @@ async function getUnitWeights(db: any): Promise<UnitWeight[]> {
 
 export const load: PageServerLoad = async ({ platform }) => {
   const db = platform?.env?.DB;
-  if (!db) return { items: [], logs: [], setDefinitions: [], unitWeights: [] };
+  if (!db) return { items: [], logs: [], setDefinitions: [], unitWeights: [], categories: [] };
 
   const items = await getAllObjects(db);
   const logs = await getAllRecentLogs(db, 50);
+  const categories = await getAllCategories(db);
 
   let setDefinitions: SetDefinition[] = [];
   let unitWeights: UnitWeight[] = [];
@@ -101,9 +109,9 @@ export const load: PageServerLoad = async ({ platform }) => {
         days_until_stockout: v?.days_until_stockout ?? 999,
       };
     });
-    return { items: itemsWithVelocity, logs, setDefinitions, unitWeights };
+    return { items: itemsWithVelocity, logs, setDefinitions, unitWeights, categories };
   } catch {
-    return { items, logs, setDefinitions, unitWeights };
+    return { items, logs, setDefinitions, unitWeights, categories };
   }
 };
 
@@ -133,6 +141,43 @@ export const actions: Actions = {
     const id = parseInt(formData.get('id') as string);
     const count = parseInt(formData.get('count') as string);
     return performManualCount(db, id, count);
+  },
+
+  createCategory: async ({ request, platform }) => {
+    const db = platform?.env?.DB;
+    if (!db) return { success: false, error: 'Database not available' };
+    const formData = await request.formData();
+    const name = (formData.get('name') as string) ?? '';
+    const parentRaw = formData.get('parentId') as string | null;
+    const parentId = parentRaw ? parseInt(parentRaw) : null;
+    return createCategory(db, name, parentId);
+  },
+
+  renameCategory: async ({ request, platform }) => {
+    const db = platform?.env?.DB;
+    if (!db) return { success: false, error: 'Database not available' };
+    const formData = await request.formData();
+    const id = parseInt(formData.get('id') as string);
+    const name = (formData.get('name') as string) ?? '';
+    return renameCategory(db, id, name);
+  },
+
+  deleteCategory: async ({ request, platform }) => {
+    const db = platform?.env?.DB;
+    if (!db) return { success: false, error: 'Database not available' };
+    const formData = await request.formData();
+    const id = parseInt(formData.get('id') as string);
+    return deleteCategory(db, id);
+  },
+
+  assignCategory: async ({ request, platform }) => {
+    const db = platform?.env?.DB;
+    if (!db) return { success: false, error: 'Database not available' };
+    const formData = await request.formData();
+    const objectId = parseInt(formData.get('objectId') as string);
+    const categoryRaw = formData.get('categoryId') as string | null;
+    const categoryId = categoryRaw ? parseInt(categoryRaw) : null;
+    return assignObjectCategory(db, objectId, categoryId);
   },
 
   // Bulk add from set bundles

@@ -28,6 +28,26 @@ export function confidenceFromDaysWithSales(daysWithSales: number): Confidence {
   return 'low';
 }
 
+// Deterministic PRNG so risk estimates are reproducible across requests.
+// An unseeded Math.random bootstrap made buckets flicker between page loads.
+function mulberry32(seed: number): () => number {
+  return function () {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashSeed(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
 export class StockoutForecast {
   private samples = new Map<string, Float32Array>();
   readonly horizonDays: number;
@@ -45,10 +65,11 @@ export class StockoutForecast {
       this.samples.set(slug, out);
       return;
     }
+    const rng = mulberry32(hashSeed(slug));
     for (let t = 0; t < this.trials; t++) {
       let total = 0;
       for (let d = 0; d < this.horizonDays; d++) {
-        total += dailySales[(Math.random() * n) | 0];
+        total += dailySales[(rng() * n) | 0];
       }
       out[t] = total;
     }
@@ -71,6 +92,14 @@ export class StockoutForecast {
       else hi = mid;
     }
     return (M - lo) / M;
+  }
+
+  /** p-quantile of cumulative horizon-day demand (p in [0,1]). */
+  quantile(slug: string, p: number): number {
+    const sorted = this.samples.get(slug);
+    if (!sorted || sorted.length === 0) return 0;
+    const idx = Math.min(sorted.length - 1, Math.max(0, Math.round(p * (sorted.length - 1))));
+    return sorted[idx];
   }
 
   hasData(slug: string): boolean {

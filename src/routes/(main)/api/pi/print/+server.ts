@@ -44,9 +44,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   // Fetch printer + secrets
   const printerRow = await drizzleDb.get(sql`
     SELECT p.id, p.name, p.printer_preset_id,
-           ps.printer_ip, ps.serial, ps.access_code
+           ps.printer_ip, ps.serial, ps.access_code,
+           pp.model AS model
     FROM printers p
     LEFT JOIN printer_secrets ps ON p.id = ps.printer_id
+    LEFT JOIN printer_presets pp ON p.printer_preset_id = pp.id
     WHERE p.id = ${printer_id}
   `) as Record<string, unknown> | null;
 
@@ -80,6 +82,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         printer_serial: printerRow.serial,
         printer_access_code: printerRow.access_code,
         printer_name: printerRow.name,
+        printer_model: printerRow.model ?? '',
         options: options ?? {},
       }),
     });

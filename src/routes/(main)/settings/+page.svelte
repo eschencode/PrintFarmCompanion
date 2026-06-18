@@ -1,23 +1,16 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import BackToDashboard from '$lib/components/BackToDashboard.svelte';
 </script>
 
 <div class="min-h-screen p-6 sm:p-10">
   <div class="max-w-3xl mx-auto">
 
-    <div class="mb-10">
-      <a
-        href="/"
-        onclick={(e) => { e.preventDefault(); goto('/'); }}
-        class="inline-flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 mb-4 tracking-wide transition-colors"
-      >
-        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-        </svg>
-        Dashboard
-      </a>
-      <h1 class="text-[2rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 leading-none">Settings</h1>
-      <p class="text-zinc-400 dark:text-zinc-500 text-sm mt-2">Configure your workspace</p>
+    <div class="mb-10 flex items-start justify-between gap-4">
+      <div>
+        <h1 class="text-[2rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 leading-none">Settings</h1>
+        <p class="text-zinc-400 dark:text-zinc-500 text-sm mt-2">Configure your workspace</p>
+      </div>
+      <BackToDashboard />
     </div>
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">

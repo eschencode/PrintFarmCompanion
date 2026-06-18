@@ -94,7 +94,9 @@ export class AIContextBuilder {
         days_until_stockout,
         stockout_risk,
         confidence,
-        days_with_sales: daysWithSales
+        days_with_sales: daysWithSales,
+        demand_p50: Math.round(this.forecast.quantile(key, 0.5)),
+        demand_p90: Math.round(this.forecast.quantile(key, 0.9))
       };
     });
   }
@@ -155,7 +157,7 @@ export class AIContextBuilder {
         if (!module || !module.object_id) continue;
         const inv = inventoryMap.get(module.object_id);
         if (inv) {
-          inv.in_stock += module.objects_per_print;
+          inv.in_stock += module.objects_per_print ?? 1;
           inv.days_until_stockout = computeStockout(inv.in_stock, inv.daily_velocity);
           inv.stockout_risk = this.forecast.riskAtStock(String(inv.id), inv.in_stock);
         }

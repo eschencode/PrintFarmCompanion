@@ -5,6 +5,7 @@
  * for better tree-shaking and clearer dependency tracking.
  */
 
+export * from './server/categories';
 export * from './server/printers';
 export * from './server/spools';
 export * from './server/modules';
