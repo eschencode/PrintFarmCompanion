@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { ObjectItem, InventoryLog } from '$lib/types';
-  import { enhance } from '$app/forms';
-  import { goto } from '$app/navigation';
+  import type { ObjectItem, InventoryLog, Category } from '$lib/types';
+  import { enhance, deserialize } from '$app/forms';
+  import { goto, invalidateAll } from '$app/navigation';
+  import BackToDashboard from '$lib/components/BackToDashboard.svelte';
 
   // extend item type locally to include AI fields
   type ObjectItemUI = ObjectItem & {
@@ -32,21 +33,14 @@
     logs: ActivityLog[];
     setDefinitions: SetDefinition[];
     unitWeights: UnitWeight[];
+    categories: Category[];
   }
 
   let { data }: { data: PageData } = $props();
 
-  // Edit state
-  let editingItemId = $state<number | null>(null);
-  let editCount = $state(0);
-
   // Filter/search
   let searchQuery = $state('');
   let showLowStockOnly = $state(false);
-
-  // Expansion state
-  let expandedCategories = $state<Record<string, boolean>>({});
-  let expandedSubcategories = $state<Record<string, boolean>>({});
 
   // ============ INVENTORY CHECK TOOL STATE ============
   let activeCheckPanel = $state<'sets' | 'weight' | 'direct' | null>(null);
@@ -175,104 +169,141 @@
     resetCheckTool();
   }
 
-  // Start editing an item's stock
-  function startEdit(item: ObjectItem) {
-    editingItemId = item.id;
-    editCount = item.in_stock;
+  // ── Category tree (driven by the categories table) ──────────────────────────
+  interface GroupStats { totalStock: number; low: number; out: number; count: number }
+  interface SubGroup { cat: Category; items: ObjectItemUI[]; stats: GroupStats }
+  interface CatGroup { cat: Category; items: ObjectItemUI[]; subs: SubGroup[]; stats: GroupStats }
+
+  function statsOf(items: ObjectItemUI[]): GroupStats {
+    let totalStock = 0, low = 0, out = 0;
+    for (const i of items) {
+      totalStock += i.in_stock;
+      if (i.in_stock <= 0) out++;
+      else if (i.in_stock < i.min_threshold) low++;
+    }
+    return { totalStock, low, out, count: items.length };
   }
 
-  function cancelEdit() {
-    editingItemId = null;
-    editCount = 0;
+  function matchesFilters(i: ObjectItemUI): boolean {
+    if (showLowStockOnly && !(i.in_stock < i.min_threshold)) return false;
+    if (searchQuery && !i.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    return true;
   }
 
-  // Use category field from DB — set it on /products to categorize items
-  function getItemCategory(item: ObjectItem): { category: string; subcategory: string | null; color: string } {
-    const nameParts = item.name.split(' ');
-    const color = nameParts[nameParts.length - 1];
-    const category = item.category || 'Uncategorized';
-    return { category, subcategory: null, color };
+  function pushTo<K>(m: Map<K, ObjectItemUI[]>, k: K, v: ObjectItemUI) {
+    const arr = m.get(k);
+    if (arr) arr.push(v); else m.set(k, [v]);
   }
 
-  // Build grouped structure
-  interface GroupedItem {
-    item: ObjectItem;
-    color: string;
-  }
+  const tree = $derived.by(() => {
+    const cats = data.categories || [];
+    const items = (data.items || []).filter(matchesFilters);
+    const byId = new Map(cats.map(c => [c.id, c]));
 
-  interface SubcategoryGroup {
-    items: GroupedItem[];
-    totalStock: number;
-    lowStockCount: number;
-    outOfStockCount: number;
-  }
-
-  interface CategoryGroup {
-    subcategories: Record<string, SubcategoryGroup>;
-    items: GroupedItem[]; // Items without subcategory
-    totalStock: number;
-    lowStockCount: number;
-    outOfStockCount: number;
-  }
-
-  const groupedInventory = $derived(() => {
-    let items = data.items || [];
-
-    // Apply filters
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      items = items.filter(item => item.name.toLowerCase().includes(query));
+    const itemsByCat = new Map<number, ObjectItemUI[]>();
+    const uncategorized: ObjectItemUI[] = [];
+    for (const it of items) {
+      if (it.category_id != null && byId.has(it.category_id)) pushTo(itemsByCat, it.category_id, it);
+      else uncategorized.push(it);
     }
 
-    if (showLowStockOnly) {
-      items = items.filter(item => item.in_stock < item.min_threshold);
+    const subsByParent = new Map<number, Category[]>();
+    for (const c of cats) {
+      if (c.parent_id != null) {
+        const arr = subsByParent.get(c.parent_id);
+        if (arr) arr.push(c); else subsByParent.set(c.parent_id, [c]);
+      }
     }
 
-    // Group items
-    const groups: Record<string, CategoryGroup> = {};
+    const groups: CatGroup[] = cats
+      .filter(c => c.parent_id == null)
+      .map(cat => {
+        const directItems = itemsByCat.get(cat.id) ?? [];
+        const subs: SubGroup[] = (subsByParent.get(cat.id) ?? []).map(sc => {
+          const si = itemsByCat.get(sc.id) ?? [];
+          return { cat: sc, items: si, stats: statsOf(si) };
+        });
+        const allItems = [...directItems, ...subs.flatMap(s => s.items)];
+        return { cat, items: directItems, subs, stats: statsOf(allItems) };
+      });
 
-    items.forEach(item => {
-      const { category, subcategory, color } = getItemCategory(item);
-
-      if (!groups[category]) {
-        groups[category] = {
-          subcategories: {},
-          items: [],
-          totalStock: 0,
-          lowStockCount: 0,
-          outOfStockCount: 0
-        };
-      }
-
-      const groupedItem = { item, color };
-      const isOutOfStock = item.in_stock <= 0;
-      // Low stock = below threshold BUT not out of stock
-      const isLowStock = item.in_stock > 0 && item.in_stock < item.min_threshold;
-
-      groups[category].totalStock += item.in_stock;
-      if (isLowStock) groups[category].lowStockCount++;
-      if (isOutOfStock) groups[category].outOfStockCount++;
-
-      if (subcategory) {
-        if (!groups[category].subcategories[subcategory]) {
-          groups[category].subcategories[subcategory] = {
-            items: [],
-            totalStock: 0,
-            lowStockCount: 0,
-            outOfStockCount: 0
-          };
-        }
-        groups[category].subcategories[subcategory].items.push(groupedItem);
-        groups[category].subcategories[subcategory].totalStock += item.in_stock;
-        if (isLowStock) groups[category].subcategories[subcategory].lowStockCount++;
-        if (isOutOfStock) groups[category].subcategories[subcategory].outOfStockCount++;
-      } else {
-        groups[category].items.push(groupedItem);
-      }
-    });
-
-    return groups;
+    return { groups, uncategorized, uncatStats: statsOf(uncategorized) };
   });
+
+  // ── Drag & drop + category mutations ────────────────────────────────────────
+  let draggedId = $state<number | null>(null);
+  let dragOverKey = $state<string | null>(null);
+  // Explicit expand/collapse overrides; absent falls back to the level's default
+  // (top categories open, subcategories closed) so nothing is fully expanded on load.
+  let expandedState = $state<Record<string, boolean>>({});
+  let manageMode = $state(false); // gear toggle: reveals drag/rename/delete/create affordances
+  let newCatName = $state('');
+  let addingSubFor = $state<number | null>(null);
+  let newSubName = $state('');
+  let editingCatId = $state<number | null>(null);
+  let catNameDraft = $state('');
+
+  function isExpanded(key: string, def: boolean): boolean {
+    return key in expandedState ? expandedState[key] : def;
+  }
+  function toggleExpand(key: string, def: boolean) {
+    expandedState = { ...expandedState, [key]: !isExpanded(key, def) };
+  }
+
+  function onDragStart(e: DragEvent, id: number) {
+    draggedId = id;
+    if (e.dataTransfer) {
+      e.dataTransfer.setData('text/plain', String(id));
+      e.dataTransfer.effectAllowed = 'move';
+    }
+  }
+  function onDragEnd() { draggedId = null; dragOverKey = null; }
+  function onDragOver(e: DragEvent, key: string) {
+    if (draggedId == null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragOverKey = key;
+  }
+
+  async function postAction(action: string, fields: Record<string, string | number | null>) {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields)) if (v != null) fd.set(k, String(v));
+    const res = await fetch(action, { method: 'POST', body: fd });
+    const result = deserialize(await res.text());
+    if (result.type === 'success' || result.type === 'failure') await invalidateAll();
+  }
+
+  // Drop targets nest (sub inside category) — stopPropagation so only the
+  // innermost zone handles the drop and we don't double-assign.
+  function onDropTarget(e: DragEvent, categoryId: number | null) {
+    e.preventDefault();
+    e.stopPropagation();
+    const id = draggedId;
+    draggedId = null;
+    dragOverKey = null;
+    if (id == null) return;
+    postAction('?/assignCategory', { objectId: id, categoryId });
+  }
+
+  async function createTopCategory() {
+    if (!newCatName.trim()) return;
+    await postAction('?/createCategory', { name: newCatName.trim() });
+    newCatName = '';
+  }
+  async function createSub(parentId: number) {
+    if (!newSubName.trim()) return;
+    await postAction('?/createCategory', { name: newSubName.trim(), parentId });
+    newSubName = '';
+    addingSubFor = null;
+  }
+  async function removeCategory(id: number) {
+    await postAction('?/deleteCategory', { id });
+  }
+  function startRename(c: Category) { editingCatId = c.id; catNameDraft = c.name; }
+  async function submitRename(id: number) {
+    if (catNameDraft.trim()) await postAction('?/renameCategory', { id, name: catNameDraft.trim() });
+    editingCatId = null;
+  }
 
   const filteredItems = $derived(() => data.items || []);
 
@@ -282,36 +313,27 @@
   const lowStockCount = $derived(filteredItems().filter(i => i.in_stock > 0 && i.in_stock < i.min_threshold).length);
   const outOfStockCount = $derived(filteredItems().filter(i => i.in_stock <= 0).length);
 
-  // Toggle functions
-  function toggleCategory(categoryName: string) {
-    // absent = open (default), false = explicitly closed
-    if (expandedCategories[categoryName] !== false) {
-      expandedCategories = { ...expandedCategories, [categoryName]: false };
-
-      // Collapse children
-      const newSubcategories = { ...expandedSubcategories };
-      Object.keys(newSubcategories).forEach(key => {
-        if (key.startsWith(`${categoryName}:`)) {
-          delete newSubcategories[key];
-        }
-      });
-      expandedSubcategories = newSubcategories;
-    } else {
-      const newExpanded = { ...expandedCategories };
-      delete newExpanded[categoryName];
-      expandedCategories = newExpanded;
-    }
+  // Runway: items that deplete within a horizon *assuming no further production*.
+  // Only items with real sell-through (velocity > 0) ever run out; the rest sit at 999d.
+  function runoutWithin(days: number): ObjectItemUI[] {
+    return (data.items || []).filter(i =>
+      (i.daily_velocity ?? 0) > 0 &&
+      i.in_stock > 0 &&
+      (i.days_until_stockout ?? 999) <= days
+    );
   }
+  const runoutWeek = $derived(runoutWithin(7));
+  const runoutMonth = $derived(runoutWithin(30));
 
-  function toggleSubcategory(categoryName: string, subcategoryName: string) {
-    const key = `${categoryName}:${subcategoryName}`;
-    if (expandedSubcategories[key]) {
-      const newSubcategories = { ...expandedSubcategories };
-      delete newSubcategories[key];
-      expandedSubcategories = newSubcategories;
-    } else {
-      expandedSubcategories = { ...expandedSubcategories, [key]: true };
-    }
+  // Stock coverage relative to the minimum threshold — anchors the bar so the
+  // min line sits at 50% (ref = 2× min). Threshold-less items anchor to their own stock.
+  function coverage(item: ObjectItem): { fill: number; minPct: number } {
+    const min = item.min_threshold || 0;
+    const ref = min > 0 ? min * 2 : Math.max(item.in_stock, 1);
+    return {
+      fill: Math.max(0, Math.min(1, item.in_stock / ref)) * 100,
+      minPct: min > 0 ? 50 : 0
+    };
   }
 
   // Stock level indicator. <= 0 counts as out (stock can go negative on oversell).
@@ -366,7 +388,7 @@
   }
   function formatDays(d?: number) {
     if (d == null) return '∞';
-    if (d > 999) return '∞';
+    if (d >= 999) return '∞';
     return `${Math.round(d * 10) / 10}d`;
   }
 
@@ -406,14 +428,12 @@
     <!-- Header -->
     <div class="flex items-start justify-between mb-10">
       <div>
-        <a href="/" class="inline-flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors mb-4 tracking-wide">
-          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-          Dashboard
-        </a>
         <h1 class="text-[2rem] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 leading-none">Inventory</h1>
         <p class="text-zinc-400 dark:text-zinc-500 text-sm mt-2">Finished goods ready for sale</p>
       </div>
-      <div class="flex items-center gap-2 mt-8">
+      <div class="flex flex-col items-end gap-3">
+        <BackToDashboard />
+        <div class="flex items-center gap-2">
         <button
           onclick={() => goto('/inventory/stock-count')}
           class="inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/80 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all duration-150"
@@ -432,8 +452,45 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
           </svg>
         </button>
+        </div>
       </div>
     </div>
+
+    <!-- Runway summary -->
+    {#if runoutWeek.length > 0 || runoutMonth.length > 0}
+      <div class="mb-6 rounded-xl border {runoutWeek.length > 0 ? 'border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/20' : 'border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20'} px-5 py-4">
+        <div class="flex items-start gap-3">
+          <svg class="w-4 h-4 mt-0.5 shrink-0 {runoutWeek.length > 0 ? 'text-red-500' : 'text-amber-500'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          </svg>
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-zinc-800 dark:text-zinc-100">
+              {#if runoutWeek.length > 0}
+                <span class="text-red-600 dark:text-red-400 font-semibold">{runoutWeek.length}</span>
+                {runoutWeek.length === 1 ? 'item runs' : 'items run'} out this week
+              {:else}
+                <span class="text-amber-600 dark:text-amber-400 font-semibold">{runoutMonth.length}</span>
+                {runoutMonth.length === 1 ? 'item runs' : 'items run'} out this month
+              {/if}
+              <span class="text-zinc-400 dark:text-zinc-500 font-normal">· assuming no further production</span>
+            </p>
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              {#each (runoutWeek.length > 0 ? runoutWeek : runoutMonth).slice(0, 12) as i (i.id)}
+                <span class="text-[11px] px-2 py-0.5 rounded-md bg-white/70 dark:bg-black/30 text-zinc-600 dark:text-zinc-300 tabular-nums">
+                  {i.name} <span class="text-zinc-400">· {formatDays(i.days_until_stockout)}</span>
+                </span>
+              {/each}
+              {#if (runoutWeek.length > 0 ? runoutWeek : runoutMonth).length > 12}
+                <span class="text-[11px] px-2 py-0.5 text-zinc-400">+{(runoutWeek.length > 0 ? runoutWeek : runoutMonth).length - 12} more</span>
+              {/if}
+            </div>
+            {#if runoutWeek.length > 0 && runoutMonth.length > runoutWeek.length}
+              <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-2">{runoutMonth.length} run out within 30 days.</p>
+            {/if}
+          </div>
+        </div>
+      </div>
+    {/if}
 
     <!-- KPI Cards -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
@@ -478,6 +535,44 @@
       </label>
     </div>
 
+    {#snippet itemRow(item: ObjectItemUI, padClass: string)}
+      {@const stockLevel = getStockLevel(item)}
+      {@const cov = coverage(item)}
+      <div
+        role="listitem"
+        draggable={manageMode}
+        ondragstart={(e) => onDragStart(e, item.id)}
+        ondragend={onDragEnd}
+        class="flex items-center gap-4 {padClass} pr-5 py-2.5 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors {manageMode ? 'cursor-grab active:cursor-grabbing' : ''} {draggedId === item.id ? 'opacity-40' : ''} {stockLevel === 'out' ? 'border-l-2 border-l-red-400' : stockLevel === 'low' ? 'border-l-2 border-l-amber-400' : 'border-l-2 border-l-transparent'}"
+      >
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+          {#if manageMode}
+            <svg class="w-3 h-3 text-zinc-300 dark:text-zinc-700 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9h8M8 15h8"/></svg>
+          {/if}
+          <span class="text-xs text-zinc-600 dark:text-zinc-400 truncate">{item.name}</span>
+        </div>
+        <div class="flex items-center gap-5">
+          <div class="hidden sm:block w-16" title="{item.in_stock} in stock · min {item.min_threshold}">
+            <div class="relative h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+              <div class="absolute inset-y-0 left-0 rounded-full {stockLevel === 'out' ? 'bg-red-400' : stockLevel === 'low' ? 'bg-amber-400' : 'bg-emerald-400'}" style="width: {cov.fill}%"></div>
+              {#if cov.minPct > 0}
+                <div class="absolute top-0 bottom-0 w-px bg-zinc-400/70 dark:bg-zinc-500/70" style="left: {cov.minPct}%"></div>
+              {/if}
+            </div>
+          </div>
+          <div>
+            <span class="text-[9px] text-zinc-400 block leading-none mb-0.5">vel.</span>
+            <span class="text-xs tabular-nums text-zinc-500">{formatVelocity(item.daily_velocity)}</span>
+          </div>
+          <div>
+            <span class="text-[9px] text-zinc-400 block leading-none mb-0.5">days</span>
+            <span class="text-xs tabular-nums {item.days_until_stockout != null && item.days_until_stockout <= 7 ? 'text-red-500' : item.days_until_stockout != null && item.days_until_stockout <= 14 ? 'text-amber-500' : 'text-zinc-500'}">{formatDays(item.days_until_stockout)}</span>
+          </div>
+          <span class="min-w-10 h-7 px-2.5 flex items-center justify-center rounded-md text-xs font-semibold tabular-nums {stockLevel === 'out' ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400' : stockLevel === 'low' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'}">{item.in_stock}</span>
+        </div>
+      </div>
+    {/snippet}
+
     <!-- Main Content Grid -->
     <div class="grid lg:grid-cols-3 gap-5 mb-10">
       <!-- Stock Levels 2/3 -->
@@ -485,181 +580,232 @@
         <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden">
           <div class="px-5 py-4 border-b border-zinc-50 dark:border-[#1a1a1a] flex items-center justify-between">
             <h2 class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Stock Levels</h2>
-            <span class="text-[10px] text-zinc-400">{totalItems} items</span>
-          </div>
-
-          {#if Object.keys(groupedInventory()).length === 0}
-            <div class="py-16 text-center">
-              <p class="text-sm text-zinc-400">{searchQuery || showLowStockOnly ? 'No items match your filters' : 'No inventory items yet'}</p>
+            <div class="flex items-center gap-3">
+              <span class="text-[10px] text-zinc-400">{totalItems} items</span>
+              <button
+                onclick={() => manageMode = !manageMode}
+                title={manageMode ? 'Done organizing' : 'Organize categories'}
+                aria-pressed={manageMode}
+                class="w-7 h-7 flex items-center justify-center rounded-md transition-colors {manageMode ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'}"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+              </button>
             </div>
-          {:else}
-            <div class="divide-y divide-zinc-50 dark:divide-[#171717]">
-              {#each Object.entries(groupedInventory()).sort(([,a], [,b]) => b.totalStock - a.totalStock) as [categoryName, categoryData]}
-                {@const isCategoryExpanded = expandedCategories[categoryName] !== false}
-                {@const hasSubcategories = Object.keys(categoryData.subcategories).length > 0}
-                {@const itemCount = Object.values(categoryData.subcategories).reduce((sum, sub) => sum + sub.items.length, 0) + categoryData.items.length}
-
-                <!-- Level 1: Category -->
-                <div>
-                  <button
-                    onclick={() => toggleCategory(categoryName)}
-                    class="w-full px-5 py-4 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors"
-                  >
-                    <div class="flex items-center gap-3">
-                      <svg
-                        class="w-3 h-3 text-zinc-300 dark:text-zinc-600 shrink-0 transition-transform duration-200 {isCategoryExpanded ? 'rotate-90' : ''}"
-                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                      >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                      </svg>
-                      <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{categoryName}</span>
-                      <span class="text-xs text-zinc-400">{itemCount}</span>
-                    </div>
-
-                    <div class="flex items-center gap-4">
-                      {#if categoryData.outOfStockCount > 0}
-                        <span class="text-[10px] font-medium text-red-500 flex items-center gap-1">
-                          <span class="w-1.5 h-1.5 rounded-full bg-red-400 inline-block"></span>
-                          {categoryData.outOfStockCount} out
-                        </span>
-                      {/if}
-                      {#if categoryData.lowStockCount > 0}
-                        <span class="text-[10px] font-medium text-amber-500 flex items-center gap-1">
-                          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"></span>
-                          {categoryData.lowStockCount} low
-                        </span>
-                      {/if}
-                      <span class="text-xl font-light tabular-nums text-zinc-600 dark:text-zinc-400 min-w-12 text-right">{categoryData.totalStock}</span>
-                    </div>
-                  </button>
-
-                  {#if isCategoryExpanded}
-                    <div class="border-t border-zinc-50 dark:border-[#171717]">
-
-                      <!-- Level 2: Subcategories -->
-                      {#if hasSubcategories}
-                        {#each Object.entries(categoryData.subcategories).sort(([,a], [,b]) => b.totalStock - a.totalStock) as [subcategoryName, subcategoryData]}
-                          {@const subcategoryKey = `${categoryName}:${subcategoryName}`}
-                          {@const isSubcategoryExpanded = !!expandedSubcategories[subcategoryKey]}
-
-                          <div>
-                            <button
-                              onclick={() => toggleSubcategory(categoryName, subcategoryName)}
-                              class="w-full pl-10 pr-5 py-3 flex items-center justify-between hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors"
-                            >
-                              <div class="flex items-center gap-2.5">
-                                <svg
-                                  class="w-2.5 h-2.5 text-zinc-300 dark:text-zinc-600 shrink-0 transition-transform duration-200 {isSubcategoryExpanded ? 'rotate-90' : ''}"
-                                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                >
-                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                                </svg>
-                                <span class="text-xs font-medium text-zinc-600 dark:text-zinc-400">{subcategoryName}</span>
-                                <span class="text-[10px] text-zinc-400">{subcategoryData.items.length}</span>
-                              </div>
-
-                              <div class="flex items-center gap-3">
-                                {#if subcategoryData.outOfStockCount > 0}
-                                  <span class="text-[10px] text-red-500">{subcategoryData.outOfStockCount} out</span>
-                                {/if}
-                                {#if subcategoryData.lowStockCount > 0}
-                                  <span class="text-[10px] text-amber-500">{subcategoryData.lowStockCount} low</span>
-                                {/if}
-                                <span class="text-base font-light tabular-nums text-zinc-500 min-w-8 text-right">{subcategoryData.totalStock}</span>
-                              </div>
-                            </button>
-
-                            <!-- Level 3: Items -->
-                            {#if isSubcategoryExpanded}
-                              <div class="border-t border-zinc-50 dark:border-[#171717]">
-                              {#each subcategoryData.items.sort((a, b) => a.color.localeCompare(b.color)) as { item, color }}
-                                {@const stockLevel = getStockLevel(item)}
-                                {@const ui = item as ObjectItemUI}
-                                <div class="flex items-center gap-4 pl-16 pr-5 py-2.5 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors {stockLevel === 'out' ? 'border-l-2 border-l-red-400' : stockLevel === 'low' ? 'border-l-2 border-l-amber-400' : 'border-l-2 border-l-transparent'}">
-                                  <span class="text-xs text-zinc-500 w-20 shrink-0">{color}</span>
-
-                                  <div class="flex items-center gap-5 flex-1">
-                                    <div>
-                                      <span class="text-[9px] text-zinc-400 block leading-none mb-0.5">vel.</span>
-                                      <span class="text-xs font-medium tabular-nums text-zinc-500">{formatVelocity(ui.daily_velocity)}</span>
-                                    </div>
-                                    <div>
-                                      <span class="text-[9px] text-zinc-400 block leading-none mb-0.5">days</span>
-                                      <span class="text-xs font-medium tabular-nums {ui.days_until_stockout != null && ui.days_until_stockout <= 7 ? 'text-red-500' : ui.days_until_stockout != null && ui.days_until_stockout <= 14 ? 'text-amber-500' : 'text-zinc-500'}">{formatDays(ui.days_until_stockout)}</span>
-                                    </div>
-                                  </div>
-
-                                  {#if editingItemId === item.id}
-                                    <form
-                                      method="POST"
-                                      action="?/setStock"
-                                      use:enhance={() => {
-                                        return async ({ update }) => { await update(); cancelEdit(); };
-                                      }}
-                                      class="flex items-center gap-1.5"
-                                    >
-                                      <input type="hidden" name="id" value={item.id} />
-                                      <input type="hidden" name="reason" value="Manual count" />
-                                      <input
-                                        type="number"
-                                        name="count"
-                                        bind:value={editCount}
-                                        min="0"
-                                        class="w-16 h-7 bg-white dark:bg-[#0a0a0a] border border-zinc-200 dark:border-zinc-700 rounded-md px-2 text-center text-sm tabular-nums text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-900/20"
-                                      />
-                                      <button type="submit" class="w-7 h-7 flex items-center justify-center rounded-md bg-emerald-500 text-white hover:bg-emerald-600 transition-colors" title="Save">
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
-                                      </button>
-                                      <button type="button" onclick={cancelEdit} class="w-7 h-7 flex items-center justify-center rounded-md border border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:text-zinc-600 transition-colors" title="Cancel">
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                                      </button>
-                                    </form>
-                                  {:else}
-                                    <button
-                                      onclick={() => startEdit(item)}
-                                      title="Click to edit"
-                                      class="min-w-12 h-7 px-3 rounded-md text-xs font-semibold tabular-nums transition-colors {stockLevel === 'out' ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100' : stockLevel === 'low' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 hover:bg-amber-100' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100'}"
-                                    >
-                                      {item.in_stock}
-                                    </button>
-                                  {/if}
-                                </div>
-                              {/each}
-                              </div>
-                            {/if}
-                          </div>
-                        {/each}
-                      {/if}
-
-                      <!-- Direct items (no subcategory) -->
-                      {#if categoryData.items.length > 0}
-                        <div>
-                          {#each categoryData.items as { item, color }}
-                            {@const stockLevel = getStockLevel(item)}
-                            {@const ui = item as ObjectItemUI}
-                            <div class="flex items-center gap-4 pl-10 pr-5 py-2.5 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors {stockLevel === 'out' ? 'border-l-2 border-l-red-400' : stockLevel === 'low' ? 'border-l-2 border-l-amber-400' : 'border-l-2 border-l-transparent'}">
-                              <span class="text-xs text-zinc-600 dark:text-zinc-400 flex-1 min-w-0 truncate">{item.name}</span>
-                              <div class="flex items-center gap-5">
-                                <div>
-                                  <span class="text-[9px] text-zinc-400 block leading-none mb-0.5">vel.</span>
-                                  <span class="text-xs tabular-nums text-zinc-500">{formatVelocity(ui.daily_velocity)}</span>
-                                </div>
-                                <div>
-                                  <span class="text-[9px] text-zinc-400 block leading-none mb-0.5">days</span>
-                                  <span class="text-xs tabular-nums {ui.days_until_stockout != null && ui.days_until_stockout <= 7 ? 'text-red-500' : ui.days_until_stockout != null && ui.days_until_stockout <= 14 ? 'text-amber-500' : 'text-zinc-500'}">{formatDays(ui.days_until_stockout)}</span>
-                                </div>
-                                <span class="min-w-10 h-7 px-2.5 flex items-center justify-center rounded-md text-xs font-semibold tabular-nums {stockLevel === 'out' ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400' : stockLevel === 'low' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'}">{item.in_stock}</span>
-                              </div>
-                            </div>
-                          {/each}
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-              {/each}
+          </div>
+          {#if manageMode}
+            <div class="px-5 py-2 bg-blue-50/60 dark:bg-blue-950/20 border-b border-blue-100/60 dark:border-blue-900/30 text-[11px] text-blue-600 dark:text-blue-300">
+              Organizing — drag items into categories, double-click a name to rename, or use the +/trash actions.
             </div>
           {/if}
+
+          <div class="divide-y divide-zinc-50 dark:divide-[#171717]">
+            {#if (data.items || []).length === 0 && tree.groups.length === 0}
+              <div class="py-12 text-center">
+                <p class="text-sm text-zinc-400">No inventory items yet</p>
+              </div>
+            {/if}
+
+            <!-- Categories -->
+            {#each tree.groups as g (g.cat.id)}
+              {@const catKey = `cat:${g.cat.id}`}
+              {@const expanded = isExpanded(catKey, true)}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                role="group"
+                ondragover={(e) => onDragOver(e, catKey)}
+                ondrop={(e) => onDropTarget(e, g.cat.id)}
+                class="transition-colors {dragOverKey === catKey ? 'bg-blue-50/60 dark:bg-blue-950/20 ring-1 ring-inset ring-blue-400/50' : ''}"
+              >
+                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+                <div
+                  role="button"
+                  tabindex="0"
+                  onclick={() => toggleExpand(catKey, true)}
+                  class="group px-5 py-4 flex items-center justify-between gap-3 cursor-pointer select-none hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors"
+                >
+                  <div class="flex items-center gap-3 min-w-0">
+                    <svg class="w-3 h-3 shrink-0 text-zinc-300 dark:text-zinc-600 transition-transform duration-200 {expanded ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    {#if editingCatId === g.cat.id}
+                      <!-- svelte-ignore a11y_autofocus -->
+                      <input
+                        bind:value={catNameDraft}
+                        autofocus
+                        onclick={(e) => e.stopPropagation()}
+                        onkeydown={(e) => { if (e.key === 'Enter') submitRename(g.cat.id); if (e.key === 'Escape') editingCatId = null; }}
+                        onblur={() => submitRename(g.cat.id)}
+                        class="h-7 px-2 text-sm font-semibold rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                      />
+                    {:else}
+                      <span ondblclick={(e) => { if (!manageMode) return; e.stopPropagation(); startRename(g.cat); }} title={manageMode ? 'Double-click to rename' : ''} class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">{g.cat.name}</span>
+                    {/if}
+                    <span class="text-xs text-zinc-400 shrink-0">{g.stats.count}</span>
+                  </div>
+
+                  <div class="flex items-center gap-3 shrink-0">
+                    {#if g.stats.out > 0}
+                      <span class="text-[10px] font-medium text-red-500 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-red-400 inline-block"></span>{g.stats.out} out</span>
+                    {/if}
+                    {#if g.stats.low > 0}
+                      <span class="text-[10px] font-medium text-amber-500 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"></span>{g.stats.low} low</span>
+                    {/if}
+                    <span class="text-xl font-light tabular-nums text-zinc-600 dark:text-zinc-400 min-w-12 text-right">{g.stats.totalStock}</span>
+                    {#if manageMode}
+                      <div class="flex items-center gap-1">
+                        <button onclick={(e) => { e.stopPropagation(); addingSubFor = addingSubFor === g.cat.id ? null : g.cat.id; newSubName = ''; }} title="Add subcategory" class="w-6 h-6 flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14M5 12h14"/></svg>
+                        </button>
+                        <button onclick={(e) => { e.stopPropagation(); removeCategory(g.cat.id); }} title="Delete category" class="w-6 h-6 flex items-center justify-center rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        </button>
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+
+                {#if expanded}
+                  <div class="border-t border-zinc-50 dark:border-[#171717]">
+                    {#each g.items as item (item.id)}
+                      {@render itemRow(item, 'pl-10')}
+                    {/each}
+
+                    {#each g.subs as s (s.cat.id)}
+                      {@const subKey = `sub:${s.cat.id}`}
+                      {@const subExpanded = isExpanded(subKey, false)}
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <div
+                        role="group"
+                        ondragover={(e) => onDragOver(e, subKey)}
+                        ondrop={(e) => onDropTarget(e, s.cat.id)}
+                        class="transition-colors {dragOverKey === subKey ? 'bg-blue-50/60 dark:bg-blue-950/20 ring-1 ring-inset ring-blue-400/50' : ''}"
+                      >
+                        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+                        <div
+                          role="button"
+                          tabindex="0"
+                          onclick={() => toggleExpand(subKey, false)}
+                          class="group pl-10 pr-5 py-3 flex items-center justify-between gap-3 cursor-pointer select-none hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors"
+                        >
+                          <div class="flex items-center gap-2.5 min-w-0">
+                            <svg class="w-2.5 h-2.5 shrink-0 text-zinc-300 dark:text-zinc-600 transition-transform duration-200 {subExpanded ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                            {#if editingCatId === s.cat.id}
+                              <!-- svelte-ignore a11y_autofocus -->
+                              <input
+                                bind:value={catNameDraft}
+                                autofocus
+                                onclick={(e) => e.stopPropagation()}
+                                onkeydown={(e) => { if (e.key === 'Enter') submitRename(s.cat.id); if (e.key === 'Escape') editingCatId = null; }}
+                                onblur={() => submitRename(s.cat.id)}
+                                class="h-6 px-2 text-xs font-medium rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                              />
+                            {:else}
+                              <span ondblclick={(e) => { if (!manageMode) return; e.stopPropagation(); startRename(s.cat); }} title={manageMode ? 'Double-click to rename' : ''} class="text-xs font-medium text-zinc-600 dark:text-zinc-400 truncate">{s.cat.name}</span>
+                            {/if}
+                            <span class="text-[10px] text-zinc-400 shrink-0">{s.stats.count}</span>
+                          </div>
+                          <div class="flex items-center gap-3 shrink-0">
+                            {#if s.stats.out > 0}<span class="text-[10px] text-red-500">{s.stats.out} out</span>{/if}
+                            {#if s.stats.low > 0}<span class="text-[10px] text-amber-500">{s.stats.low} low</span>{/if}
+                            <span class="text-base font-light tabular-nums text-zinc-500 min-w-8 text-right">{s.stats.totalStock}</span>
+                            {#if manageMode}
+                              <button onclick={(e) => { e.stopPropagation(); removeCategory(s.cat.id); }} title="Delete subcategory" class="w-5 h-5 flex items-center justify-center rounded text-zinc-400 hover:text-red-500">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                              </button>
+                            {/if}
+                          </div>
+                        </div>
+                        {#if subExpanded}
+                          <div class="border-t border-zinc-50 dark:border-[#171717]">
+                            {#if manageMode && s.items.length === 0}
+                              <div class="pl-16 pr-5 py-3 text-[11px] text-zinc-300 dark:text-zinc-600 italic">Drag items here</div>
+                            {/if}
+                            {#each s.items as item (item.id)}
+                              {@render itemRow(item, 'pl-16')}
+                            {/each}
+                          </div>
+                        {/if}
+                      </div>
+                    {/each}
+
+                    {#if manageMode && g.items.length === 0 && g.subs.length === 0}
+                      <div class="pl-10 pr-5 py-3 text-[11px] text-zinc-300 dark:text-zinc-600 italic">Drag items here, or add a subcategory</div>
+                    {/if}
+
+                    {#if manageMode && addingSubFor === g.cat.id}
+                      <div class="pl-10 pr-5 py-2.5 flex items-center gap-2 bg-zinc-50/50 dark:bg-[#0d0d0d]">
+                        <!-- svelte-ignore a11y_autofocus -->
+                        <input
+                          bind:value={newSubName}
+                          autofocus
+                          placeholder="New subcategory…"
+                          onkeydown={(e) => { if (e.key === 'Enter') createSub(g.cat.id); if (e.key === 'Escape') { addingSubFor = null; newSubName = ''; } }}
+                          class="h-7 flex-1 max-w-xs px-2.5 text-xs rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                        />
+                        <button onclick={() => createSub(g.cat.id)} class="h-7 px-3 text-xs rounded-md bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:opacity-90">Add</button>
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+
+            <!-- Uncategorized (drop here to clear category) -->
+            {#if tree.uncategorized.length > 0}
+              {@const expanded = isExpanded('uncat', true)}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                role="group"
+                ondragover={(e) => onDragOver(e, 'uncat')}
+                ondrop={(e) => onDropTarget(e, null)}
+                class="transition-colors {dragOverKey === 'uncat' ? 'bg-blue-50/60 dark:bg-blue-950/20 ring-1 ring-inset ring-blue-400/50' : ''}"
+              >
+                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+                <div
+                  role="button"
+                  tabindex="0"
+                  onclick={() => toggleExpand('uncat', true)}
+                  class="px-5 py-4 flex items-center justify-between gap-3 cursor-pointer select-none hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors"
+                >
+                  <div class="flex items-center gap-3 min-w-0">
+                    <svg class="w-3 h-3 shrink-0 text-zinc-300 dark:text-zinc-600 transition-transform duration-200 {expanded ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    <span class="text-sm font-semibold text-zinc-500 dark:text-zinc-400">Uncategorized</span>
+                    <span class="text-xs text-zinc-400">{tree.uncatStats.count}</span>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    {#if tree.uncatStats.out > 0}
+                      <span class="text-[10px] font-medium text-red-500 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-red-400 inline-block"></span>{tree.uncatStats.out} out</span>
+                    {/if}
+                    {#if tree.uncatStats.low > 0}
+                      <span class="text-[10px] font-medium text-amber-500 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"></span>{tree.uncatStats.low} low</span>
+                    {/if}
+                    <span class="text-xl font-light tabular-nums text-zinc-600 dark:text-zinc-400 min-w-12 text-right">{tree.uncatStats.totalStock}</span>
+                  </div>
+                </div>
+                {#if expanded}
+                  <div class="border-t border-zinc-50 dark:border-[#171717]">
+                    {#each tree.uncategorized as item (item.id)}
+                      {@render itemRow(item, 'pl-10')}
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+
+            <!-- Create category (manage mode only) -->
+            {#if manageMode}
+              <div class="px-5 py-3 flex items-center gap-2 bg-zinc-50/40 dark:bg-[#0d0d0d]">
+                <input
+                  bind:value={newCatName}
+                  placeholder="New category…"
+                  onkeydown={(e) => { if (e.key === 'Enter') createTopCategory(); }}
+                  class="h-8 flex-1 max-w-xs px-3 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                />
+                <button onclick={createTopCategory} class="h-8 px-3.5 text-sm font-medium rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity">Add category</button>
+              </div>
+            {/if}
+          </div>
         </div>
       </div>
 

@@ -115,6 +115,24 @@ export const spoolPresets = sqliteTable("spool_presets", {
 // SCOPE: per-workspace
 // Declared before printModules because printModules.objectId references it.
 // =============================================================================
+// Object categories. One level of nesting: a category with parentId = null is a
+// top-level category; parentId set makes it a subcategory of that parent.
+export const categories = sqliteTable(
+  "categories",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    parentId: integer("parent_id").references((): any => categories.id, {
+      onDelete: "cascade",
+    }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [index("idx_categories_parent").on(t.parentId)],
+);
+
 export const objects = sqliteTable(
   "objects",
   {
@@ -126,7 +144,11 @@ export const objects = sqliteTable(
     minThreshold: integer("min_threshold").notNull().default(0),
     lastCountDate: integer("last_count_date", { mode: "timestamp" }),
     lastCountDiscrepancy: integer("last_count_discrepancy"),
+    // Legacy free-text category (superseded by categoryId; kept non-destructively).
     category: text("category"),
+    categoryId: integer("category_id").references(() => categories.id, {
+      onDelete: "set null",
+    }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
@@ -138,6 +160,7 @@ export const objects = sqliteTable(
     // Phase 3: becomes UNIQUE(workspaceId, name).
     uniqueIndex("uniq_objects_name").on(t.name),
     index("idx_objects_category").on(t.category),
+    index("idx_objects_category_id").on(t.categoryId),
     index("idx_objects_stock").on(t.inStock, t.minThreshold),
   ],
 );

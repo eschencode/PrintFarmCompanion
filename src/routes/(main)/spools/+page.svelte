@@ -3,6 +3,7 @@
   import type { SpoolUsageStat } from '$lib/server/spools';
   import { enhance } from '$app/forms';
   import { computeDepletion, STATUS_DOT, type SpoolStatus } from '$lib/spool-status';
+  import BackToDashboard from '$lib/components/BackToDashboard.svelte';
 
   interface PageData {
     spoolPresets: SpoolPreset[];
@@ -163,15 +164,18 @@
           {/if}
         </p>
       </div>
-      <button
-        onclick={() => showAddPresetModal = true}
-        class="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 text-white rounded-md transition-colors flex items-center gap-2 text-sm"
-      >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
-        </svg>
-        New Spool
-      </button>
+      <div class="flex items-center gap-4">
+        <BackToDashboard />
+        <button
+          onclick={() => showAddPresetModal = true}
+          class="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 text-white rounded-md transition-colors flex items-center gap-2 text-sm"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+          </svg>
+          New Spool
+        </button>
+      </div>
     </div>
 
     <!-- Quick Add Section -->
@@ -383,10 +387,6 @@
       {/if}
     </div>
 
-    <!-- Back to Dashboard -->
-    <div class="mt-8 text-center">
-      <a href="/" class="text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 text-sm">← Back to Dashboard</a>
-    </div>
   </div>
 </div>
 

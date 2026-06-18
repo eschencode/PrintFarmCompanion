@@ -52,11 +52,13 @@ export async function getAllPrintModules(db: D1Database): Promise<PrintModuleFul
       pp.brand  as printer_preset_brand,
       plp.name  as plate_preset_name,
       o.name    as object_name,
+      c.name    as object_category,
       mfs.spool_preset_id as default_spool_preset_id
     FROM print_modules pm
     LEFT JOIN printer_presets pp  ON pm.printer_preset_id = pp.id
     LEFT JOIN plate_presets   plp ON pm.plate_preset_id   = plp.id
     LEFT JOIN objects         o   ON pm.object_id         = o.id
+    LEFT JOIN categories      c   ON o.category_id         = c.id
     LEFT JOIN module_filament_slots mfs ON pm.id = mfs.module_id AND mfs.slot_index = 0
     ORDER BY pm.name
   `);
@@ -83,11 +85,13 @@ export async function getPrintModuleById(
       pp.brand  as printer_preset_brand,
       plp.name  as plate_preset_name,
       o.name    as object_name,
+      c.name    as object_category,
       mfs.spool_preset_id as default_spool_preset_id
     FROM print_modules pm
     LEFT JOIN printer_presets pp  ON pm.printer_preset_id = pp.id
     LEFT JOIN plate_presets   plp ON pm.plate_preset_id   = plp.id
     LEFT JOIN objects         o   ON pm.object_id         = o.id
+    LEFT JOIN categories      c   ON o.category_id         = c.id
     LEFT JOIN module_filament_slots mfs ON pm.id = mfs.module_id AND mfs.slot_index = 0
     WHERE pm.id = ${id}
   `);

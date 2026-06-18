@@ -23,6 +23,19 @@ export async function getObjectByName(db: D1Database, name: string): Promise<Obj
   return result ?? null;
 }
 
+export async function setObjectCategory(
+  db: D1Database,
+  id: number,
+  category: string | null,
+): Promise<ServerResponse> {
+  const drizzleDb = getDb(db);
+  const clean = category && category.trim() ? category.trim() : null;
+  await drizzleDb.run(
+    sql`UPDATE objects SET category = ${clean}, updated_at = unixepoch() WHERE id = ${id}`,
+  );
+  return { success: true, message: clean ? `Categorized as ${clean}` : 'Category cleared' };
+}
+
 export async function getLowStockObjects(db: D1Database): Promise<ObjectItem[]> {
   const drizzleDb = getDb(db);
   const rows = await drizzleDb.all<ObjectItem>(sql`

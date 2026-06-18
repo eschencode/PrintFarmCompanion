@@ -5,6 +5,7 @@
   import EditModuleModal from '$lib/components/EditModuleModal.svelte';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
   import { resolveSpoolColor } from '$lib/utils/spoolColor';
+  import BackToDashboard from '$lib/components/BackToDashboard.svelte';
 
   export let data: PageData;
 
@@ -63,10 +64,11 @@
   $: fileHandlerState = $fileHandlerStore;
 
   // ── Filter state ────────────────────────────────────────────────────────────
-  let filterModel = 'all';   // 'all' | printer_model_name | '__none__'
-  let filterPlate = 'all';   // 'all' | plate_type
-  let filterPreset = 'all';  // 'all' | spool_preset_name
-  let hideInactive = false;  // when true, hide inactive cards
+  let filterModel = 'all';    // 'all' | printer_model_name | '__none__'
+  let filterPlate = 'all';    // 'all' | plate_type
+  let filterPreset = 'all';   // 'all' | spool_preset_name
+  let filterCategory = 'all'; // 'all' | object_category | '__none__'
+  let hideInactive = false;   // when true, hide inactive cards
 
   // ── Derived filter options ──────────────────────────────────────────────────
   $: allModels = (() => {
@@ -97,6 +99,13 @@
     return names.sort((a, b) => a.localeCompare(b));
   })();
 
+  $: allCategories = (() => {
+    const cats = modules
+      .map((m: any) => m.object_category as string | null)
+      .filter((c): c is string => !!c);
+    return [...new Set(cats)].sort((a, b) => a.localeCompare(b));
+  })();
+
   // ── Filtered + grouped modules ──────────────────────────────────────────────
   $: filteredModules = modules.filter((m: any) => {
     if (hideInactive && !m.active) return false;
@@ -107,6 +116,11 @@
     }
     if (filterPlate !== 'all' && m.plate_type !== filterPlate) return false;
     if (filterPreset !== 'all' && !((m.slot_filter_keys ?? []) as string[]).includes(filterPreset)) return false;
+    if (filterCategory !== 'all') {
+      const cat = m.object_category ?? null;
+      if (filterCategory === '__none__' && cat !== null) return false;
+      if (filterCategory !== '__none__' && cat !== filterCategory) return false;
+    }
     return true;
   });
 
@@ -202,11 +216,6 @@
     <!-- Header -->
     <div class="flex items-center justify-between mb-5">
       <div class="flex items-center gap-3">
-        <a href="/" aria-label="Go back" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-          </svg>
-        </a>
         <div>
           <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Print Modules</h1>
           <p class="text-xs text-zinc-400 dark:text-zinc-500">
@@ -216,6 +225,7 @@
         </div>
       </div>
       <div class="flex items-center gap-2">
+        <BackToDashboard />
         <button
           onclick={() => { showZipUpload = !showZipUpload; showUpload = false; }}
           class="flex items-center gap-2 px-4 py-2 text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
@@ -331,6 +341,40 @@
           {/each}
         {/if}
 
+        <!-- Object category filter chips -->
+        {#if allCategories.length > 0}
+          <div class="w-px h-4 bg-zinc-200 dark:bg-zinc-700 mx-1"></div>
+          <button
+            onclick={() => filterCategory = 'all'}
+            class="px-3 py-1 text-xs rounded-full font-medium transition-colors
+              {filterCategory === 'all'
+                ? 'bg-violet-600 text-white'
+                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}"
+          >
+            All categories
+          </button>
+          {#each allCategories as category (category)}
+            <button
+              onclick={() => filterCategory = category}
+              class="px-3 py-1 text-xs rounded-full font-medium transition-colors
+                {filterCategory === category
+                  ? 'bg-violet-600 text-white'
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}"
+            >
+              {category}
+            </button>
+          {/each}
+          <button
+            onclick={() => filterCategory = '__none__'}
+            class="px-3 py-1 text-xs rounded-full font-medium transition-colors
+              {filterCategory === '__none__'
+                ? 'bg-violet-600 text-white'
+                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'}"
+          >
+            Uncategorized
+          </button>
+        {/if}
+
         <!-- Active filter toggle -->
         {#if inactiveCount > 0}
           <div class="ml-auto">
@@ -364,7 +408,7 @@
     {:else if filteredModules.length === 0}
       <div class="text-center py-16 text-zinc-400 dark:text-zinc-600">
         <p class="text-sm">No modules match the current filters</p>
-        <button onclick={() => { filterModel = 'all'; filterPlate = 'all'; filterPreset = 'all'; hideInactive = false; }}
+        <button onclick={() => { filterModel = 'all'; filterPlate = 'all'; filterPreset = 'all'; filterCategory = 'all'; hideInactive = false; }}
           class="mt-2 text-xs text-blue-500 hover:underline">Clear filters</button>
       </div>
     {:else}

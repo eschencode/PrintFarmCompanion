@@ -54,21 +54,60 @@ class ImplicitFTP_TLS(ftplib.FTP_TLS):
     (implicit TLS / port 990) rather than using AUTH TLS after connection.
     Bambu Lab printers require implicit TLS.
     """
+    def ntransfercmd(self, cmd, rest=None):
+        """
+        Open the data channel reusing the control connection's TLS session.
+        Bambu's FTPS server (strict on H2S/H2D) rejects a fresh session on the
+        data channel: "522 SSL connection failed: session reuse required".
+        """
+        conn, size = ftplib.FTP.ntransfercmd(self, cmd, rest)
+        if self._prot_p:
+            conn = self.context.wrap_socket(
+                conn,
+                server_hostname=self.host,
+                session=self.sock.session,
+            )
+        return conn, size
+
+    def makepasv(self):
+        """
+        Force the data channel to the control-connection host.
+        Bambu printers sometimes return an unreachable IP in their PASV reply
+        (e.g. an internal/0.0.0.0 address), which makes STOR hang forever even
+        though the control connection on :990 is fine. The control host is
+        already proven reachable, so always use it.
+        """
+        host, port = super().makepasv()
+        if self.host:
+            host = self.host
+        return host, port
+
     def storbinary(self, cmd, fp, blocksize=8192, callback=None, rest=None):
-        """Override to ignore TLS close_notify timeout — Bambu servers don't send it."""
+        """Override to log progress and ignore TLS close_notify timeout."""
         self.voidcmd('TYPE I')
+        log("info", "FTPS", f"Opening data channel: {cmd}")
         with self.transfercmd(cmd, rest) as conn:
+            log("info", "FTPS", "Data channel open — sending file ...")
+            conn.settimeout(60)  # don't hang forever if the printer stalls mid-transfer
+            sent = 0
             while True:
                 buf = fp.read(blocksize)
                 if not buf:
                     break
                 conn.sendall(buf)
+                sent += len(buf)
                 if callback:
                     callback(buf)
+            log("info", "FTPS", f"Sent {sent} bytes — closing data channel ...")
+            # Send our TLS close_notify so the server sees a clean end of stream
+            # (else it returns "426 Failure reading network stream"). Bambu doesn't
+            # reply with its own close_notify, so don't block waiting for it.
             try:
+                conn.settimeout(5)
                 conn.unwrap()
             except (TimeoutError, OSError):
-                pass  # Bambu doesn't send TLS close_notify — safe to ignore
+                pass
+        log("info", "FTPS", "Waiting for server confirmation ...")
         return self.voidresp()
 
     def connect(self, host='', port=0, timeout=-999, source_address=None):
@@ -142,6 +181,10 @@ def upload_file_ftps(
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE  # Bambu uses self-signed cert
+    # Force TLS 1.2 — the printer rejects TLS 1.3 data-channel session resumption
+    # ("522 session reuse required"), which the H2S enforces strictly.
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.maximum_version = ssl.TLSVersion.TLSv1_2
 
     file_size = Path(local_path).stat().st_size
     candidates = _path_candidates(printer_model)

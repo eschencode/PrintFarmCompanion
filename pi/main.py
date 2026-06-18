@@ -180,6 +180,9 @@ def trigger_print(req: PrintRequest):
     except Exception as e:
         import traceback
         traceback.print_exc()
+        # Surface the real reason into the in-app log viewer, not just stderr.
+        log("error", "FTPS", f"Upload failed: {type(e).__name__}: {e}",
+            printer_serial=req.printer_serial, printer_name=req.printer_name or "")
         raise HTTPException(status_code=500, detail=f"FTPS upload failed: {e}")
 
     # Inspect the local .3mf to find the correct internal gcode path and filament info

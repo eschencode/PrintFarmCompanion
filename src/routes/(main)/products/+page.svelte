@@ -2,6 +2,7 @@
   import { enhance } from '$app/forms';
   import type { PageData, ActionData } from './$types';
   import type { Product } from './+page.server';
+  import BackToDashboard from '$lib/components/BackToDashboard.svelte';
 
   export let data: PageData;
   export let form: ActionData;

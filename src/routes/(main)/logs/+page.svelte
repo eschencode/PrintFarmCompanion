@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import BackToDashboard from '$lib/components/BackToDashboard.svelte';
 
   interface LogEntry {
     timestamp: number;
@@ -164,14 +165,10 @@
 <div class="min-h-screen bg-white dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100">
   <!-- Header -->
   <div class="border-b border-zinc-200 dark:border-zinc-800 px-4 py-3 flex items-center gap-4">
-    <a href="/" class="text-zinc-400 hover:text-zinc-200 transition-colors" aria-label="Back to dashboard">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-      </svg>
-    </a>
     <h1 class="text-lg font-semibold tracking-tight">Pi Logs</h1>
 
     <div class="ml-auto flex items-center gap-3">
+      <BackToDashboard />
       {#if error}
         <span class="text-xs text-red-400">{error}</span>
       {/if}
