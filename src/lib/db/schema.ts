@@ -666,3 +666,53 @@ export const printerQueuedJobs = sqliteTable(
     index("idx_printer_queued_jobs_printer").on(t.printerId),
   ],
 );
+
+// =============================================================================
+// PRINT QUEUE (global, printer-agnostic backlog of "what needs printing")
+// SCOPE: per-workspace
+// One row per object that needs producing. `source='auto'` rows are rebuilt by
+// regenerateGlobalQueue() from demand/stock; `source='manual'` rows are pins the
+// user added and are never touched by regeneration. Per-printer assignment lives
+// in printer_queued_jobs, derived from this backlog by knapsack at spool-load.
+// =============================================================================
+export const printQueue = sqliteTable(
+  "print_queue",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    objectId: integer("object_id")
+      .notNull()
+      .references(() => objects.id, { onDelete: "cascade" }),
+    // Preferred module to produce this object. Nullable: an object may have no
+    // active module yet (still a valid backlog entry).
+    moduleId: integer("module_id").references(() => printModules.id, {
+      onDelete: "set null",
+    }),
+    // Units to produce to reach the target stock level.
+    quantity: integer("quantity").notNull().default(0),
+    // InventoryPriority tier (CRITICAL/HIGH/MEDIUM/LOW/VERY_LOW).
+    priority: text("priority").notNull(),
+    reason: text("reason").notNull().default(""),
+    // 'auto' = generated from demand; 'manual' = user pin (survives regen).
+    source: text("source").notNull().default("auto"),
+    // 'pending' | 'assigned' | 'done'.
+    status: text("status").notNull().default("pending"),
+    // Set when assigned to a printer at spool-load.
+    assignedPrinterId: integer("assigned_printer_id").references(
+      () => printers.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [
+    // One auto row per object; manual pins are distinguished by source so the
+    // app-level upsert keys on (objectId, source).
+    uniqueIndex("uniq_print_queue_object_source").on(t.objectId, t.source),
+    index("idx_print_queue_status").on(t.status),
+    index("idx_print_queue_source").on(t.source),
+  ],
+);

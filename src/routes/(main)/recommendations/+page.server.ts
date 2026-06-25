@@ -3,7 +3,7 @@ import { AIContextBuilder } from '$lib/recomendation/context-builder';
 import {
   AIRecommendationService,
   prioritizeInventoryFromContext,
-  getSuggestedPrintQueue
+  generateAndSaveSuggestedQueue
 } from '$lib/recomendation';
 import {
   FORECAST_LOOKBACK_DAYS,
@@ -40,14 +40,13 @@ export const load: PageServerLoad = async ({ platform, url }) => {
   const modules = await builder.getModulesContext();
   const aiContext = await builder.getAdjustedInventoryContext(modules);
   const prioritized = prioritizeInventoryFromContext(aiContext);
-  const forecast = builder.getForecast();
 
   const inventory = aiContext.adjustedInventory
     .slice()
     .sort((a, b) => b.stockout_risk - a.stockout_risk);
 
   let spoolSuggestions: Awaited<ReturnType<AIRecommendationService['suggestSpoolToLoad']>> = [];
-  let queue: Awaited<ReturnType<typeof getSuggestedPrintQueue>> = [];
+  let queue: Awaited<ReturnType<typeof generateAndSaveSuggestedQueue>> = [];
   let loadedSpool: SpoolWithPreset | null = null;
 
   if (ai && selectedPrinterId) {
@@ -64,7 +63,8 @@ export const load: PageServerLoad = async ({ platform, url }) => {
         const preset = spool.preset_id ? await getSpoolPresetById(db, spool.preset_id) : null;
         loadedSpool = { ...spool, preset };
       }
-      queue = await getSuggestedPrintQueue(db, selectedPrinterId, prioritized, modules, forecast);
+      // Same global-queue-based assignment the dashboard uses (single source of truth).
+      queue = await generateAndSaveSuggestedQueue(db, selectedPrinterId);
     }
   }
 

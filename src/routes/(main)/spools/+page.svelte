@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { SpoolPreset } from '$lib/types';
+  import type { SpoolPreset, QueueSpoolDemand } from '$lib/types';
   import type { SpoolUsageStat } from '$lib/server/spools';
   import { enhance } from '$app/forms';
   import { computeDepletion, STATUS_DOT, type SpoolStatus } from '$lib/spool-status';
@@ -8,6 +8,7 @@
   interface PageData {
     spoolPresets: SpoolPreset[];
     usageStats: SpoolUsageStat[];
+    spoolDemand: QueueSpoolDemand[];
   }
 
   let { data }: { data: PageData } = $props();
@@ -140,6 +141,12 @@
   );
   const totalToOrder = $derived(orderPlan.reduce((sum, o) => sum + o.needed, 0));
 
+  // Deficits against the actual print queue backlog — sharper than the 30-day
+  // usage extrapolation above (it reflects what's literally queued to print).
+  const queueDeficits = $derived(
+    (data.spoolDemand || []).filter((d) => d.grams_deficit > 0)
+  );
+
   function daysLeftLabel(e: EnrichedPreset): string {
     if ((e.preset.in_storage ?? 0) === 0) return 'empty';
     if (!isFinite(e.daysLeft)) return 'no recent usage';
@@ -262,6 +269,33 @@
         </div>
       {/if}
     </div>
+
+    <!-- Queue-driven deficits -->
+    {#if queueDeficits.length > 0}
+      <div class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-4 mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h2 class="text-sm font-medium text-zinc-500">Needed for the print queue</h2>
+            <p class="text-[11px] text-zinc-400 dark:text-zinc-600 mt-0.5">Filament the current backlog requires that isn't on hand</p>
+          </div>
+        </div>
+        <div class="space-y-1.5">
+          {#each queueDeficits as d (d.preset_id)}
+            <div class="flex items-center justify-between gap-3 text-sm">
+              <span class="flex items-center gap-2 min-w-0">
+                {#if d.color_hex}
+                  <span class="w-3 h-3 rounded-full border border-black/10 shrink-0" style="background-color: {d.color_hex}"></span>
+                {/if}
+                <span class="truncate text-zinc-700 dark:text-zinc-300">{d.preset_label}</span>
+              </span>
+              <span class="tabular-nums font-medium text-red-600 dark:text-red-500 shrink-0">
+                -{d.grams_deficit}g · buy {d.spools_to_buy}
+              </span>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
 
     <!-- Spool List -->
     <div class="bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg overflow-hidden">

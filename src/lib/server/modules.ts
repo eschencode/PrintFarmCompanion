@@ -63,12 +63,14 @@ export async function getAllPrintModules(db: D1Database): Promise<PrintModuleFul
     ORDER BY pm.name
   `);
 
-  // Attach filament slots to each module
+  // Attach filament slots to each module. Exposed under both keys: `filament_slots`
+  // for the dashboard, `slots` for the modules page + edit modal (which read .slots
+  // and rely on per-slot weight for display/editing).
   const modules = rows ?? [];
   return Promise.all(
     modules.map(async (m) => {
       const slots = await getModuleFilamentSlots(db, m.id);
-      return { ...m, filament_slots: slots } as unknown as PrintModuleFull;
+      return { ...m, filament_slots: slots, slots } as unknown as PrintModuleFull;
     }),
   );
 }

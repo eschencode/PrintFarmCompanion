@@ -764,32 +764,41 @@
         suggestedSpools = [];
         spoolInitialPresetId = null;
         selectedPrinter = printer;
-        showQuickStart = false;
+        // Quick Start mode only applies to Pi-connected printers; otherwise the
+        // regular detail modal opens. Either way we still want the suggested
+        // queue populated on open (below) so "Next Suggested Print" shows
+        // immediately, not only after visiting the module selector.
+        const isQuickStart =
+            $quickStartMode && printer.printer_serial && printer.printer_ip;
+        showQuickStart = isQuickStart;
         if (printer.printer_serial) fetchPiStatus(printer.printer_serial);
 
-        // Quick Start mode: only for Pi-connected printers
-        if ($quickStartMode && printer.printer_serial && printer.printer_ip) {
-            showQuickStart = true;
-            const queue: any[] = printer.suggested_queue ?? [];
-            const hasPending = queue.some((i: any) => i.status !== "DONE");
-            if (!hasPending) {
-                quickStartLoading = true;
-                try {
-                    const resp = await fetch(
-                        `/api/ai-recommendations?type=queue&printerId=${printer.id}`,
-                    );
-                    const result = await resp.json();
-                    if (result && Array.isArray(result)) {
-                        selectedPrinter = {
-                            ...printer,
-                            suggested_queue: result,
-                        };
-                    }
-                } catch {
-                    /* ignore — will show empty state */
-                } finally {
-                    quickStartLoading = false;
+        // Populate the suggested queue for whichever modal is showing, when a
+        // spool is loaded and we don't already have a pending queue.
+        const queue: any[] = printer.suggested_queue ?? [];
+        const hasPending = queue.some((i: any) => i.status !== "DONE");
+        if (!hasPending && printer.loaded_spool) {
+            if (isQuickStart) quickStartLoading = true;
+            try {
+                const resp = await fetch(
+                    `/api/ai-recommendations?type=queue&printerId=${printer.id}`,
+                );
+                const result = await resp.json();
+                // Guard against a fast re-click landing on a different printer.
+                if (
+                    result &&
+                    Array.isArray(result) &&
+                    Number(selectedPrinter?.id) === Number(printer.id)
+                ) {
+                    selectedPrinter = {
+                        ...printer,
+                        suggested_queue: result,
+                    };
                 }
+            } catch (e) {
+                console.error("Failed to load suggested queue:", e);
+            } finally {
+                quickStartLoading = false;
             }
         }
     }

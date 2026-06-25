@@ -1,7 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type { Ai } from '@cloudflare/workers-types';
 import { AIContextBuilder } from './context-builder';
-import { RISK_THRESHOLDS, type StockoutForecast, type Confidence } from './forecast';
+import { type StockoutForecast, bucketPriority } from './forecast';
 import type {
   AIRecommendationContext,
   InventoryPriority,
@@ -14,8 +14,8 @@ import {
   getPrinterById,
   getSpoolById,
   getLoadedSpools,
-  addPrinterQueuedJob,
 } from '../server';
+import { regenerateGlobalQueueIfStale, assignQueueToPrinter, getGlobalQueue } from '../server/printQueue';
 import { getDb } from '../db';
 import { sql } from 'drizzle-orm';
 
@@ -37,60 +37,57 @@ export class AIRecommendationService {
   }
 
   /**
-   * Returns spool presets ranked by which to load next.
-   * Deduped by preset_id — the most urgent inventory item a preset can satisfy wins.
+   * Returns spool presets ranked by which to load next, sourced from the
+   * global print queue (not a per-printer re-scoring of all inventory) —
+   * the queue is already tier+quantity ordered, so loading whatever it
+   * needs next keeps printer assignment and spool choice consistent.
+   * Deduped by preset_id — the most urgent queue item a preset can satisfy wins.
    */
   async suggestSpoolToLoad(printerId?: number): Promise<SpoolSuggestion[]> {
+    const queue = await getGlobalQueue(this.db);
     const modules = await this.contextBuilder.getModulesContext();
-    const aiContext = await this.contextBuilder.getAdjustedInventoryContext(modules);
-    const prioritized = prioritizeInventoryFromContext(aiContext);
-
-    const tierOrder: InventoryPriority[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'VERY_LOW'];
-    const orderedItems = tierOrder.flatMap(p =>
-      prioritized[p].slice().sort((a, b) => b.stockout_risk - a.stockout_risk)
-    );
+    const moduleById = new Map(modules.map(m => [m.id, m]));
 
     let printer: Awaited<ReturnType<typeof getPrinterById>> | null = null;
     if (printerId) {
       printer = await getPrinterById(this.db, printerId);
     }
 
-    const isCompatibleModule = (m: ModuleContext, invId: number) => {
-      if (m.object_id !== invId) return false;
-      if (m.spool_preset_id === null || m.spool_preset_id === undefined) return false;
-      if (printer?.printer_preset_id && m.printer_preset_id && m.printer_preset_id !== printer.printer_preset_id) return false;
-      return true;
-    };
-
-    // orderedItems is sorted by tier then risk, so the first item that maps to a
-    // preset is its headline; later items for the same preset get listed under it.
+    // queue is already tier+quantity ordered, so the first item that maps to
+    // a preset is its headline; later items for the same preset get listed under it.
     const byPreset = new Map<number, SpoolSuggestion>();
     const suggestions: SpoolSuggestion[] = [];
 
-    for (const invItem of orderedItems) {
-      const module = modules.find(m => isCompatibleModule(m, invItem.id));
+    for (const item of queue) {
+      // Only suggest loading a spool for things that actually need printing.
+      // The global queue lists every selling SKU (most at quantity 0); a 0-qty
+      // item would otherwise recommend a spool that only yields topup prints.
+      if (item.quantity <= 0) continue;
+      if (!item.module_id) continue;
+      const module = moduleById.get(item.module_id);
       if (!module || !module.spool_preset_id) continue;
+      if (printer?.printer_preset_id && module.printer_preset_id && module.printer_preset_id !== printer.printer_preset_id) continue;
 
       const presetId = Number(module.spool_preset_id);
       const existing = byPreset.get(presetId);
       if (existing) {
         const relieves = (existing.also_relieves ??= []);
-        if (relieves.length < 3 && !relieves.some(r => r.object_name === invItem.name)) {
-          relieves.push({ object_name: invItem.name, priority: invItem.priority });
+        if (relieves.length < 3 && !relieves.some(r => r.object_name === item.object_name)) {
+          relieves.push({ object_name: item.object_name, priority: item.priority });
         }
         continue;
       }
 
       const suggestion: SpoolSuggestion = {
         preset_id: presetId,
-        priority: invItem.priority,
-        object_name: invItem.name,
-        in_stock: invItem.in_stock,
-        daily_velocity: invItem.daily_velocity,
-        days_until_stockout: invItem.days_until_stockout,
+        priority: item.priority,
+        object_name: item.object_name,
+        in_stock: item.in_stock,
+        daily_velocity: item.daily_velocity,
+        days_until_stockout: item.days_until_stockout,
         module_id: module.id,
         module_name: module.name,
-        reason: `Needed for "${module.name}" — stock: ${invItem.in_stock}, velocity: ${invItem.daily_velocity}/day`,
+        reason: `Needed for "${module.name}" — queue qty ${item.quantity}, stock: ${item.in_stock}, velocity: ${item.daily_velocity}/day`,
         also_relieves: []
       };
       byPreset.set(presetId, suggestion);
@@ -101,40 +98,9 @@ export class AIRecommendationService {
   }
 }
 
-const RISK_TIER_ORDER: InventoryPriority[] = ['VERY_LOW', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
-
-// Cap on how high a *risk-derived* tier can climb given forecast confidence.
-// A low-data SKU shouldn't scream CRITICAL on a noisy bootstrap spike — but the
-// hard min_threshold floor below still overrides this regardless of confidence.
-const CONFIDENCE_MAX_RISK_TIER: Record<Confidence, InventoryPriority> = {
-  high: 'CRITICAL',
-  medium: 'HIGH',
-  low: 'MEDIUM'
-};
-
-/** Bucket a single SKU from its stock, floor, stockout risk, and forecast confidence. */
-export function bucketPriority(item: {
-  in_stock: number;
-  min_threshold: number;
-  stockout_risk: number;
-  confidence?: Confidence;
-}): InventoryPriority {
-  // Hard inventory floor — independent of forecast quality.
-  if (item.in_stock <= item.min_threshold) return 'CRITICAL';
-
-  let tier: InventoryPriority;
-  if (item.stockout_risk >= RISK_THRESHOLDS.CRITICAL) tier = 'CRITICAL';
-  else if (item.stockout_risk >= RISK_THRESHOLDS.HIGH) tier = 'HIGH';
-  else if (item.stockout_risk >= RISK_THRESHOLDS.MEDIUM) tier = 'MEDIUM';
-  else if (item.stockout_risk >= RISK_THRESHOLDS.LOW) tier = 'LOW';
-  else tier = 'VERY_LOW';
-
-  if (item.confidence) {
-    const cap = CONFIDENCE_MAX_RISK_TIER[item.confidence];
-    if (RISK_TIER_ORDER.indexOf(tier) > RISK_TIER_ORDER.indexOf(cap)) tier = cap;
-  }
-  return tier;
-}
+// bucketPriority now lives in ./forecast (cycle-free home shared with the
+// global print queue); re-exported here so existing imports keep working.
+export { bucketPriority } from './forecast';
 
 export function prioritizeInventoryFromContext(
   context: AIRecommendationContext
@@ -171,7 +137,11 @@ export interface SuggestedPrintQueueItem {
   module_id: number;
   module_name: string;
   object_name: string;
-  priority: InventoryPriority;
+  // 'TOPUP' marks a filler print added to use up remaining spool weight, as
+  // opposed to a demand-driven (needed) print.
+  priority: InventoryPriority | 'TOPUP';
+  // Days of cover left for the produced object (null if unknown / no velocity).
+  days_left?: number | null;
   weight_of_print: number;
   spool_weight_after_print: number;
 }
@@ -325,30 +295,57 @@ export async function getSuggestedPrintQueue(
   return queue;
 }
 
+/**
+ * Assigns from the global `print_queue` backlog (knapsack against this
+ * printer's loaded spools) and writes `printer_queued_jobs`. Name/signature
+ * kept stable — callers (dashboard, API) are unaware the source of truth
+ * moved from "all inventory" to the global backlog.
+ */
 export async function generateAndSaveSuggestedQueue(
   db: D1Database,
   printerId: number
 ): Promise<SuggestedPrintQueueItem[]> {
-  // Clear this printer's pending queue first: otherwise its own old jobs
-  // inflate adjusted stock and suppress the very items we're re-scoring.
+  await regenerateGlobalQueueIfStale(db);
+  await assignQueueToPrinter(db, printerId);
+
   const drizzleDb = getDb(db);
-  await drizzleDb.run(sql`DELETE FROM printer_queued_jobs WHERE printer_id = ${printerId} AND is_completed = 0`);
+  const rows = await drizzleDb.all<{
+    module_id: number;
+    module_name: string;
+    object_id: number | null;
+    object_name: string | null;
+    reason: InventoryPriority | 'TOPUP';
+    weight: number;
+  }>(sql`
+    SELECT pqj.module_id, pm.name as module_name, pm.object_id, o.name as object_name, pqj.reason, pm.weight
+    FROM printer_queued_jobs pqj
+    JOIN print_modules pm ON pqj.module_id = pm.id
+    LEFT JOIN objects o ON pm.object_id = o.id
+    WHERE pqj.printer_id = ${printerId} AND pqj.is_completed = 0
+    ORDER BY pqj.sort_order
+  `);
 
-  const contextBuilder = new AIContextBuilder(db);
-  const modules = await contextBuilder.getModulesContext();
-  const aiContext = await contextBuilder.getAdjustedInventoryContext(modules);
-  const prioritized = prioritizeInventoryFromContext(aiContext);
+  // Live days-of-cover per object, so the card can show "Xd left" on needed prints.
+  const inv = await new AIContextBuilder(db).getInventoryWithVelocity();
+  const coverByObject = new Map(inv.map((i) => [i.id, i.days_until_stockout]));
 
-  const queue = await getSuggestedPrintQueue(db, printerId, prioritized, modules, contextBuilder.getForecast());
+  const loadedSlots = await getLoadedSpools(db, printerId);
+  let runningWeight = Math.min(
+    ...loadedSlots.filter((s) => s.spool_id).map((s) => s.spool?.remaining_weight ?? 0),
+    Infinity
+  );
+  if (!Number.isFinite(runningWeight)) runningWeight = 0;
 
-  for (let i = 0; i < queue.length; i++) {
-    await addPrinterQueuedJob(db, {
-      printerId,
-      moduleId: queue[i].module_id,
-      reason: queue[i].priority,
-      sortOrder: i
-    });
-  }
-
-  return queue;
+  return (rows ?? []).map((r) => {
+    runningWeight -= r.weight;
+    return {
+      module_id: r.module_id,
+      module_name: r.module_name,
+      object_name: r.object_name ?? '',
+      priority: r.reason,
+      days_left: r.object_id != null ? coverByObject.get(r.object_id) ?? null : null,
+      weight_of_print: r.weight,
+      spool_weight_after_print: runningWeight
+    };
+  });
 }

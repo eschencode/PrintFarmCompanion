@@ -12,10 +12,13 @@
   // Decorate raw modules with derived display fields that no longer exist
   // as columns in the new schema (printer_model_name, slot summaries, etc.).
   function decorateModule(m: any) {
+    // Brand may be empty (e.g. presets stored as just "H2S"/"P1S"); build the
+    // name from whichever parts are present so the preset still shows + filters.
     const printerModelName =
-      m.printer_preset_brand && m.printer_preset_model
-        ? `${m.printer_preset_brand} ${m.printer_preset_model}`
-        : null;
+      [m.printer_preset_brand, m.printer_preset_model]
+        .filter((s: string | null) => s && String(s).trim())
+        .join(' ')
+        .trim() || null;
 
     // Build a chip per slot. spool_preset_id === null = "Any spool" wildcard.
     const presetsList = data.spoolPresets ?? [];

@@ -1,20 +1,24 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
+import { regenerateGlobalQueueIfStale, getSpoolDemandFromQueue } from '$lib/server/printQueue';
 
 export const load: PageServerLoad = async ({ platform }) => {
   const database = platform?.env?.DB;
 
   if (!database) {
     console.log('⚠️ Database not available.');
-    return { spoolPresets: [], usageStats: [] };
+    return { spoolPresets: [], usageStats: [], spoolDemand: [] };
   }
 
-  const [spoolPresets, usageStats] = await Promise.all([
+  await regenerateGlobalQueueIfStale(database);
+
+  const [spoolPresets, usageStats, spoolDemand] = await Promise.all([
     db.getAllSpoolPresets(database),
     db.getSpoolUsageStats(database),
+    getSpoolDemandFromQueue(database),
   ]);
 
-  return { spoolPresets, usageStats };
+  return { spoolPresets, usageStats, spoolDemand };
 };
 
 export const actions: Actions = {
