@@ -2,7 +2,6 @@ import type { D1Database } from '@cloudflare/workers-types';
 import type {
   ObjectWithVelocity,
   ModuleContext,
-  AIRecommendationContext,
 } from '../types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '../db';
@@ -28,10 +27,6 @@ export class AIContextBuilder {
 
   constructor(db: D1Database) {
     this.db = db;
-  }
-
-  getForecast(): StockoutForecast {
-    return this.forecast;
   }
 
   async getInventoryWithVelocity(): Promise<ObjectWithVelocity[]> {
@@ -133,56 +128,5 @@ export class AIContextBuilder {
       WHERE pm.active = 1
     `);
     return rows ?? [];
-  }
-
-  private async getAllPrintersWithQueuedJobs(): Promise<Array<{ id: number; module_ids: number[] }>> {
-    const drizzleDb = getDb(this.db);
-    const rows = await drizzleDb.all<{ printer_id: number; module_id: number }>(sql`
-      SELECT printer_id, module_id
-      FROM printer_queued_jobs
-      WHERE is_completed = 0
-      ORDER BY printer_id, sort_order
-    `);
-
-    const printerMap = new Map<number, number[]>();
-    for (const row of (rows ?? [])) {
-      let arr = printerMap.get(row.printer_id);
-      if (!arr) {
-        arr = [];
-        printerMap.set(row.printer_id, arr);
-      }
-      arr.push(row.module_id);
-    }
-
-    return Array.from(printerMap.entries()).map(([id, module_ids]) => ({ id, module_ids }));
-  }
-
-  async getAdjustedInventoryContext(modules: ModuleContext[]): Promise<AIRecommendationContext> {
-    const inventory = await this.getInventoryWithVelocity();
-    const printers = await this.getAllPrintersWithQueuedJobs();
-
-    const inventoryMap = new Map<number, ObjectWithVelocity>();
-    inventory.forEach(item => inventoryMap.set(item.id, { ...item }));
-
-    for (const printer of printers) {
-      for (const moduleId of printer.module_ids) {
-        const module = modules.find(m => m.id === moduleId);
-        if (!module || !module.object_id) continue;
-        const inv = inventoryMap.get(module.object_id);
-        if (inv) {
-          inv.in_stock += module.objects_per_print ?? 1;
-          inv.days_until_stockout = computeStockout(inv.in_stock, inv.daily_velocity);
-          inv.stockout_risk = this.forecast.riskAtStock(String(inv.id), inv.in_stock);
-        }
-      }
-    }
-
-    return {
-      adjustedInventory: Array.from(inventoryMap.values()),
-      salesVelocity: Array.from(inventoryMap.values()).map(i => ({
-        object_id: i.id,
-        daily_velocity: i.daily_velocity
-      }))
-    };
   }
 }

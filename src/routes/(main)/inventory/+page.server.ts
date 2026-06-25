@@ -15,7 +15,7 @@ import {
   assignObjectCategory,
 } from '$lib/server';
 import { AIContextBuilder } from '$lib/recomendation/context-builder';
-import { regenerateGlobalQueueIfStale, getGlobalQueue } from '$lib/server/printQueue';
+import { regenerateGlobalQueueIfStale, regenerateGlobalQueue, getGlobalQueue } from '$lib/server/printQueue';
 import type { PrintQueueItem } from '$lib/types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
@@ -195,6 +195,16 @@ export const load: PageServerLoad = async ({ platform }) => {
 };
 
 export const actions: Actions = {
+  // Force a full rebuild (used by the "Print queue" button). Unlike the lazy
+  // staleness check, this also picks up changes that don't write inventory_log
+  // (e.g. module weight / preferred-module edits).
+  regenerateQueue: async ({ platform }) => {
+    const db = platform?.env?.DB;
+    if (!db) return { success: false, error: 'Database not available' };
+    await regenerateGlobalQueue(db);
+    return { success: true };
+  },
+
   addStock: async ({ request, platform }) => {
     const db = platform?.env?.DB;
     if (!db) return { success: false, error: 'Database not available' };

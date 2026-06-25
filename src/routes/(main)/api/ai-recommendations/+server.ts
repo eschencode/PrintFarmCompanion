@@ -5,14 +5,9 @@ import { getGlobalQueue, getSpoolDemandFromQueue, regenerateGlobalQueueIfStale }
 
 export const GET: RequestHandler = async ({ url, platform }) => {
   const db = platform?.env?.DB;
-  const ai = platform?.env?.AI;
 
   if (!db) {
     return json({ error: 'Database not available' }, { status: 500 });
-  }
-
-  if (!ai) {
-    return json({ error: 'AI not available - make sure AI binding is configured' }, { status: 500 });
   }
 
   const type = url.searchParams.get('type') as 'spool' | 'module' | 'test' | 'queue' | 'global' | 'spool-demand';
@@ -22,7 +17,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
   if (type === 'spool') {
     await regenerateGlobalQueueIfStale(db);
-    const aiService = new AIRecommendationService(db, ai);
+    const aiService = new AIRecommendationService(db);
     const suggestion = await aiService.suggestSpoolToLoad(printerId ? Number(printerId) : undefined);
     return json(suggestion);
   }

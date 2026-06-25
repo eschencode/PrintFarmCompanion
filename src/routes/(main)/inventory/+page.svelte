@@ -68,6 +68,28 @@
     let sortMode = $state<"name" | "urgency">("urgency");
     // Toggles the flat, category-free reorder list.
     let showReorderList = $state(false);
+    let queueRefreshing = $state(false);
+
+    // Toggle the Print Queue panel. Opening it force-regenerates the global queue
+    // (catches changes the inventory_log staleness check misses, e.g. module edits)
+    // then refreshes the page data.
+    async function togglePrintQueue() {
+        const opening = !showReorderList;
+        showReorderList = opening;
+        if (!opening || queueRefreshing) return;
+        queueRefreshing = true;
+        try {
+            await fetch("?/regenerateQueue", {
+                method: "POST",
+                body: new FormData(),
+            });
+            await invalidateAll();
+        } catch (e) {
+            console.error("Failed to regenerate print queue:", e);
+        } finally {
+            queueRefreshing = false;
+        }
+    }
 
     // ============ INVENTORY CHECK TOOL STATE ============
     let activeCheckPanel = $state<"sets" | "weight" | "direct" | null>(null);
@@ -422,7 +444,6 @@
         );
     }
     const runoutWeek = $derived(runoutWithin(7));
-    const runoutMonth = $derived(runoutWithin(30));
 
     // ── Decision metrics (KPIs + reorder list) ──────────────────────────────────
     // Needs a reprint: depletes within lead time (or already out), and actually sells.
@@ -657,90 +678,6 @@
             </div>
         </div>
 
-        <!-- Runway summary -->
-        {#if runoutWeek.length > 0 || runoutMonth.length > 0}
-            <div
-                class="mb-6 rounded-xl border {runoutWeek.length > 0
-                    ? 'border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/20'
-                    : 'border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20'} px-5 py-4"
-            >
-                <div class="flex items-start gap-3">
-                    <svg
-                        class="w-4 h-4 mt-0.5 shrink-0 {runoutWeek.length > 0
-                            ? 'text-red-500'
-                            : 'text-amber-500'}"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
-                        />
-                    </svg>
-                    <div class="min-w-0">
-                        <p
-                            class="text-sm font-medium text-zinc-800 dark:text-zinc-100"
-                        >
-                            {#if runoutWeek.length > 0}
-                                <span
-                                    class="text-red-600 dark:text-red-400 font-semibold"
-                                    >{runoutWeek.length}</span
-                                >
-                                {runoutWeek.length === 1
-                                    ? "item runs"
-                                    : "items run"} out this week
-                            {:else}
-                                <span
-                                    class="text-amber-600 dark:text-amber-400 font-semibold"
-                                    >{runoutMonth.length}</span
-                                >
-                                {runoutMonth.length === 1
-                                    ? "item runs"
-                                    : "items run"} out this month
-                            {/if}
-                            <span
-                                class="text-zinc-400 dark:text-zinc-500 font-normal"
-                                >· assuming no further production</span
-                            >
-                        </p>
-                        <div class="flex flex-wrap gap-1.5 mt-2">
-                            {#each (runoutWeek.length > 0 ? runoutWeek : runoutMonth).slice(0, 12) as i (i.id)}
-                                <span
-                                    class="text-[11px] px-2 py-0.5 rounded-md bg-white/70 dark:bg-black/30 text-zinc-600 dark:text-zinc-300 tabular-nums"
-                                >
-                                    {i.name}
-                                    <span class="text-zinc-400"
-                                        >· {formatDays(
-                                            i.days_until_stockout,
-                                        )}</span
-                                    >
-                                </span>
-                            {/each}
-                            {#if (runoutWeek.length > 0 ? runoutWeek : runoutMonth).length > 12}
-                                <span
-                                    class="text-[11px] px-2 py-0.5 text-zinc-400"
-                                    >+{(runoutWeek.length > 0
-                                        ? runoutWeek
-                                        : runoutMonth
-                                    ).length - 12} more</span
-                                >
-                            {/if}
-                        </div>
-                        {#if runoutWeek.length > 0 && runoutMonth.length > runoutWeek.length}
-                            <p
-                                class="text-xs text-zinc-400 dark:text-zinc-500 mt-2"
-                            >
-                                {runoutMonth.length} run out within 30 days.
-                            </p>
-                        {/if}
-                    </div>
-                </div>
-            </div>
-        {/if}
-
         <!-- KPI Cards — decision-oriented -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
             <!-- Critical → urgent subset; opens the print queue panel -->
@@ -922,11 +859,17 @@
             </div>
 
             <button
-                onclick={() => (showReorderList = !showReorderList)}
+                onclick={togglePrintQueue}
                 class="ml-auto inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border text-xs font-medium transition-colors {showReorderList
                     ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 border-transparent'
                     : 'border-zinc-200 dark:border-[#1e1e1e] bg-white dark:bg-[#111] text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#161616]'}"
             >
+                {#if queueRefreshing}
+                    <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                {/if}
                 Print queue
                 {#if globalQueue.length > 0}
                     <span
