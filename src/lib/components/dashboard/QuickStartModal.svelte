@@ -106,8 +106,8 @@
               <p class="text-lg font-medium text-zinc-900 dark:text-zinc-50 leading-snug truncate">{nextPrint.module_name ?? `Module #${nextPrint.module_id}`}</p>
               <div class="flex items-center gap-2 mt-1.5">
                 <span class="text-xs text-zinc-400 tabular-nums">{nextModule?.weight ?? '—'}g</span>
-                {#if (nextPrint as any).priority}
-                  <span class="text-xs px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500">{(nextPrint as any).priority}</span>
+                {#if (nextPrint as any).priority === 'TOPUP'}
+                  <span class="text-xs px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500">topup</span>
                 {/if}
               </div>
             </div>

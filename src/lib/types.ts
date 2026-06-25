@@ -139,7 +139,10 @@ export interface SuggestedQueueItem {
   module_id: number;
   module_name: string;
   object_name?: string;
-  priority: InventoryPriority;
+  // 'TOPUP' = filler print added to use up remaining spool weight.
+  priority: InventoryPriority | 'TOPUP';
+  // Days of cover left for the produced object (null if unknown / no velocity).
+  days_left?: number | null;
   weight_of_print: number;
   spool_weight_after_print: number;
   status?: string;
@@ -488,6 +491,37 @@ export interface SpoolSuggestion {
   reason: string;
   /** Other inventory items this preset would also relieve, most urgent first. */
   also_relieves?: { object_name: string; priority: InventoryPriority }[];
+}
+
+// Global print backlog row (print_queue table) joined with object/module names.
+export interface PrintQueueItem {
+  id: number;
+  object_id: number;
+  object_name: string;
+  module_id: number | null;
+  module_name: string | null;
+  quantity: number;
+  priority: InventoryPriority;
+  reason: string;
+  source: 'auto' | 'manual';
+  status: 'pending' | 'assigned' | 'done';
+  assigned_printer_id: number | null;
+  // Live forecast fields carried through for sorting/display.
+  in_stock: number;
+  daily_velocity: number;
+  days_until_stockout: number;
+  stockout_risk: number;
+}
+
+// Aggregated filament demand for one spool preset across the whole queue.
+export interface QueueSpoolDemand {
+  preset_id: number;
+  preset_label: string; // "Brand Color (Material)"
+  color_hex: string | null;
+  grams_needed: number; // Σ slot weight × quantity across queued items
+  grams_available: number; // loaded remaining + inStorage × defaultWeight
+  grams_deficit: number; // max(0, needed − available)
+  spools_to_buy: number; // ceil(deficit / defaultWeight)
 }
 
 export interface ModuleContext {

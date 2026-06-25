@@ -189,11 +189,12 @@
                         >{preset.default_weight}g</span
                       >
                     </div>
-                    {#if suggestion?.reason}
+                    {#if suggestion}
                       <div
-                        class="text-xs text-zinc-400 dark:text-zinc-600 mt-3 pt-3 border-t border-zinc-200/60 dark:border-[#1a1a22]"
+                        class="flex justify-between items-center gap-2 text-xs text-zinc-400 dark:text-zinc-600 mt-3 pt-3 border-t border-zinc-200/60 dark:border-[#1a1a22]"
                       >
-                        {suggestion.reason}
+                        <span class="truncate">{suggestion.module_name}</span>
+                        <span class="shrink-0">{suggestion.days_until_stockout >= 365 ? '365+' : Math.round(suggestion.days_until_stockout)}d left</span>
                       </div>
                     {/if}
                   </div>

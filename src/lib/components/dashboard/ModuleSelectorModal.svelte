@@ -94,7 +94,7 @@
                 {/if}
               </span>
               <span class="text-zinc-500">
-                {item.weight_of_print}g ({item.priority})
+                {item.weight_of_print}g{#if item.priority === 'TOPUP'}<span class="ml-1 text-zinc-400 dark:text-zinc-600">· topup</span>{:else if item.days_left != null}<span class="ml-1 text-zinc-400 dark:text-zinc-600">· {item.days_left >= 365 ? '365+' : Math.round(item.days_left)}d left</span>{/if}
               </span>
             </div>
           {/each}

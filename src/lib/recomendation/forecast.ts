@@ -9,6 +9,8 @@
  * stockout_risk = P(cumulative demand over horizon >= current stock).
  */
 
+import type { InventoryPriority } from '../types';
+
 export const FORECAST_LOOKBACK_DAYS = 90;
 export const FORECAST_HORIZON_DAYS = 7;
 export const FORECAST_TRIALS = 500;
@@ -26,6 +28,41 @@ export function confidenceFromDaysWithSales(daysWithSales: number): Confidence {
   if (daysWithSales >= 30) return 'high';
   if (daysWithSales >= 10) return 'medium';
   return 'low';
+}
+
+const RISK_TIER_ORDER: InventoryPriority[] = ['VERY_LOW', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+
+// Cap on how high a *risk-derived* tier can climb given forecast confidence.
+// A low-data SKU shouldn't scream CRITICAL on a noisy bootstrap spike — but the
+// hard min_threshold floor below still overrides this regardless of confidence.
+const CONFIDENCE_MAX_RISK_TIER: Record<Confidence, InventoryPriority> = {
+  high: 'CRITICAL',
+  medium: 'HIGH',
+  low: 'MEDIUM'
+};
+
+/** Bucket a single SKU from its stock, floor, stockout risk, and forecast confidence. */
+export function bucketPriority(item: {
+  in_stock: number;
+  min_threshold: number;
+  stockout_risk: number;
+  confidence?: Confidence;
+}): InventoryPriority {
+  // Hard inventory floor — independent of forecast quality.
+  if (item.in_stock <= item.min_threshold) return 'CRITICAL';
+
+  let tier: InventoryPriority;
+  if (item.stockout_risk >= RISK_THRESHOLDS.CRITICAL) tier = 'CRITICAL';
+  else if (item.stockout_risk >= RISK_THRESHOLDS.HIGH) tier = 'HIGH';
+  else if (item.stockout_risk >= RISK_THRESHOLDS.MEDIUM) tier = 'MEDIUM';
+  else if (item.stockout_risk >= RISK_THRESHOLDS.LOW) tier = 'LOW';
+  else tier = 'VERY_LOW';
+
+  if (item.confidence) {
+    const cap = CONFIDENCE_MAX_RISK_TIER[item.confidence];
+    if (RISK_TIER_ORDER.indexOf(tier) > RISK_TIER_ORDER.indexOf(cap)) tier = cap;
+  }
+  return tier;
 }
 
 // Deterministic PRNG so risk estimates are reproducible across requests.

@@ -15,6 +15,8 @@ import {
   assignObjectCategory,
 } from '$lib/server';
 import { AIContextBuilder } from '$lib/recomendation/context-builder';
+import { regenerateGlobalQueueIfStale, getGlobalQueue } from '$lib/server/printQueue';
+import type { PrintQueueItem } from '$lib/types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
@@ -79,9 +81,67 @@ async function getUnitWeights(db: any): Promise<UnitWeight[]> {
   return (rows || []) as UnitWeight[];
 }
 
+interface ProductionStat {
+  object_id: number;
+  weight_per_unit: number;
+  minutes_per_unit: number;
+  objects_per_print: number;
+}
+
+// Per-object production effort from its active print module: filament grams and
+// print minutes per finished unit. Drives the "cost to refill" hint (C).
+async function getProductionStats(db: any): Promise<ProductionStat[]> {
+  const drizzleDb = getDb(db);
+  const rows = await drizzleDb.all(sql`
+    SELECT pm.object_id,
+           ROUND(CAST(pm.weight AS FLOAT) / pm.objects_per_print, 1) as weight_per_unit,
+           ROUND(CAST(pm.expected_time_minutes AS FLOAT) / pm.objects_per_print, 1) as minutes_per_unit,
+           pm.objects_per_print
+    FROM print_modules pm
+    WHERE pm.object_id IS NOT NULL AND pm.active = 1
+    GROUP BY pm.object_id
+  `);
+  return (rows || []) as ProductionStat[];
+}
+
+interface SalesWindow {
+  object_id: number;
+  sold_7d: number;
+  sold_30d: number;
+}
+
+// Recent sell-through per object over two windows, for the weekly-throughput KPI
+// and the per-row demand trend arrow (7d rate vs the 30d-implied rate).
+async function getSalesWindows(db: any): Promise<SalesWindow[]> {
+  const drizzleDb = getDb(db);
+  const now = Math.floor(Date.now() / 1000);
+  const cutoff7 = now - 7 * 86_400;
+  const cutoff30 = now - 30 * 86_400;
+  const rows = await drizzleDb.all(sql`
+    SELECT object_id,
+           SUM(CASE WHEN created_at > ${cutoff7} THEN ABS(quantity) ELSE 0 END) as sold_7d,
+           SUM(ABS(quantity)) as sold_30d
+    FROM inventory_log
+    WHERE change_type IN ('- sold b2c', '- sold b2b')
+      AND created_at > ${cutoff30}
+    GROUP BY object_id
+  `);
+  return (rows || []) as SalesWindow[];
+}
+
 export const load: PageServerLoad = async ({ platform }) => {
   const db = platform?.env?.DB;
-  if (!db) return { items: [], logs: [], setDefinitions: [], unitWeights: [], categories: [] };
+  if (!db) return { items: [], logs: [], setDefinitions: [], unitWeights: [], categories: [], globalQueue: [] };
+
+  // Keep the global backlog fresh on visit, then read it as the single source of
+  // truth for the "Print queue" panel (same table that feeds printer assignment).
+  await regenerateGlobalQueueIfStale(db);
+  let globalQueue: PrintQueueItem[] = [];
+  try {
+    globalQueue = await getGlobalQueue(db);
+  } catch (err) {
+    console.error('Failed to load global print queue:', err);
+  }
 
   const items = await getAllObjects(db);
   const logs = await getAllRecentLogs(db, 50);
@@ -89,29 +149,48 @@ export const load: PageServerLoad = async ({ platform }) => {
 
   let setDefinitions: SetDefinition[] = [];
   let unitWeights: UnitWeight[] = [];
+  let productionStats: ProductionStat[] = [];
+  let salesWindows: SalesWindow[] = [];
   try {
-    [setDefinitions, unitWeights] = await Promise.all([
+    [setDefinitions, unitWeights, productionStats, salesWindows] = await Promise.all([
       getSetDefinitions(db),
       getUnitWeights(db),
+      getProductionStats(db),
+      getSalesWindows(db),
     ]);
   } catch (err) {
-    console.error('Failed to load set definitions or unit weights:', err);
+    console.error('Failed to load set/weight/production/sales data:', err);
   }
+
+  const prodById = new Map(productionStats.map(p => [p.object_id, p]));
+  const salesById = new Map(salesWindows.map(s => [s.object_id, s]));
+  const weeklyThroughput = salesWindows.reduce((sum, s) => sum + (s.sold_7d ?? 0), 0);
 
   try {
     const builder = new AIContextBuilder(db);
     const velocityList = await builder.getInventoryWithVelocity();
     const itemsWithVelocity = items.map(i => {
       const v = velocityList.find(v => v.id === i.id);
+      const p = prodById.get(i.id);
+      const s = salesById.get(i.id);
       return {
         ...i,
         daily_velocity: v?.daily_velocity ?? 0,
         days_until_stockout: v?.days_until_stockout ?? 999,
+        stockout_risk: v?.stockout_risk ?? 0,
+        confidence: v?.confidence ?? 'low',
+        days_with_sales: v?.days_with_sales ?? 0,
+        demand_p50: v?.demand_p50 ?? 0,
+        demand_p90: v?.demand_p90 ?? 0,
+        weight_per_unit: p?.weight_per_unit ?? null,
+        minutes_per_unit: p?.minutes_per_unit ?? null,
+        sold_7d: s?.sold_7d ?? 0,
+        sold_30d: s?.sold_30d ?? 0,
       };
     });
-    return { items: itemsWithVelocity, logs, setDefinitions, unitWeights, categories };
+    return { items: itemsWithVelocity, logs, setDefinitions, unitWeights, categories, weeklyThroughput, globalQueue };
   } catch {
-    return { items, logs, setDefinitions, unitWeights, categories };
+    return { items, logs, setDefinitions, unitWeights, categories, weeklyThroughput, globalQueue };
   }
 };
 

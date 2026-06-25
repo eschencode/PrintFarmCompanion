@@ -1168,7 +1168,13 @@
                                         <div
                                             class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 tabular-nums"
                                         >
-                                            {nextPrint.weight_of_print}g · {nextPrint.priority}
+                                            {nextPrint.weight_of_print}g{#if nextPrint.priority === "TOPUP"}
+                                                · topup{:else if nextPrint.days_left != null}
+                                                · {nextPrint.days_left >= 365
+                                                    ? "365+"
+                                                    : Math.round(
+                                                          nextPrint.days_left,
+                                                      )}d left{/if}
                                         </div>
                                     </div>
                                 </div>

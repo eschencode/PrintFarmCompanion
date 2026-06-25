@@ -41,7 +41,21 @@ export class AIContextBuilder {
     `);
 
     const nowSec = Math.floor(Date.now() / 1000);
-    const cutoffSec = nowSec - FORECAST_LOOKBACK_DAYS * SEC_PER_DAY;
+    const todayBucket = Math.floor(nowSec / SEC_PER_DAY);
+
+    // Effective tracking window: dividing by a fixed 90 days when sales have only
+    // been recorded for, say, 20 days understates velocity ~4.5× (and inflates
+    // days-of-cover). Use the actual elapsed window since the first recorded
+    // sale, capped at FORECAST_LOOKBACK_DAYS. Days before tracking began were
+    // never zero-demand — they just weren't measured — so they must not dilute.
+    const firstSaleRow = await drizzleDb.get<{ first: number | null }>(sql`
+      SELECT MIN(created_at) as first FROM inventory_log
+      WHERE change_type IN ('- sold b2c', '- sold b2b')
+    `);
+    const firstBucket = firstSaleRow?.first ? Math.floor(firstSaleRow.first / SEC_PER_DAY) : todayBucket;
+    const windowDays = Math.min(FORECAST_LOOKBACK_DAYS, Math.max(1, todayBucket - firstBucket + 1));
+
+    const cutoffSec = nowSec - windowDays * SEC_PER_DAY;
     const dailyRows = await drizzleDb.all<{ object_id: number; day_bucket: number; daily_sold: number }>(sql`
       SELECT
         l.object_id,
@@ -53,23 +67,22 @@ export class AIContextBuilder {
       GROUP BY l.object_id, day_bucket
     `);
 
-    const todayBucket = Math.floor(nowSec / SEC_PER_DAY);
-    const startBucket = todayBucket - (FORECAST_LOOKBACK_DAYS - 1);
+    const startBucket = todayBucket - (windowDays - 1);
 
     const salesByObject = new Map<number, number[]>();
     for (const row of (dailyRows ?? [])) {
       const idx = row.day_bucket - startBucket;
-      if (idx < 0 || idx >= FORECAST_LOOKBACK_DAYS) continue;
+      if (idx < 0 || idx >= windowDays) continue;
       let arr = salesByObject.get(row.object_id);
       if (!arr) {
-        arr = new Array(FORECAST_LOOKBACK_DAYS).fill(0);
+        arr = new Array(windowDays).fill(0);
         salesByObject.set(row.object_id, arr);
       }
       arr[idx] = row.daily_sold;
     }
 
     return (inventoryRows ?? []).map(item => {
-      const dailySales = salesByObject.get(item.id) ?? new Array(FORECAST_LOOKBACK_DAYS).fill(0);
+      const dailySales = salesByObject.get(item.id) ?? new Array(windowDays).fill(0);
       const key = String(item.id);
 
       this.forecast.fit(key, dailySales);
@@ -81,7 +94,7 @@ export class AIContextBuilder {
         total += v;
         if (v > 0) daysWithSales++;
       }
-      const daily_velocity = Math.round((total / FORECAST_LOOKBACK_DAYS) * 100) / 100;
+      const daily_velocity = Math.round((total / windowDays) * 100) / 100;
       const days_until_stockout = computeStockout(item.in_stock, daily_velocity);
       const confidence = confidenceFromDaysWithSales(daysWithSales);
 

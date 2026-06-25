@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { AIRecommendationService, generateAndSaveSuggestedQueue, getSuggestedPrintQueue, prioritizeInventoryFromContext } from '$lib/recomendation';
-import { AIContextBuilder } from '$lib/recomendation/context-builder';
+import { AIRecommendationService, generateAndSaveSuggestedQueue } from '$lib/recomendation';
+import { getGlobalQueue, getSpoolDemandFromQueue, regenerateGlobalQueueIfStale } from '$lib/server/printQueue';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
   const db = platform?.env?.DB;
@@ -15,15 +15,28 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     return json({ error: 'AI not available - make sure AI binding is configured' }, { status: 500 });
   }
 
-  const type = url.searchParams.get('type') as 'spool' | 'module' | 'test' | 'queue';
+  const type = url.searchParams.get('type') as 'spool' | 'module' | 'test' | 'queue' | 'global' | 'spool-demand';
   const printerId = url.searchParams.get('printerId');
 
   try {
 
   if (type === 'spool') {
+    await regenerateGlobalQueueIfStale(db);
     const aiService = new AIRecommendationService(db, ai);
     const suggestion = await aiService.suggestSpoolToLoad(printerId ? Number(printerId) : undefined);
     return json(suggestion);
+  }
+
+  if (type === 'global') {
+    await regenerateGlobalQueueIfStale(db);
+    const queue = await getGlobalQueue(db);
+    return json(queue);
+  }
+
+  if (type === 'spool-demand') {
+    await regenerateGlobalQueueIfStale(db);
+    const demand = await getSpoolDemandFromQueue(db);
+    return json(demand);
   }
 
 	 if (type === 'queue') {
@@ -33,20 +46,6 @@ export const GET: RequestHandler = async ({ url, platform }) => {
       const queue = await generateAndSaveSuggestedQueue(db, Number(printerId));
       return json(queue);
     }
-    if (type === 'test') {
-      if (!printerId) {
-        return json({ error: 'Missing printerId' }, { status: 400 });
-      }
-      const contextBuilder = new AIContextBuilder(db);
-      const modules = await contextBuilder.getModulesContext();
-      const aiContext = await contextBuilder.getAdjustedInventoryContext(modules);
-      const prioritized = prioritizeInventoryFromContext(aiContext);
-
-      const queue = await getSuggestedPrintQueue(db, Number(printerId), prioritized);
-      console.log(queue);
-      return json(queue);
-    }
-
     if (!type || !printerId) {
       return json({ error: 'Missing type or printerId' }, { status: 400 });
     }

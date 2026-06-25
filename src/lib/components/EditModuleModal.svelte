@@ -274,7 +274,7 @@
             class="w-full bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded-lg px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors">
             <option value={null}>None</option>
             {#each printerModels as m (m.id)}
-              <option value={m.id}>{m.brand} {m.model}</option>
+              <option value={m.id}>{[m.brand, m.model].filter(Boolean).join(' ')}</option>
             {/each}
           </select>
         </div>

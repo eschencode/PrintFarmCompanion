@@ -5,12 +5,13 @@
 
   let { data }: { data: PageData } = $props();
 
-  const PRIORITY_COLORS: Record<InventoryPriority, string> = {
+  const PRIORITY_COLORS: Record<InventoryPriority | 'TOPUP', string> = {
     CRITICAL: 'text-red-500 dark:text-red-400 bg-red-500/10 border-red-500/20',
     HIGH:     'text-amber-500 dark:text-amber-400 bg-amber-500/10 border-amber-500/20',
     MEDIUM:   'text-yellow-500 dark:text-yellow-400 bg-yellow-500/10 border-yellow-500/20',
     LOW:      'text-blue-500 dark:text-blue-400 bg-blue-500/10 border-blue-500/20',
-    VERY_LOW: 'text-zinc-500 dark:text-zinc-400 bg-zinc-500/10 border-zinc-500/20'
+    VERY_LOW: 'text-zinc-500 dark:text-zinc-400 bg-zinc-500/10 border-zinc-500/20',
+    TOPUP:    'text-zinc-400 dark:text-zinc-500 bg-zinc-500/5 border-zinc-500/15'
   };
 
   const CONFIDENCE_COLORS = {
@@ -20,12 +21,13 @@
   };
 
   // Solid bar fill per bucket, used to colour the risk bars by their resolved tier.
-  const RISK_FILL: Record<InventoryPriority, string> = {
+  const RISK_FILL: Record<InventoryPriority | 'TOPUP', string> = {
     CRITICAL: 'bg-red-500/80',
     HIGH:     'bg-amber-500/80',
     MEDIUM:   'bg-yellow-500/80',
     LOW:      'bg-blue-500/70',
-    VERY_LOW: 'bg-zinc-400/60 dark:bg-zinc-600/60'
+    VERY_LOW: 'bg-zinc-400/60 dark:bg-zinc-600/60',
+    TOPUP:    'bg-zinc-300/50 dark:bg-zinc-700/50'
   };
 
   function fmtPct(v: number): string {

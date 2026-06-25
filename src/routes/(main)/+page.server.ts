@@ -1,5 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
+import { regenerateGlobalQueueIfStale } from '$lib/server/printQueue';
 import type { DashboardPrinter, PrinterFull } from '$lib/types';
 
 export const load: PageServerLoad = async ({ platform }) => {
@@ -9,6 +10,10 @@ export const load: PageServerLoad = async ({ platform }) => {
     console.log('⚠️ Database not available.');
     return { printers: [], spools: [], printModules: [], activePrintJobs: [], printJobs: [], spoolPresets: [], spoolUsage: [], gridPresets: [] };
   }
+
+  // Warm the global queue on dashboard load so the first per-printer spool-load
+  // assignment is fast (no synchronous full regeneration on the click path).
+  await regenerateGlobalQueueIfStale(database);
 
   const [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets] = await Promise.all([
     db.getAllPrintersFull(database),
