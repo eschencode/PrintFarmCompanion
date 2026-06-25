@@ -108,10 +108,6 @@
     </div>
 
     <div class="flex flex-wrap gap-2 mt-8">
-      <a href="/recommendations"
-        class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-[#161616] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-[#1f1f1f] transition-colors">
-        Recommendations Logs
-      </a>
       <a href="/logs"
         class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-[#161616] text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-[#1f1f1f] transition-colors">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

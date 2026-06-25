@@ -449,36 +449,6 @@ export interface ObjectWithVelocity {
   demand_p90: number;
 }
 
-export interface SalesVelocity {
-  object_id: number;
-  daily_velocity: number;
-}
-
-export interface AIRecommendationContext {
-  adjustedInventory: ObjectWithVelocity[];
-  salesVelocity: SalesVelocity[];
-}
-
-export interface PrioritizedObjectItem {
-  id: number;
-  name: string;
-  in_stock: number;
-  min_threshold: number;
-  daily_velocity: number;
-  days_until_stockout: number;
-  stockout_risk: number;
-  confidence: 'high' | 'medium' | 'low';
-  priority: InventoryPriority;
-}
-
-export interface PrioritizedInventory {
-  CRITICAL: PrioritizedObjectItem[];
-  HIGH: PrioritizedObjectItem[];
-  MEDIUM: PrioritizedObjectItem[];
-  LOW: PrioritizedObjectItem[];
-  VERY_LOW: PrioritizedObjectItem[];
-}
-
 export interface SpoolSuggestion {
   preset_id: number;
   priority: InventoryPriority;
