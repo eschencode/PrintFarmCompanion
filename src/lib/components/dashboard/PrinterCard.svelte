@@ -30,9 +30,20 @@
     export let now: number;
     export let onSelect: () => void;
 
+    // A live frame that's effectively done (final layer, no time left, ~100%).
+    // Some Bambu firmware sticks at RUNNING 99% forever instead of emitting FINISH.
+    $: liveDone =
+        !!piLive &&
+        piLive.progress >= 99 &&
+        piLive.total_layer_num > 0 &&
+        piLive.layer_num >= piLive.total_layer_num &&
+        (piLive.remaining_time ?? 0) === 0;
+    $: hasActiveJob = !!getActivePrintJob(Number(printer.id), activePrintJobs);
     $: liveIsPrinting =
         !!piLive &&
-        ["RUNNING", "PREPARE", "PAUSE"].includes(piLive.gcode_state);
+        ["RUNNING", "PREPARE", "PAUSE"].includes(piLive.gcode_state) &&
+        // Don't treat a stale "done" frame as printing once the job is gone.
+        !(liveDone && !hasActiveJob);
 
     // Active printer health warnings (HMS). Empty unless the printer is reporting issues.
     $: hmsAlerts = decodeHms(piLive?.hms).filter((d) => d.severity !== "info");

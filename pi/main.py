@@ -68,6 +68,13 @@ _status_cache_lock = threading.Lock()
 _printer_registry: dict[str, PrinterCredentials] = {}
 _registry_lock = threading.Lock()
 
+# Some Bambu firmware sticks at RUNNING 99% (final layer, no time left) and never
+# emits FINISH. Track when a printer first looked "effectively done" so we can
+# synthesize a completion after it persists. Keyed by serial → unix timestamp.
+_done_since: dict[str, float] = {}
+_done_since_lock = threading.Lock()
+STUCK_FINISH_SECONDS = 90
+
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
@@ -366,6 +373,31 @@ def _start_monitor(credentials: PrinterCredentials, task_id: str):
         # Skip IDLE and unknown states — avoids spurious "printing 100%" webhooks
         if status.gcode_state not in _ACTIVE_STATES:
             return
+
+        # Bambu firmware can stick at RUNNING 99% (final layer, no time left) and
+        # never emit FINISH. If that condition persists, synthesize a FINISH so the
+        # print completes normally and this monitor stops leaking.
+        is_done_running = (
+            status.gcode_state == "RUNNING"
+            and status.total_layer_num > 0
+            and status.layer_num >= status.total_layer_num
+            and int(status.raw.get("mc_remaining_time") or 0) == 0
+            and status.progress >= 99
+        )
+        if is_done_running:
+            with _done_since_lock:
+                first_seen = _done_since.setdefault(credentials.serial, time.time())
+            if time.time() - first_seen >= STUCK_FINISH_SECONDS:
+                log("warning", "MQTT",
+                    f"Stuck at RUNNING {status.progress}% (layer {status.layer_num}/{status.total_layer_num}, "
+                    f"0 min left) for {STUCK_FINISH_SECONDS}s — synthesizing FINISH",
+                    printer_serial=credentials.serial, printer_name=credentials.name)
+                status.gcode_state = "FINISH"
+                with _done_since_lock:
+                    _done_since.pop(credentials.serial, None)
+        else:
+            with _done_since_lock:
+                _done_since.pop(credentials.serial, None)
 
         # Always keep status cache up to date
         with _status_cache_lock:
