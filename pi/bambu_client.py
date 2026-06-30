@@ -338,6 +338,7 @@ class BambuMQTTClient:
         self.credentials = credentials
         self.on_status = on_status
         self.last_status: Optional[PrintStatus] = None
+        self.last_status_at: float = 0.0  # unix secs of last received frame (staleness signal)
         self._client = mqtt.Client()
         self._connected = False
         self._lock = threading.Lock()
@@ -345,6 +346,9 @@ class BambuMQTTClient:
         self._client.username_pw_set("bblp", credentials.access_code)
         self._client.tls_set(cert_reqs=ssl.CERT_NONE)
         self._client.tls_insecure_set(True)
+        # Auto-reconnect with exponential backoff (1s→60s). loop_start() will keep
+        # retrying after a transient drop instead of going silent until the watchdog.
+        self._client.reconnect_delay_set(min_delay=1, max_delay=60)
 
         self._client.on_connect = self._on_connect
         self._client.on_message = self._on_message
@@ -379,6 +383,11 @@ class BambuMQTTClient:
 
     def _on_disconnect(self, client, userdata, rc):
         self._connected = False
+        # rc != 0 is an unexpected drop — loop_start auto-reconnects (backoff above),
+        # and _on_connect re-subscribes. Log so silent gaps are visible.
+        if rc != 0:
+            log("warning", "MQTT", f"Disconnected (rc={rc}) — auto-reconnecting",
+                printer_serial=self.credentials.serial, printer_name=self.credentials.name)
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -437,6 +446,7 @@ class BambuMQTTClient:
 
         with self._lock:
             self.last_status = status
+            self.last_status_at = time.time()
 
         if self.on_status:
             self.on_status(status)

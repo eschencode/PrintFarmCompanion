@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import BackToDashboard from '$lib/components/BackToDashboard.svelte';
+  import { isDesktop } from '$lib/stores/desktop';
 
   interface LogEntry {
     timestamp: number;
@@ -65,45 +66,83 @@
     return `${Math.floor(diff / 86400)}d ago`;
   }
 
-  async function fetchPrinters() {
+  // Separate cursors per source — Pi and desktop run on different clocks, so a
+  // single shared cursor could drop entries from whichever clock lags.
+  let piCursor = 0;
+  let directCursor = 0;
+
+  async function invokeTauri<T>(cmd: string, args: Record<string, unknown>): Promise<T | null> {
     try {
-      const resp = await fetch('/api/pi/logs/printers');
-      const data = (await resp.json()) as { printers?: PrinterInfo[] };
-      printers = data.printers ?? [];
+      const { invoke } = await import('@tauri-apps/api/core');
+      return await invoke<T>(cmd, args);
     } catch {
-      // ignore
+      return null;
     }
   }
 
-  async function fetchLogs(since = 0) {
+  async function fetchPrinters() {
+    const merged = new Map<string, PrinterInfo>();
     try {
-      const params = new URLSearchParams();
-      if (selectedPrinter) params.set('printer', selectedPrinter);
-      if (selectedLevel) params.set('level', selectedLevel);
-      if (selectedCategory) params.set('category', selectedCategory);
-      if (since > 0) params.set('since', since.toString());
-      params.set('limit', '500');
+      const resp = await fetch('/api/pi/logs/printers');
+      const data = (await resp.json()) as { printers?: PrinterInfo[] };
+      for (const p of data.printers ?? []) merged.set(p.serial, p);
+    } catch {
+      // ignore — Pi may be unreachable / unconfigured
+    }
+    if ($isDesktop) {
+      const dp = await invokeTauri<PrinterInfo[]>('fetch_direct_printers', {});
+      for (const p of dp ?? []) if (!merged.has(p.serial)) merged.set(p.serial, p);
+    }
+    printers = [...merged.values()];
+  }
 
-      const resp = await fetch(`/api/pi/logs?${params}`);
-      const data = (await resp.json()) as { entries?: LogEntry[]; error?: string };
+  async function fetchPiLogs(): Promise<LogEntry[]> {
+    const params = new URLSearchParams();
+    if (selectedPrinter) params.set('printer', selectedPrinter);
+    if (selectedLevel) params.set('level', selectedLevel);
+    if (selectedCategory) params.set('category', selectedCategory);
+    if (piCursor > 0) params.set('since', piCursor.toString());
+    params.set('limit', '500');
 
-      if (data.error) {
-        error = data.error;
-        return;
-      }
-      error = '';
+    const resp = await fetch(`/api/pi/logs?${params}`);
+    const data = (await resp.json()) as { entries?: LogEntry[]; error?: string };
+    if (data.error) {
+      // On desktop the Pi may be unconfigured — don't let that hide the direct logs.
+      if (!$isDesktop) error = data.error;
+      return [];
+    }
+    error = '';
+    return data.entries ?? [];
+  }
 
-      const newEntries = data.entries ?? [];
-      if (since > 0 && newEntries.length > 0) {
-        // Append new entries
-        entries = [...entries, ...newEntries];
-        // Keep buffer manageable
-        if (entries.length > 2000) {
-          entries = entries.slice(-1500);
-        }
-      } else if (since === 0) {
-        entries = newEntries;
-      }
+  async function fetchDirectLogs(): Promise<LogEntry[]> {
+    if (!$isDesktop) return [];
+    const entries = await invokeTauri<LogEntry[]>('fetch_direct_logs', {
+      since: directCursor,
+      printer: selectedPrinter || null,
+      level: selectedLevel || null,
+      category: selectedCategory || null,
+      limit: 500,
+    });
+    return entries ?? [];
+  }
+
+  async function fetchLogs(reset = false) {
+    if (reset) {
+      piCursor = 0;
+      directCursor = 0;
+      entries = [];
+    }
+    try {
+      const [piNew, directNew] = await Promise.all([fetchPiLogs(), fetchDirectLogs()]);
+      if (piNew.length) piCursor = Math.max(piCursor, ...piNew.map((e) => e.timestamp));
+      if (directNew.length) directCursor = Math.max(directCursor, ...directNew.map((e) => e.timestamp));
+
+      const combined = [...piNew, ...directNew].sort((a, b) => a.timestamp - b.timestamp);
+      if (combined.length === 0 && !reset) return;
+
+      entries = reset ? combined : [...entries, ...combined];
+      if (entries.length > 2000) entries = entries.slice(-1500);
 
       if (shouldAutoScroll && logContainer) {
         requestAnimationFrame(() => {
@@ -115,12 +154,15 @@
     }
   }
 
+  let pollTicks = 0;
   function startPolling() {
     if (intervalId) clearInterval(intervalId);
     intervalId = setInterval(() => {
       if (!isLive) return;
-      const lastTs = entries.length > 0 ? entries[entries.length - 1].timestamp : 0;
-      fetchLogs(lastTs);
+      fetchLogs(false);
+      // Refresh the printer dropdown occasionally — desktop printers only appear
+      // in the list once they've connected and logged something.
+      if (++pollTicks % 5 === 0) fetchPrinters();
     }, 3000);
   }
 
@@ -135,14 +177,12 @@
     selectedLevel = '';
     selectedCategory = '';
     searchText = '';
-    entries = [];
-    fetchLogs();
+    fetchLogs(true);
   }
 
   // Re-fetch when filters change
   function onFilterChange() {
-    entries = [];
-    fetchLogs();
+    fetchLogs(true);
   }
 
   let filteredEntries = $derived(
@@ -153,7 +193,7 @@
 
   onMount(() => {
     fetchPrinters();
-    fetchLogs();
+    fetchLogs(true);
     startPolling();
 
     return () => {
@@ -165,7 +205,7 @@
 <div class="min-h-screen bg-white dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100">
   <!-- Header -->
   <div class="border-b border-zinc-200 dark:border-zinc-800 px-4 py-3 flex items-center gap-4">
-    <h1 class="text-lg font-semibold tracking-tight">Pi Logs</h1>
+    <h1 class="text-lg font-semibold tracking-tight">Printer Logs</h1>
 
     <div class="ml-auto flex items-center gap-3">
       <BackToDashboard />

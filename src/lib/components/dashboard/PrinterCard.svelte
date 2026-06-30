@@ -39,8 +39,13 @@
         piLive.layer_num >= piLive.total_layer_num &&
         (piLive.remaining_time ?? 0) === 0;
     $: hasActiveJob = !!getActivePrintJob(Number(printer.id), activePrintJobs);
+    // A frame the Pi hasn't refreshed in >60s is stale — the monitor likely died,
+    // so a cached RUNNING must not keep masquerading as a live print.
+    $: stale =
+        !!piLive?.updated_at && now - piLive.updated_at * 1000 > 60_000;
     $: liveIsPrinting =
         !!piLive &&
+        !stale &&
         ["RUNNING", "PREPARE", "PAUSE"].includes(piLive.gcode_state) &&
         // Don't treat a stale "done" frame as printing once the job is gone.
         !(liveDone && !hasActiveJob);
