@@ -139,19 +139,8 @@
         const piOn = get(printerPiEnabled);
         const directOn = get(directPrinterEnabled);
 
-        for (const printer of data.printers as any[]) {
-            if (!printer.printer_serial) continue;
-            const transport = effectiveTransport(printer);
-            if (transport === "pi") {
-                if (piOn) startPiPolling(printer.printer_serial);
-            } else {
-                // Direct-mode: subscribe via Tauri MQTT + still start Pi polling as fallback
-                if (piOn) startPiPolling(printer.printer_serial);
-                if (directOn) await subscribeDirectPrinter(printer);
-            }
-        }
-
-        // Listen for Tauri MQTT status events
+        // Register the Tauri MQTT listeners BEFORE subscribing any printer, so the
+        // first status frames emitted right after connect aren't dropped.
         if ($isDesktop && directOn) {
             const stateLabels: Record<string, string> = {
                 IDLE: "Idle",
@@ -177,6 +166,16 @@
                 bed_temp: number | null;
                 chamber_temp: number | null;
                 subtask_name: string | null;
+                gcode_file: string | null;
+                nozzle_target_temp: number | null;
+                bed_target_temp: number | null;
+                cooling_fan_speed: number | null;
+                aux_fan_speed: number | null;
+                chamber_fan_speed: number | null;
+                speed_level: number | null;
+                speed_mag: number | null;
+                wifi_signal: string | null;
+                hms: { attr: number; code: number }[] | null;
             }>("printer-status", ({ payload: s }) => {
                 const prevState = piStatusBySerial[s.serial]?.gcode_state;
                 const newState = s.gcode_state;
@@ -197,7 +196,17 @@
                         bed_temp: s.bed_temp,
                         chamber_temp: s.chamber_temp,
                         subtask_name: s.subtask_name ?? null,
-                        gcode_file: null,
+                        gcode_file: s.gcode_file ?? null,
+                        hms: s.hms ?? null,
+                        nozzle_target_temp: s.nozzle_target_temp,
+                        bed_target_temp: s.bed_target_temp,
+                        cooling_fan_speed: s.cooling_fan_speed,
+                        aux_fan_speed: s.aux_fan_speed,
+                        chamber_fan_speed: s.chamber_fan_speed,
+                        speed_level: s.speed_level,
+                        speed_mag: s.speed_mag,
+                        wifi_signal: s.wifi_signal,
+                        updated_at: Math.floor(Date.now() / 1000),
                     },
                 };
                 // Advance start queue on PREPARE→RUNNING
@@ -210,24 +219,13 @@
                     newState === "RUNNING"
                 )
                     advanceStartQueue();
-                // Trigger finish logic
-                const wasTrackedPrinting = (data.activePrintJobs as any[]).some(
-                    (j: any) => j.printer_serial === s.serial,
-                );
-                const isTerminal =
-                    newState === "FINISH" || newState === "FAILED";
-                const prevWasTerminal =
-                    prevState === "FINISH" || prevState === "FAILED";
-                const justFinished =
-                    isTerminal && prevState !== undefined && !prevWasTerminal;
-                if (
-                    wasTrackedPrinting &&
-                    justFinished &&
-                    !reloadTriggered.has(s.serial)
-                ) {
-                    reloadTriggered.add(s.serial);
-                    setTimeout(() => window.location.reload(), 2000);
-                }
+                // Trigger finish logic (shared with Pi poll)
+                handleFinishTransition(s.serial, prevState, newState, {
+                    progress: s.progress,
+                    total_layer_num: s.total_layer_num,
+                    layer_num: s.layer_num,
+                    remaining_time: s.remaining_time,
+                });
             });
 
             const unlistenConnected = await listen<{
@@ -250,6 +248,19 @@
                 unlistenConnected,
                 unlistenDisconnected,
             ];
+        }
+
+        // Now subscribe each printer (direct MQTT) + start Pi polling as fallback.
+        for (const printer of data.printers as any[]) {
+            if (!printer.printer_serial) continue;
+            const transport = effectiveTransport(printer);
+            if (transport === "pi") {
+                if (piOn) startPiPolling(printer.printer_serial);
+            } else {
+                // Direct-mode: subscribe via Tauri MQTT + still poll Pi as fallback
+                if (piOn) startPiPolling(printer.printer_serial);
+                if (directOn) await subscribeDirectPrinter(printer);
+            }
         }
     });
 
@@ -340,7 +351,70 @@
             ip: printer.printer_ip,
             serial: printer.printer_serial,
             accessCode: printer.printer_access_code,
+            name: printer.name ?? "",
         }).catch((e: unknown) => console.error("subscribe_printer failed:", e));
+    }
+
+    /**
+     * Single finish-transition handler shared by both transports (Tauri direct
+     * listener + Pi poll). Fires once per printer when a tracked print completes:
+     *   - true terminal transition (RUNNING/PREPARE/PAUSE → FINISH/FAILED), or
+     *   - stuck-at-99 fallback (firmware never emits FINISH but the frame is done).
+     * Moves the job → print_finished server-side (authoritative for direct, which
+     * has no webhook; idempotent for pi) then hard-reloads for the success state.
+     */
+    async function handleFinishTransition(
+        serial: string,
+        prevState: string | undefined,
+        newState: string,
+        liveFrame?: {
+            progress: number;
+            total_layer_num: number;
+            layer_num: number;
+            remaining_time: number | null;
+        },
+    ): Promise<void> {
+        if (reloadTriggered.has(serial)) return;
+        const wasTrackedPrinting = (data.activePrintJobs as any[]).some(
+            (j: any) => j.printer_serial === serial,
+        );
+        if (!wasTrackedPrinting) return;
+
+        const isTerminal = newState === "FINISH" || newState === "FAILED";
+        const prevWasTerminal =
+            prevState === "FINISH" || prevState === "FAILED";
+        const justFinished =
+            isTerminal && prevState !== undefined && !prevWasTerminal;
+
+        // Defense-in-depth: a frame that's effectively done while still RUNNING
+        // (Phase 0 liveDone predicate) — some firmware sticks at 99% forever.
+        const liveDone =
+            !!liveFrame &&
+            liveFrame.progress >= 99 &&
+            liveFrame.total_layer_num > 0 &&
+            liveFrame.layer_num >= liveFrame.total_layer_num &&
+            (liveFrame.remaining_time ?? 0) === 0;
+
+        if (!justFinished && !liveDone) return;
+
+        reloadTriggered.add(serial);
+        const printer = (data.printers as any[]).find(
+            (p: any) => p.printer_serial === serial,
+        );
+        if (printer) {
+            try {
+                await fetch(`/api/printer/${printer.id}/finished`, {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                        status: newState === "FAILED" ? "failed" : "success",
+                    }),
+                });
+            } catch {
+                /* reload still re-derives finished state from the server */
+            }
+        }
+        setTimeout(() => window.location.reload(), 2000);
     }
 
     /**
@@ -376,6 +450,7 @@
                     speed_level?: number | null;
                     speed_mag?: number | null;
                     wifi_signal?: string | null;
+                    updated_at?: number | null;
                 } | null;
                 detected_external?: DetectedExternal;
             };
@@ -434,29 +509,18 @@
                     speed_level: d.status.speed_level ?? null,
                     speed_mag: d.status.speed_mag ?? null,
                     wifi_signal: d.status.wifi_signal ?? null,
+                    updated_at: d.status.updated_at ?? null,
                 },
             };
-            // Only trigger reload when we observe the TRANSITION into FINISH/FAILED.
-            // Requires prevState to be defined (we've seen at least one non-terminal poll)
-            // AND prevState was not already a terminal state.
-            // This prevents the reload loop caused by reloading while the printer is still
-            // in FINISH state — every fresh page load would otherwise immediately reload again.
-            const wasTrackedPrinting = (data.activePrintJobs as any[]).some(
-                (j: any) => j.printer_serial === serial,
-            );
-            const isTerminal = newState === "FINISH" || newState === "FAILED";
-            const prevWasTerminal =
-                prevState === "FINISH" || prevState === "FAILED";
-            const justFinished =
-                isTerminal && prevState !== undefined && !prevWasTerminal;
-            if (
-                wasTrackedPrinting &&
-                justFinished &&
-                !reloadTriggered.has(serial)
-            ) {
-                reloadTriggered.add(serial);
-                setTimeout(() => window.location.reload(), 2000);
-            }
+            // Fire the shared finish handler on the TRANSITION into FINISH/FAILED
+            // (or the stuck-at-99 fallback). The handler self-guards against firing
+            // twice and against a fresh load that's already in a terminal state.
+            handleFinishTransition(serial, prevState, newState, {
+                progress: d.status.progress,
+                total_layer_num: d.status.total_layer_num ?? 0,
+                layer_num: d.status.layer_num ?? 0,
+                remaining_time: d.status.remaining_time ?? null,
+            });
             // Advance start queue when front-of-queue printer moves from PREPARE to RUNNING
             const isHeadOfQueue =
                 startQueue.length > 0 &&
@@ -702,7 +766,7 @@
                 directConnected.has(printer.printer_serial);
 
             if (isDirect) {
-                // Map Pi API endpoint names to Bambu MQTT command names
+                // Map control action names to Bambu MQTT command names
                 const commandMap: Record<string, string> = {
                     pause: "pause",
                     resume: "resume",
@@ -715,10 +779,13 @@
                     command,
                 });
             } else {
-                await fetch(`/api/pi/${endpoint}`, {
+                await fetch(`/api/pi/control`, {
                     method: "POST",
                     headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ printer_id: printerId }),
+                    body: JSON.stringify({
+                        printer_id: printerId,
+                        action: endpoint,
+                    }),
                 });
             }
         } finally {

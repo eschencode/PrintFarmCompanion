@@ -410,13 +410,24 @@ export async function assignQueueToPrinter(db: D1Database, printerId: number): P
  * not yet printed) per spool preset, and compare to what's on hand (loaded
  * spools' remaining weight + unopened spools in storage). This is the basis
  * for spool-load ranking and replenishment buying decisions.
+ *
+ * Demand is scoped to the next `horizonDays`: the copies actually needed to keep
+ * each object covered = max(0, velocity × horizonDays − finished-goods in_stock).
+ * (The queue's own quantity targets 45-day cover and ignores finished stock, so
+ * using it raw over-orders filament.) A queued item with no recent velocity
+ * (manual pin / new SKU) keeps its full quantity so it isn't silently dropped.
  */
-export async function getSpoolDemandFromQueue(db: D1Database): Promise<QueueSpoolDemand[]> {
+export async function getSpoolDemandFromQueue(db: D1Database, horizonDays = 30): Promise<QueueSpoolDemand[]> {
   const drizzleDb = getDb(db);
 
-  const queueRows = await drizzleDb.all<{ module_id: number; quantity: number }>(sql`
-    SELECT module_id, quantity FROM print_queue WHERE module_id IS NOT NULL AND status != 'done'
+  const queueRows = await drizzleDb.all<{ object_id: number; module_id: number; quantity: number }>(sql`
+    SELECT object_id, module_id, quantity FROM print_queue WHERE module_id IS NOT NULL AND status != 'done'
   `);
+
+  // Per-object velocity + finished-goods stock, to scope copies to the horizon.
+  const builder = new AIContextBuilder(db);
+  const inv = await builder.getInventoryWithVelocity();
+  const invByObject = new Map(inv.map((i) => [i.id, i]));
 
   const slotRows = await drizzleDb.all<{ module_id: number; spool_preset_id: number | null; weight: number | null }>(sql`
     SELECT module_id, spool_preset_id, weight FROM module_filament_slots
@@ -430,9 +441,17 @@ export async function getSpoolDemandFromQueue(db: D1Database): Promise<QueueSpoo
 
   const gramsNeeded = new Map<number, number>();
   for (const row of queueRows ?? []) {
+    const info = invByObject.get(row.object_id);
+    const vel = info?.daily_velocity ?? 0;
+    // Velocity-driven: copies to cover the horizon after finished stock runs down.
+    // No velocity: manual pin / floor-driven, keep the queued quantity as-is.
+    const quantity = vel > 0
+      ? Math.max(0, Math.min(row.quantity, Math.ceil(vel * horizonDays) - (info?.in_stock ?? 0)))
+      : row.quantity;
+    if (quantity <= 0) continue;
     for (const slot of slotsByModule.get(row.module_id) ?? []) {
       if (slot.spool_preset_id == null || !slot.weight) continue;
-      gramsNeeded.set(slot.spool_preset_id, (gramsNeeded.get(slot.spool_preset_id) ?? 0) + slot.weight * row.quantity);
+      gramsNeeded.set(slot.spool_preset_id, (gramsNeeded.get(slot.spool_preset_id) ?? 0) + slot.weight * quantity);
     }
   }
   if (gramsNeeded.size === 0) return [];

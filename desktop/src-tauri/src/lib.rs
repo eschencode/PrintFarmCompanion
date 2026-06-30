@@ -1,10 +1,12 @@
 mod bambu;
+mod logs;
 
 use std::sync::Arc;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::ShellExt;
 
 use bambu::{BambuDirectManager, subscribe_printer, send_printer_command, start_print_direct};
+use logs::{fetch_direct_logs, fetch_direct_printers};
 
 const PROD_URL: &str = "https://printfarmcompanion.pages.dev";
 const DEV_URL: &str = "http://localhost:5173";
@@ -60,6 +62,8 @@ pub fn run() {
             start_print_direct,
             save_module_file,
             get_modules_dir,
+            fetch_direct_logs,
+            fetch_direct_printers,
         ])
         .setup(move |app| {
             // Ensure the app-data modules directory exists.

@@ -23,6 +23,8 @@ use rumqttc::tokio_rustls::rustls::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
+use crate::logs;
+
 // ── Public event payloads ─────────────────────────────────────────────────────
 
 /// Emitted as `"printer-status"` to the webview.
@@ -41,7 +43,19 @@ pub struct PrinterStatusEvent {
     pub bed_temp: Option<f64>,
     pub chamber_temp: Option<f64>,
     pub subtask_name: Option<String>,
+    pub gcode_file: Option<String>,
     pub error_code: i64,
+    // Extended fields — parity with the Pi /status payload so the desktop detail
+    // modal shows the same live data (targets, fans, speed profile, wifi, HMS).
+    pub nozzle_target_temp: Option<f64>,
+    pub bed_target_temp: Option<f64>,
+    pub cooling_fan_speed: Option<i64>,
+    pub aux_fan_speed: Option<i64>,
+    pub chamber_fan_speed: Option<i64>,
+    pub speed_level: Option<i64>,
+    pub speed_mag: Option<i64>,
+    pub wifi_signal: Option<String>,
+    pub hms: Option<serde_json::Value>,
 }
 
 /// Emitted as `"printer-connected"` / `"printer-disconnected"`.
@@ -88,6 +102,7 @@ struct PrinterConn {
     client: AsyncClient,
     #[allow(dead_code)]
     printer_id: i64,
+    name: String,
 }
 
 /// Shared state — one entry per subscribed printer serial.
@@ -116,15 +131,22 @@ pub async fn subscribe_printer(
     ip: String,
     serial: String,
     access_code: String,
+    #[allow(non_snake_case)] name: Option<String>,
     state: tauri::State<'_, Arc<BambuDirectManager>>,
     app: AppHandle,
 ) -> Result<(), String> {
     if state.is_connected(&serial) {
         return Ok(());
     }
+    let name = name.unwrap_or_default();
+
+    logs::log("info", "MQTT", format!("Connecting to {ip}:8883 (direct)"), &serial, &name);
 
     let (client, eventloop) = build_mqtt_client(&ip, &serial, &access_code)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            logs::log("error", "MQTT", format!("Connect failed: {e}"), &serial, &name);
+            e.to_string()
+        })?;
 
     // Subscribe to the report topic
     client
@@ -146,24 +168,49 @@ pub async fn subscribe_printer(
         .await
         .map_err(|e| e.to_string())?;
 
-    state
-        .printers
-        .lock()
-        .unwrap()
-        .insert(serial.clone(), PrinterConn { client: client.clone(), printer_id });
+    state.printers.lock().unwrap().insert(
+        serial.clone(),
+        PrinterConn { client: client.clone(), printer_id, name: name.clone() },
+    );
+    logs::log("info", "MQTT", "Subscribed to status stream", &serial, &name);
 
-    // Run the event loop in the background
+    // Run the event loop in the background. It self-reconnects with backoff, so it
+    // only returns if the printer is explicitly disconnected.
     let serial_clone = serial.clone();
+    let name_clone = name.clone();
     let state_clone = Arc::clone(&state);
     let app_clone = app.clone();
+    let client_clone = client.clone();
     tauri::async_runtime::spawn(async move {
-        run_eventloop(eventloop, printer_id, serial_clone.clone(), app_clone.clone()).await;
+        run_eventloop(eventloop, client_clone, printer_id, serial_clone.clone(), name_clone, app_clone.clone()).await;
         // Remove from state on disconnect so reconnect is possible
         state_clone.printers.lock().unwrap().remove(&serial_clone);
         let _ = app_clone.emit(
             "printer-disconnected",
             PrinterConnectionEvent { printer_id, serial: serial_clone },
         );
+    });
+
+    // Heartbeat: re-request a full status push every 30s. Bambu only includes the
+    // detail fields (targets, fans, speed, wifi, HMS) in full reports, not in the
+    // small per-frame deltas — and the on-connect pushall can race the SUBACK.
+    let hb_client = client.clone();
+    let hb_topic = format!("device/{serial}/request");
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            let pushall = serde_json::json!({
+                "pushing": { "sequence_id": timestamp_secs(), "command": "pushall" }
+            });
+            // Errors here mean the eventloop is gone (printer removed) — stop.
+            if hb_client
+                .publish(hb_topic.clone(), QoS::AtMostOnce, false, pushall.to_string())
+                .await
+                .is_err()
+            {
+                break;
+            }
+        }
     });
 
     let _ = app.emit(
@@ -181,13 +228,15 @@ pub async fn send_printer_command(
     command: String,
     state: tauri::State<'_, Arc<BambuDirectManager>>,
 ) -> Result<(), String> {
-    let client = {
+    let (client, name) = {
         let printers = state.printers.lock().unwrap();
         printers
             .get(&serial)
-            .map(|c| c.client.clone())
+            .map(|c| (c.client.clone(), c.name.clone()))
             .ok_or_else(|| format!("Printer {serial} not connected"))?
     };
+
+    logs::log("info", "MQTT", format!("Sending command: {command}"), &serial, &name);
 
     let payload = serde_json::json!({
         "print": { "sequence_id": "0", "command": command, "param": "" }
@@ -201,7 +250,10 @@ pub async fn send_printer_command(
             payload.to_string(),
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            logs::log("error", "MQTT", format!("Command failed: {e}"), &serial, &name);
+            e.to_string()
+        })
 }
 
 /// Start a print on a connected printer.
@@ -214,16 +266,17 @@ pub async fn start_print_direct(
     param: String,
     state: tauri::State<'_, Arc<BambuDirectManager>>,
 ) -> Result<String, String> {
-    let client = {
+    let (client, name) = {
         let printers = state.printers.lock().unwrap();
         printers
             .get(&serial)
-            .map(|c| c.client.clone())
+            .map(|c| (c.client.clone(), c.name.clone()))
             .ok_or_else(|| format!("Printer {serial} not connected — call subscribe_printer first"))?
     };
 
     let task_id = uuid::Uuid::new_v4().to_string();
     let url = format!("file:///sdcard{}", remote_path);
+    logs::log("info", "Print", format!("Starting print: {param} (task {task_id})"), &serial, &name);
 
     let payload = serde_json::json!({
         "print": {
@@ -276,6 +329,10 @@ fn build_mqtt_client(
     let mut opts = MqttOptions::new(client_id, ip, 8883u16);
     opts.set_credentials("bblp", access_code);
     opts.set_keep_alive(std::time::Duration::from_secs(60));
+    // Bambu's full `pushall` status report is ~14KB+ (more with AMS/multi-color),
+    // which blows past rumqttc's 10KB default incoming limit and disconnects on
+    // every connect. Raise the cap so the full report parses.
+    opts.set_max_packet_size(1024 * 1024, 1024 * 1024);
     opts.set_transport(Transport::tls_with_config(
         TlsConfiguration::Rustls(std::sync::Arc::new(tls_config)),
     ));
@@ -283,18 +340,43 @@ fn build_mqtt_client(
     Ok(AsyncClient::new(opts, 32))
 }
 
-/// Poll the rumqttc event loop forever, forwarding status events to the webview.
+/// Poll the rumqttc event loop, forwarding status events to the webview.
+/// Survives transient drops: on a poll error it backs off (1s→60s) and keeps
+/// polling — rumqttc reconnects, and we re-subscribe on each ConnAck so the
+/// monitor doesn't go silent (parity with the Pi's auto-reconnect).
 async fn run_eventloop(
     mut eventloop: rumqttc::EventLoop,
+    client: AsyncClient,
     printer_id: i64,
     serial: String,
+    name: String,
     app: AppHandle,
 ) {
     // Incremental state — merge like Pi's BambuMQTTClient
     let mut last: Option<PrinterStatusEvent> = None;
+    let mut backoff = std::time::Duration::from_secs(1);
 
     loop {
         match eventloop.poll().await {
+            Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(_))) => {
+                backoff = std::time::Duration::from_secs(1);
+                logs::log("info", "MQTT", "Connected", &serial, &name);
+                // (Re)subscribe + request a full state push on every (re)connect —
+                // Bambu doesn't persist sessions, so subscriptions are lost on drop.
+                let _ = client
+                    .subscribe(format!("device/{serial}/report"), QoS::AtMostOnce)
+                    .await;
+                let pushall = serde_json::json!({
+                    "pushing": { "sequence_id": timestamp_secs(), "command": "pushall" }
+                });
+                let _ = client
+                    .publish(format!("device/{serial}/request"), QoS::AtMostOnce, false, pushall.to_string())
+                    .await;
+                let _ = app.emit(
+                    "printer-connected",
+                    PrinterConnectionEvent { printer_id, serial: serial.clone() },
+                );
+            }
             Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(p))) => {
                 if let Ok(text) = std::str::from_utf8(&p.payload) {
                     if let Some(evt) = merge_status(printer_id, &serial, text, last.as_ref()) {
@@ -304,8 +386,14 @@ async fn run_eventloop(
                 }
             }
             Err(e) => {
-                eprintln!("MQTT error [{serial}]: {e}");
-                break;
+                logs::log("warning", "MQTT",
+                    format!("Disconnected ({e}) — reconnecting in {backoff:?}"), &serial, &name);
+                let _ = app.emit(
+                    "printer-disconnected",
+                    PrinterConnectionEvent { printer_id, serial: serial.clone() },
+                );
+                tokio::time::sleep(backoff).await;
+                backoff = (backoff * 2).min(std::time::Duration::from_secs(60));
             }
             _ => {}
         }
@@ -353,8 +441,30 @@ fn merge_status(
             .or_else(|| last.and_then(|s| s.chamber_temp)),
         subtask_name: str_field(print, "subtask_name")
             .or_else(|| last.and_then(|s| s.subtask_name.clone())),
+        gcode_file: str_field(print, "gcode_file")
+            .or_else(|| last.and_then(|s| s.gcode_file.clone())),
         error_code: int_field(print, "print_error")
             .unwrap_or_else(|| last.map(|s| s.error_code).unwrap_or(0)),
+        nozzle_target_temp: float_field(print, "nozzle_target_temper")
+            .or_else(|| last.and_then(|s| s.nozzle_target_temp)),
+        bed_target_temp: float_field(print, "bed_target_temper")
+            .or_else(|| last.and_then(|s| s.bed_target_temp)),
+        // Bambu reports fan speeds as strings ("0".."15") — parse loosely.
+        cooling_fan_speed: loose_int(print, "cooling_fan_speed")
+            .or_else(|| last.and_then(|s| s.cooling_fan_speed)),
+        aux_fan_speed: loose_int(print, "big_fan1_speed")
+            .or_else(|| last.and_then(|s| s.aux_fan_speed)),
+        chamber_fan_speed: loose_int(print, "big_fan2_speed")
+            .or_else(|| last.and_then(|s| s.chamber_fan_speed)),
+        speed_level: loose_int(print, "spd_lvl")
+            .or_else(|| last.and_then(|s| s.speed_level)),
+        speed_mag: loose_int(print, "spd_mag")
+            .or_else(|| last.and_then(|s| s.speed_mag)),
+        wifi_signal: str_field(print, "wifi_signal")
+            .or_else(|| last.and_then(|s| s.wifi_signal.clone())),
+        // hms is a full array re-sent on change — carry the latest, else keep last.
+        hms: print.get("hms").cloned()
+            .or_else(|| last.and_then(|s| s.hms.clone())),
     })
 }
 
@@ -378,4 +488,13 @@ fn int_field(v: &serde_json::Value, key: &str) -> Option<i64> {
 
 fn float_field(v: &serde_json::Value, key: &str) -> Option<f64> {
     v.get(key)?.as_f64()
+}
+
+/// Parse an int that Bambu may send as a number OR a string (e.g. fan speeds "15").
+fn loose_int(v: &serde_json::Value, key: &str) -> Option<i64> {
+    let field = v.get(key)?;
+    field
+        .as_i64()
+        .or_else(|| field.as_f64().map(|f| f as i64))
+        .or_else(|| field.as_str().and_then(|s| s.trim().parse::<i64>().ok()))
 }

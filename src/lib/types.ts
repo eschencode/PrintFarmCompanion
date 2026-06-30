@@ -408,6 +408,9 @@ export interface PiStatus {
   speed_mag?: number | null;
   // Connectivity
   wifi_signal?: string | null;
+  /** Unix secs when the Pi last received this frame. Used to flag stale frames
+   *  (a cached RUNNING from a dead monitor must not masquerade as live). */
+  updated_at?: number | null;
 }
 
 /** Raw HMS entry as the printer reports it. `attr`/`code` combine into a lookup code. */

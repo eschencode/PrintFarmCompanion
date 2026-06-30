@@ -75,6 +75,11 @@ _done_since: dict[str, float] = {}
 _done_since_lock = threading.Lock()
 STUCK_FINISH_SECONDS = 90
 
+# Last mapped status POSTed to the webhook per serial — used to suppress repeat
+# webhooks for an unchanged status (the printer reports the same RUNNING ~every 5s).
+_last_sent_status: dict[str, str] = {}
+_last_sent_lock = threading.Lock()
+
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
@@ -225,6 +230,7 @@ def trigger_print(req: PrintRequest):
             "speed_level": None,
             "speed_mag": None,
             "wifi_signal": None,
+            "updated_at": int(time.time()),
         }
 
     # 2. Send MQTT command + start monitor in background so HTTP response returns immediately
@@ -293,6 +299,7 @@ def get_status(serial: str, request: Request):
                 "speed_level": status.raw.get("spd_lvl"),
                 "speed_mag": status.raw.get("spd_mag"),
                 "wifi_signal": status.raw.get("wifi_signal"),
+                "updated_at": int(monitor.last_status_at),
             },
         }
 
@@ -423,12 +430,23 @@ def _start_monitor(credentials: PrinterCredentials, task_id: str):
                 "speed_level": status.raw.get("spd_lvl"),
                 "speed_mag": status.raw.get("spd_mag"),
                 "wifi_signal": status.raw.get("wifi_signal"),
+                "updated_at": int(time.time()),
             }
 
         if not WEBHOOK_URL:
             return
 
         mapped = _STATE_MAP[status.gcode_state]
+        is_terminal = mapped in ("success", "failed")
+        # Only POST on a status change (or any terminal state) — skip the steady
+        # stream of identical 'printing' frames the printer emits every ~5s.
+        with _last_sent_lock:
+            already_sent = _last_sent_status.get(credentials.serial) == mapped
+            if not is_terminal:
+                _last_sent_status[credentials.serial] = mapped
+        if already_sent and not is_terminal:
+            return
+
         payload = {
             "task_id": task_id,
             "printer_serial": credentials.serial,
@@ -481,6 +499,8 @@ def _start_monitor(credentials: PrinterCredentials, task_id: str):
 def _stop_monitor(serial: str):
     with _monitors_lock:
         monitor = _monitors.pop(serial, None)
+    with _last_sent_lock:
+        _last_sent_status.pop(serial, None)
     if monitor:
         monitor.disconnect()
 
@@ -533,6 +553,7 @@ def _poll_idle_printer(credentials: PrinterCredentials):
                     "speed_level": print_data.get("spd_lvl"),
                     "speed_mag": print_data.get("spd_mag"),
                     "wifi_signal": print_data.get("wifi_signal"),
+                    "updated_at": int(time.time()),
                 }
             log("info", "Idle", f"gcode_state={print_data.get('gcode_state')} progress={print_data.get('mc_percent')}%",
                 printer_serial=credentials.serial, printer_name=credentials.name)
