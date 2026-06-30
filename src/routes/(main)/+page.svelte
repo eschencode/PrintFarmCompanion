@@ -375,8 +375,12 @@
         },
     ): Promise<void> {
         if (reloadTriggered.has(serial)) return;
+        // Only an actively-printing job should trigger the finish transition.
+        // A `print_finished` job is already done and awaiting user confirmation —
+        // it still appears in activePrintJobs, so matching it here would re-fire
+        // /finished + reload on every fresh load (infinite refresh loop).
         const wasTrackedPrinting = (data.activePrintJobs as any[]).some(
-            (j: any) => j.printer_serial === serial,
+            (j: any) => j.printer_serial === serial && j.status === "printing",
         );
         if (!wasTrackedPrinting) return;
 

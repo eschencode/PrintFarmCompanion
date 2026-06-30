@@ -73,6 +73,11 @@ function createFileHandlerStore() {
     },
     
     startChecking: () => {
+      // The file handler is a localhost service that only runs alongside the
+      // desktop app. In a plain browser (e.g. the deployed site) there is no
+      // 127.0.0.1:3001, so background polling just spams connection errors —
+      // skip it. The settings "Test" button still calls testConnection directly.
+      if (!browser || window.__IS_DESKTOP__ !== true) return;
       if (checkInterval) clearInterval(checkInterval);
       fileHandlerStore.testConnection();
       checkInterval = setInterval(() => {
