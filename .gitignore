@@ -31,3 +31,6 @@ remote-backup.sql
 desktop/src-tauri/target/
 desktop/src-tauri/gen/schemas/
 desktop/src-tauri/binaries/
+
+# Bun project — npm lockfile must not be committed (breaks CF Pages build)
+package-lock.json
