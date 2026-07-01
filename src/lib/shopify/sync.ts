@@ -47,9 +47,12 @@ export interface SyncResult {
 export class ShopifySyncService {
     private db: D1Database;
     private client: ShopifyClient;
+    // Workspace whose inventory this sync writes to (Phase 3, group 1).
+    private workspaceId: number;
 
-    constructor(db: D1Database, client: ShopifyClient) {
+    constructor(db: D1Database, workspaceId: number, client: ShopifyClient) {
         this.db = db;
+        this.workspaceId = workspaceId;
         this.client = client;
     }
 
@@ -177,15 +180,15 @@ export class ShopifySyncService {
                     const res = await drizzleDb.run(sql`
                         UPDATE objects
                         SET in_stock = in_stock - ${deductAmount}, updated_at = ${now}
-                        WHERE id = ${mapping.object_id}
+                        WHERE id = ${mapping.object_id} AND workspace_id = ${this.workspaceId}
                     `);
                     if (!res.meta.changes) {
                         errors.push(`Order ${order.name}: mapping points to missing object #${mapping.object_id}`);
                         continue;
                     }
                     await drizzleDb.run(sql`
-                        INSERT INTO inventory_log (object_id, change_type, quantity, shopify_order_id, created_at)
-                        VALUES (${mapping.object_id}, '- sold b2c', ${deductAmount}, ${String(order.id)}, ${now})
+                        INSERT INTO inventory_log (workspace_id, object_id, change_type, quantity, shopify_order_id, created_at)
+                        VALUES (${this.workspaceId}, ${mapping.object_id}, '- sold b2c', ${deductAmount}, ${String(order.id)}, ${now})
                     `);
                     itemsDeducted += deductAmount;
                 } catch (err) {

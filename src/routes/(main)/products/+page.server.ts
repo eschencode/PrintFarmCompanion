@@ -3,6 +3,7 @@ import { fail } from '@sveltejs/kit';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 import { getAllObjects, createObject, updateObject, deleteObject } from '$lib/inventory_handler';
+import { requireCtx } from '$lib/server/context';
 
 export interface ProductModule {
   id: number;
@@ -27,13 +28,14 @@ export interface Product {
   shopify_skus: ProductSkuMapping[];
 }
 
-export const load: PageServerLoad = async ({ platform }) => {
+export const load: PageServerLoad = async ({ platform, locals }) => {
   const db = platform?.env?.DB;
   if (!db) return { products: [], categories: [] };
+  const ctx = requireCtx(locals);
 
   const drizzleDb = getDb(db);
   const [items, moduleRows, skuRows] = await Promise.all([
-    getAllObjects(db),
+    getAllObjects(ctx),
     drizzleDb.all(sql`
       SELECT pm.id, pm.name, pm.weight, pm.objects_per_print, pm.object_id,
              pp.brand || ' ' || pp.model AS printer_preset_name
@@ -86,9 +88,8 @@ export const load: PageServerLoad = async ({ platform }) => {
 };
 
 export const actions: Actions = {
-  saveItem: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return fail(500, { error: 'Database not available' });
+  saveItem: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
 
     const form = await request.formData();
     const id = form.get('id') ? Number(form.get('id')) : null;
@@ -99,23 +100,22 @@ export const actions: Actions = {
     if (!name) return fail(400, { error: 'Name is required' });
 
     if (id) {
-      const result = await updateObject(db, id, { name, minThreshold: min_threshold, category });
+      const result = await updateObject(ctx, id, { name, minThreshold: min_threshold, category });
       if (!result.success) return fail(400, { error: result.error });
     } else {
-      const result = await createObject(db, { name, minThreshold: min_threshold, category });
+      const result = await createObject(ctx, { name, minThreshold: min_threshold, category });
       if (!result.success) return fail(409, { error: result.error });
     }
 
     return { success: true };
   },
 
-  deleteItem: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return fail(500, { error: 'Database not available' });
+  deleteItem: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
 
     const form = await request.formData();
     const id = Number(form.get('id'));
-    const result = await deleteObject(db, id);
+    const result = await deleteObject(ctx, id);
     if (!result.success) return fail(409, { error: result.error });
     return { success: true };
   },

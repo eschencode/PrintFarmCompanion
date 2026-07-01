@@ -1,6 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
 import { regenerateGlobalQueueIfStale } from '$lib/server/printQueue';
+import { requireCtx } from '$lib/server/context';
 import type { DashboardPrinter, PrinterFull } from '$lib/types';
 
 export const load: PageServerLoad = async ({ platform }) => {
@@ -141,9 +142,10 @@ export const actions: Actions = {
     return db.adoptExternalPrintJob(database, { printerId, moduleId, externalTaskId: taskId });
   },
 
-  completePrint: async ({ platform, request }) => {
+  completePrint: async ({ platform, request, locals }) => {
     const database = platform?.env?.DB;
     if (!database) return { error: 'Database not available' };
+    const ctx = requireCtx(locals);
 
     const formData = await request.formData();
     const jobId = Number(formData.get('jobId'));
@@ -165,6 +167,7 @@ export const actions: Actions = {
 
       await db.completePrintJob(
         database,
+        ctx.workspaceId,
         jobId,
         success,
         usedWeightBySlot,

@@ -161,6 +161,7 @@ Full catalog with grep commands: see the user's `schema-migration-patterns.md` m
 | Pi HTTP bridge endpoints | `src/routes/(main)/api/pi/*/+server.ts` |
 | Direct MQTT (Rust) | `desktop/src-tauri/src/bambu.rs` |
 | Pi-side Python service | `pi/bambu_client.py` |
+| Auth (config, guard, flows) | `src/lib/auth.ts`, `src/hooks.server.ts`, `src/routes/(auth)/*` — see `docs/authentication.md` |
 
 ---
 
@@ -173,6 +174,7 @@ Real-time context (read these for "where is the project right now?"):
 - `docs/dashboard-migration-plan.md` — dashboard-specific schema fixes inventory
 - `docs/handoff-2026-05-23.md` — latest session handoff (multi-spool, stats rewrite, dashboard fixes)
 - `docs/print-start-flow.md` — full start-print flow (transports, queue, UI states)
+- `docs/authentication.md` — Phase 2 auth (better-auth, per-request factory, route guard, signup→workspace, deploy steps)
 
 ---
 

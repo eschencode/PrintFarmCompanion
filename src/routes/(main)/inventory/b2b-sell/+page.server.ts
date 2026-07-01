@@ -2,6 +2,7 @@ import type { PageServerLoad, Actions } from './$types';
 import { getAllObjects, recordSaleB2B } from '$lib/inventory_handler';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
+import { requireCtx, type TenantContext } from '$lib/server/context';
 
 interface SetComponent {
   object_id: number;
@@ -14,12 +15,12 @@ interface SetDefinition {
   components: SetComponent[];
 }
 
-async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all(sql`
+async function getSetDefinitions(ctx: TenantContext): Promise<SetDefinition[]> {
+  const rows = await ctx.db.all(sql`
     SELECT sm.shopify_sku, sm.quantity, o.id as object_id, o.name as item_name
     FROM shopify_sku_mapping sm
     JOIN objects o ON sm.object_id = o.id
+    WHERE o.workspace_id = ${ctx.workspaceId}
     ORDER BY sm.shopify_sku, o.name
   `);
 
@@ -45,22 +46,22 @@ async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
   return sets;
 }
 
-export const load: PageServerLoad = async ({ platform }) => {
-  const db = platform?.env?.DB;
-  if (!db) return { items: [], setDefinitions: [] };
+export const load: PageServerLoad = async ({ locals }) => {
+  const ctx = requireCtx(locals);
 
   const [items, setDefinitions] = await Promise.all([
-    getAllObjects(db),
-    getSetDefinitions(db).catch(() => []),
+    getAllObjects(ctx),
+    getSetDefinitions(ctx).catch(() => []),
   ]);
 
   return { items, setDefinitions };
 };
 
 export const actions: Actions = {
-  b2bSellSets: async ({ request, platform }) => {
+  b2bSellSets: async ({ request, platform, locals }) => {
     const db = platform?.env?.DB;
     if (!db) return { success: false, error: 'Database not available' };
+    const ctx = requireCtx(locals);
     const drizzleDb = getDb(db);
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
@@ -75,7 +76,7 @@ export const actions: Actions = {
           SELECT sm.object_id, sm.quantity FROM shopify_sku_mapping sm WHERE sm.shopify_sku = ${entry.shopify_sku}
         `);
         for (const comp of (components || []) as { object_id: number; quantity: number }[]) {
-          await recordSaleB2B(db, comp.object_id, comp.quantity * entry.count);
+          await recordSaleB2B(ctx, comp.object_id, comp.quantity * entry.count);
           total++;
         }
       }
@@ -85,9 +86,8 @@ export const actions: Actions = {
     }
   },
 
-  b2bSellDirect: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  b2bSellDirect: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
     if (!entriesJson) return { success: false, error: 'No entries provided' };
@@ -95,7 +95,7 @@ export const actions: Actions = {
     try {
       const entries: { id: number; count: number }[] = JSON.parse(entriesJson);
       for (const entry of entries) {
-        if (entry.count > 0) await recordSaleB2B(db, entry.id, entry.count);
+        if (entry.count > 0) await recordSaleB2B(ctx, entry.id, entry.count);
       }
       return { success: true, message: `Recorded ${entries.filter(e => e.count > 0).length} B2B direct sales` };
     } catch {

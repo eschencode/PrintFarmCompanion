@@ -1,5 +1,7 @@
 import { ShopifyClient, ShopifySyncService } from '$lib/shopify';
 import { getShopifyConfig } from '$lib/server/shopifyConfig';
+import { getDb } from '$lib/db';
+import { sql } from 'drizzle-orm';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -38,9 +40,18 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     throw error(500, 'Shopify not configured');
   }
 
+  // TODO(Phase 3, group 7): shopify_settings is still a single shared row, so
+  // there's one config to sync. Once it's per-workspace, loop over every
+  // workspace's config and sync each with its own workspaceId. For now resolve
+  // the (single) workspace that owns inventory writes.
+  const ws = await getDb(DB).get<{ id: number }>(sql`SELECT id FROM workspaces ORDER BY id LIMIT 1`);
+  if (!ws) {
+    throw error(500, 'No workspace to sync into');
+  }
+
   try {
     const client = new ShopifyClient(config.storeDomain, config.accessToken);
-    const syncService = new ShopifySyncService(DB, client);
+    const syncService = new ShopifySyncService(DB, ws.id, client);
 
     const result = await syncService.sync(false);
     return json({ success: true, result });

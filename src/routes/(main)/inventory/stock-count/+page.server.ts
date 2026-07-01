@@ -1,7 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import { getAllObjects, performManualCount } from '$lib/inventory_handler';
 import { sql } from 'drizzle-orm';
-import { getDb } from '$lib/db';
+import { requireCtx, type TenantContext } from '$lib/server/context';
 
 interface SetComponent {
   object_id: number;
@@ -20,12 +20,12 @@ interface UnitWeight {
   weight_per_unit: number;
 }
 
-async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all(sql`
+async function getSetDefinitions(ctx: TenantContext): Promise<SetDefinition[]> {
+  const rows = await ctx.db.all(sql`
     SELECT sm.shopify_sku, sm.quantity, o.id as object_id, o.name as item_name
     FROM shopify_sku_mapping sm
     JOIN objects o ON sm.object_id = o.id
+    WHERE o.workspace_id = ${ctx.workspaceId}
     ORDER BY sm.shopify_sku, o.name
   `);
 
@@ -51,36 +51,34 @@ async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
   return sets;
 }
 
-async function getUnitWeights(db: any): Promise<UnitWeight[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all(sql`
+async function getUnitWeights(ctx: TenantContext): Promise<UnitWeight[]> {
+  const rows = await ctx.db.all(sql`
     SELECT o.id, o.name,
            ROUND(CAST(pm.weight AS FLOAT) / pm.objects_per_print, 1) as weight_per_unit
     FROM print_modules pm
     JOIN objects o ON pm.object_id = o.id
     WHERE pm.object_id IS NOT NULL AND pm.active = 1
+      AND o.workspace_id = ${ctx.workspaceId}
     GROUP BY pm.object_id
   `);
   return (rows || []) as UnitWeight[];
 }
 
-export const load: PageServerLoad = async ({ platform }) => {
-  const db = platform?.env?.DB;
-  if (!db) return { items: [], setDefinitions: [], unitWeights: [] };
+export const load: PageServerLoad = async ({ locals }) => {
+  const ctx = requireCtx(locals);
 
   const [items, setDefinitions, unitWeights] = await Promise.all([
-    getAllObjects(db),
-    getSetDefinitions(db).catch(() => []),
-    getUnitWeights(db).catch(() => []),
+    getAllObjects(ctx),
+    getSetDefinitions(ctx).catch(() => []),
+    getUnitWeights(ctx).catch(() => []),
   ]);
 
   return { items, setDefinitions, unitWeights };
 };
 
 export const actions: Actions = {
-  applyStockCount: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  applyStockCount: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
     if (!entriesJson) return { success: false, error: 'No entries provided' };
@@ -89,7 +87,7 @@ export const actions: Actions = {
       const entries: { id: number; count: number }[] = JSON.parse(entriesJson);
       let losses = 0, gains = 0;
       for (const entry of entries) {
-        const result = await performManualCount(db, entry.id, entry.count);
+        const result = await performManualCount(ctx, entry.id, entry.count);
         const delta = (result.data as any)?.discrepancy ?? 0;
         if (delta < 0) losses++; else if (delta > 0) gains++;
       }

@@ -59,12 +59,13 @@ export async function deleteCategory(db: D1Database, id: number): Promise<Server
 
 export async function assignObjectCategory(
   db: D1Database,
+  workspaceId: number,
   objectId: number,
   categoryId: number | null,
 ): Promise<ServerResponse> {
   const drizzleDb = getDb(db);
   await drizzleDb.run(
-    sql`UPDATE objects SET category_id = ${categoryId}, updated_at = unixepoch() WHERE id = ${objectId}`,
+    sql`UPDATE objects SET category_id = ${categoryId}, updated_at = unixepoch() WHERE id = ${objectId} AND workspace_id = ${workspaceId}`,
   );
   return { success: true };
 }

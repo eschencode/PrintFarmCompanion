@@ -336,6 +336,9 @@ export async function distributeWeightAcrossSlots(
  */
 export async function completePrintJob(
   db: D1Database,
+  // Workspace that owns this job's inventory writes (Phase 3, group 1). Threaded
+  // from the caller until jobs/printers are fully ctx-scoped (groups 3–5).
+  workspaceId: number,
   jobId: number,
   success: boolean,
   usedWeightBySlot: Record<number, number> = {},
@@ -381,11 +384,11 @@ export async function completePrintJob(
         await drizzleDb.run(sql`
           UPDATE objects
           SET in_stock = in_stock + ${quantity}, updated_at = ${now}
-          WHERE id = ${module.object_id}
+          WHERE id = ${module.object_id} AND workspace_id = ${workspaceId}
         `);
         await drizzleDb.run(sql`
-          INSERT INTO inventory_log (object_id, change_type, quantity, print_job_id, created_at)
-          VALUES (${module.object_id}, '+ printed', ${quantity}, ${jobId}, ${now})
+          INSERT INTO inventory_log (workspace_id, object_id, change_type, quantity, print_job_id, created_at)
+          VALUES (${workspaceId}, ${module.object_id}, '+ printed', ${quantity}, ${jobId}, ${now})
         `);
       }
     }

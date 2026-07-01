@@ -49,6 +49,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
+    "better-auth": "^1.6.23",
     "drizzle-orm": "^0.45.2",
     "echarts": "^6.0.0",
     "jszip": "^3.10.1"

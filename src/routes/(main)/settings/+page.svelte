@@ -90,6 +90,21 @@
         </svg>
       </a>
 
+      <a href="/settings/account" class="group flex items-start gap-4 p-5 bg-white dark:bg-[#111] border border-zinc-100 dark:border-[#1e1e1e] rounded-xl hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+        <div class="w-10 h-10 rounded-lg bg-zinc-50 dark:bg-[#1a1a1a] flex items-center justify-center shrink-0 group-hover:bg-zinc-100 dark:group-hover:bg-[#222] transition-colors">
+          <svg class="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Account</p>
+          <p class="text-xs text-zinc-400 mt-0.5 leading-relaxed">Your login, workspace, and logout</p>
+        </div>
+        <svg class="w-4 h-4 text-zinc-300 dark:text-zinc-600 shrink-0 mt-0.5 group-hover:text-zinc-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+      </a>
+
       <a href="/modules" class="group flex items-start gap-4 p-5 bg-white dark:bg-[#111] border border-zinc-100 dark:border-[#1e1e1e] rounded-xl hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
         <div class="w-10 h-10 rounded-lg bg-zinc-50 dark:bg-[#1a1a1a] flex items-center justify-center shrink-0 group-hover:bg-zinc-100 dark:group-hover:bg-[#222] transition-colors">
           <svg class="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

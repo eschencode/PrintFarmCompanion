@@ -19,6 +19,7 @@ import { regenerateGlobalQueueIfStale, regenerateGlobalQueue, getGlobalQueue } f
 import type { PrintQueueItem } from '$lib/types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
+import { requireCtx, type TenantContext } from '$lib/server/context';
 
 interface SetComponent {
   object_id: number;
@@ -37,12 +38,12 @@ interface UnitWeight {
   weight_per_unit: number;
 }
 
-async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all(sql`
+async function getSetDefinitions(ctx: TenantContext): Promise<SetDefinition[]> {
+  const rows = await ctx.db.all(sql`
     SELECT sm.shopify_sku, sm.quantity, o.id as object_id, o.name as item_name
     FROM shopify_sku_mapping sm
     JOIN objects o ON sm.object_id = o.id
+    WHERE o.workspace_id = ${ctx.workspaceId}
     ORDER BY sm.shopify_sku, o.name
   `);
 
@@ -68,14 +69,14 @@ async function getSetDefinitions(db: any): Promise<SetDefinition[]> {
   return sets;
 }
 
-async function getUnitWeights(db: any): Promise<UnitWeight[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all(sql`
+async function getUnitWeights(ctx: TenantContext): Promise<UnitWeight[]> {
+  const rows = await ctx.db.all(sql`
     SELECT o.id, o.name,
            ROUND(CAST(pm.weight AS FLOAT) / pm.objects_per_print, 1) as weight_per_unit
     FROM print_modules pm
     JOIN objects o ON pm.object_id = o.id
     WHERE pm.object_id IS NOT NULL AND pm.active = 1
+      AND o.workspace_id = ${ctx.workspaceId}
     GROUP BY pm.object_id
   `);
   return (rows || []) as UnitWeight[];
@@ -112,26 +113,27 @@ interface SalesWindow {
 
 // Recent sell-through per object over two windows, for the weekly-throughput KPI
 // and the per-row demand trend arrow (7d rate vs the 30d-implied rate).
-async function getSalesWindows(db: any): Promise<SalesWindow[]> {
-  const drizzleDb = getDb(db);
+async function getSalesWindows(ctx: TenantContext): Promise<SalesWindow[]> {
   const now = Math.floor(Date.now() / 1000);
   const cutoff7 = now - 7 * 86_400;
   const cutoff30 = now - 30 * 86_400;
-  const rows = await drizzleDb.all(sql`
+  const rows = await ctx.db.all(sql`
     SELECT object_id,
            SUM(CASE WHEN created_at > ${cutoff7} THEN ABS(quantity) ELSE 0 END) as sold_7d,
            SUM(ABS(quantity)) as sold_30d
     FROM inventory_log
-    WHERE change_type IN ('- sold b2c', '- sold b2b')
+    WHERE workspace_id = ${ctx.workspaceId}
+      AND change_type IN ('- sold b2c', '- sold b2b')
       AND created_at > ${cutoff30}
     GROUP BY object_id
   `);
   return (rows || []) as SalesWindow[];
 }
 
-export const load: PageServerLoad = async ({ platform }) => {
+export const load: PageServerLoad = async ({ platform, locals }) => {
   const db = platform?.env?.DB;
   if (!db) return { items: [], logs: [], setDefinitions: [], unitWeights: [], categories: [], globalQueue: [] };
+  const ctx = requireCtx(locals);
 
   // Keep the global backlog fresh on visit, then read it as the single source of
   // truth for the "Print queue" panel (same table that feeds printer assignment).
@@ -143,8 +145,8 @@ export const load: PageServerLoad = async ({ platform }) => {
     console.error('Failed to load global print queue:', err);
   }
 
-  const items = await getAllObjects(db);
-  const logs = await getAllRecentLogs(db, 50);
+  const items = await getAllObjects(ctx);
+  const logs = await getAllRecentLogs(ctx, 50);
   const categories = await getAllCategories(db);
 
   let setDefinitions: SetDefinition[] = [];
@@ -153,10 +155,10 @@ export const load: PageServerLoad = async ({ platform }) => {
   let salesWindows: SalesWindow[] = [];
   try {
     [setDefinitions, unitWeights, productionStats, salesWindows] = await Promise.all([
-      getSetDefinitions(db),
-      getUnitWeights(db),
+      getSetDefinitions(ctx),
+      getUnitWeights(ctx),
       getProductionStats(db),
-      getSalesWindows(db),
+      getSalesWindows(ctx),
     ]);
   } catch (err) {
     console.error('Failed to load set/weight/production/sales data:', err);
@@ -205,31 +207,28 @@ export const actions: Actions = {
     return { success: true };
   },
 
-  addStock: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  addStock: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const id = parseInt(formData.get('id') as string);
     const quantity = parseInt(formData.get('quantity') as string) || 1;
-    return addStock(db, id, quantity);
+    return addStock(ctx, id, quantity);
   },
 
-  removeStock: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  removeStock: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const id = parseInt(formData.get('id') as string);
     const quantity = parseInt(formData.get('quantity') as string) || 1;
-    return removeStock(db, id, quantity);
+    return removeStock(ctx, id, quantity);
   },
 
-  setStock: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  setStock: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const id = parseInt(formData.get('id') as string);
     const count = parseInt(formData.get('count') as string);
-    return performManualCount(db, id, count);
+    return performManualCount(ctx, id, count);
   },
 
   createCategory: async ({ request, platform }) => {
@@ -259,20 +258,22 @@ export const actions: Actions = {
     return deleteCategory(db, id);
   },
 
-  assignCategory: async ({ request, platform }) => {
+  assignCategory: async ({ request, platform, locals }) => {
     const db = platform?.env?.DB;
     if (!db) return { success: false, error: 'Database not available' };
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const objectId = parseInt(formData.get('objectId') as string);
     const categoryRaw = formData.get('categoryId') as string | null;
     const categoryId = categoryRaw ? parseInt(categoryRaw) : null;
-    return assignObjectCategory(db, objectId, categoryId);
+    return assignObjectCategory(db, ctx.workspaceId, objectId, categoryId);
   },
 
   // Bulk add from set bundles
-  addSets: async ({ request, platform }) => {
+  addSets: async ({ request, platform, locals }) => {
     const db = platform?.env?.DB;
     if (!db) return { success: false, error: 'Database not available' };
+    const ctx = requireCtx(locals);
     const drizzleDb = getDb(db);
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
@@ -289,7 +290,7 @@ export const actions: Actions = {
           WHERE sm.shopify_sku = ${entry.shopify_sku}
         `);
         for (const comp of (components || []) as { object_id: number; quantity: number }[]) {
-          await addStock(db, comp.object_id, comp.quantity * entry.count);
+          await addStock(ctx, comp.object_id, comp.quantity * entry.count);
           total++;
         }
       }
@@ -299,9 +300,8 @@ export const actions: Actions = {
     }
   },
 
-  addByWeight: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  addByWeight: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
     if (!entriesJson) return { success: false, error: 'No entries provided' };
@@ -309,7 +309,7 @@ export const actions: Actions = {
     try {
       const entries: { id: number; count: number }[] = JSON.parse(entriesJson);
       for (const entry of entries) {
-        if (entry.count > 0) await addStock(db, entry.id, entry.count);
+        if (entry.count > 0) await addStock(ctx, entry.id, entry.count);
       }
       return { success: true, message: `Added ${entries.filter(e => e.count > 0).length} items by weight` };
     } catch {
@@ -317,9 +317,10 @@ export const actions: Actions = {
     }
   },
 
-  b2bSellSets: async ({ request, platform }) => {
+  b2bSellSets: async ({ request, platform, locals }) => {
     const db = platform?.env?.DB;
     if (!db) return { success: false, error: 'Database not available' };
+    const ctx = requireCtx(locals);
     const drizzleDb = getDb(db);
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
@@ -334,7 +335,7 @@ export const actions: Actions = {
           SELECT sm.object_id, sm.quantity FROM shopify_sku_mapping sm WHERE sm.shopify_sku = ${entry.shopify_sku}
         `);
         for (const comp of (components || []) as { object_id: number; quantity: number }[]) {
-          await recordSaleB2B(db, comp.object_id, comp.quantity * entry.count);
+          await recordSaleB2B(ctx, comp.object_id, comp.quantity * entry.count);
           total++;
         }
       }
@@ -344,9 +345,8 @@ export const actions: Actions = {
     }
   },
 
-  b2bSellDirect: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  b2bSellDirect: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
     if (!entriesJson) return { success: false, error: 'No entries provided' };
@@ -354,7 +354,7 @@ export const actions: Actions = {
     try {
       const entries: { id: number; count: number }[] = JSON.parse(entriesJson);
       for (const entry of entries) {
-        if (entry.count > 0) await recordSaleB2B(db, entry.id, entry.count);
+        if (entry.count > 0) await recordSaleB2B(ctx, entry.id, entry.count);
       }
       return { success: true, message: `Recorded ${entries.filter(e => e.count > 0).length} B2B direct sales` };
     } catch {
@@ -362,9 +362,8 @@ export const actions: Actions = {
     }
   },
 
-  applyStockCount: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  applyStockCount: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
     if (!entriesJson) return { success: false, error: 'No entries provided' };
@@ -372,7 +371,7 @@ export const actions: Actions = {
     try {
       const entries: { id: number; count: number }[] = JSON.parse(entriesJson);
       for (const entry of entries) {
-        await performManualCount(db, entry.id, entry.count);
+        await performManualCount(ctx, entry.id, entry.count);
       }
       return { success: true, message: `Stock count applied for ${entries.length} items` };
     } catch {
@@ -380,9 +379,8 @@ export const actions: Actions = {
     }
   },
 
-  bulkAdd: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  bulkAdd: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const entriesJson = formData.get('entries') as string;
     if (!entriesJson) return { success: false, error: 'No entries provided' };
@@ -390,7 +388,7 @@ export const actions: Actions = {
     try {
       const entries: { id: number; count: number }[] = JSON.parse(entriesJson);
       for (const entry of entries) {
-        if (entry.count > 0) await addStock(db, entry.id, entry.count);
+        if (entry.count > 0) await addStock(ctx, entry.id, entry.count);
       }
       return { success: true, message: `Bulk added ${entries.filter(e => e.count > 0).length} items` };
     } catch {

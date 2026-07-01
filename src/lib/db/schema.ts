@@ -137,6 +137,9 @@ export const objects = sqliteTable(
   "objects",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     // Name is the human display identifier. Must be unique per workspace.
     // "SKU" only lives in shopify_sku_mapping.shopify_sku — that's Shopify's concept.
     name: text("name").notNull(),
@@ -157,8 +160,8 @@ export const objects = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
-    // Phase 3: becomes UNIQUE(workspaceId, name).
-    uniqueIndex("uniq_objects_name").on(t.name),
+    uniqueIndex("uniq_objects_workspace_name").on(t.workspaceId, t.name),
+    index("idx_objects_workspace").on(t.workspaceId),
     index("idx_objects_category").on(t.category),
     index("idx_objects_category_id").on(t.categoryId),
     index("idx_objects_stock").on(t.inStock, t.minThreshold),
@@ -486,6 +489,9 @@ export const inventoryLog = sqliteTable(
   "inventory_log",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     objectId: integer("object_id")
       .notNull()
       .references(() => objects.id, { onDelete: "restrict" }),
@@ -512,6 +518,7 @@ export const inventoryLog = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
+    index("idx_inventory_log_workspace").on(t.workspaceId),
     index("idx_inventory_log_object").on(t.objectId),
     index("idx_inventory_log_change_type").on(t.changeType),
     index("idx_inventory_log_print_job").on(t.printJobId),
@@ -716,3 +723,106 @@ export const printQueue = sqliteTable(
     index("idx_print_queue_source").on(t.source),
   ],
 );
+
+// =============================================================================
+// AUTH (better-auth core tables) — Phase 2
+// SCOPE: global. Managed by better-auth's drizzle adapter; field names below
+// match better-auth 1.6.x's canonical schema exactly (camelCase keys = adapter
+// field names, snake_case = SQL columns). Do NOT rename keys — the adapter
+// resolves tables/fields by these names. IDs are text (better-auth generates
+// them), unlike our integer-autoincrement domain PKs.
+// =============================================================================
+export const user = sqliteTable("user", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  emailVerified: integer("email_verified", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  image: text("image"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const session = sqliteTable("session", {
+  id: text("id").primaryKey(),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  token: text("token").notNull().unique(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const account = sqliteTable("account", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").notNull(),
+  providerId: text("provider_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  idToken: text("id_token"),
+  accessTokenExpiresAt: integer("access_token_expires_at", {
+    mode: "timestamp",
+  }),
+  refreshTokenExpiresAt: integer("refresh_token_expires_at", {
+    mode: "timestamp",
+  }),
+  scope: text("scope"),
+  // For email+password: bcrypt/argon hash lives here (not on user).
+  password: text("password"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const verification = sqliteTable("verification", {
+  id: text("id").primaryKey(),
+  identifier: text("identifier").notNull(),
+  value: text("value").notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+// =============================================================================
+// WORKSPACES — Phase 2 (tenant container, one per user for now)
+// SCOPE: global (the tenant root). Phase 3 adds workspaceId to domain tables
+// referencing workspaces.id. Integer PK to match the domain-table FK style the
+// design doc specifies (workspaceId integer NOT NULL references workspaces.id).
+// =============================================================================
+export const workspaces = sqliteTable("workspaces", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  // Global URL-namespace slug.
+  slug: text("slug").notNull().unique(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});

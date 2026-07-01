@@ -1,6 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
 import { getAllObjects, createObject } from '$lib/inventory_handler';
+import { requireCtx } from '$lib/server/context';
 import { ShopifyClient, ShopifySyncService, normalizeShopifyDomain } from '$lib/shopify';
 import { getShopifyConfig, getShopifyConfigSummary } from '$lib/server/shopifyConfig';
 import { encryptSecret } from '$lib/server/crypto';
@@ -8,7 +9,7 @@ import { fail } from '@sveltejs/kit';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
-export const load: PageServerLoad = async ({ platform }) => {
+export const load: PageServerLoad = async ({ platform, locals }) => {
   const database = platform?.env?.DB;
   if (!database) {
     return {
@@ -41,7 +42,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   if (shopifyConfigured && runtimeConfig) {
     try {
       const client = new ShopifyClient(runtimeConfig.storeDomain, runtimeConfig.accessToken);
-      const syncService = new ShopifySyncService(database, client);
+      const syncService = new ShopifySyncService(database, requireCtx(locals).workspaceId, client);
       shopifySyncState = await syncService.getSyncState();
       shopifyRecentOrders = await syncService.getRecentOrders(10);
     } catch (e) {
@@ -62,20 +63,20 @@ export const load: PageServerLoad = async ({ platform }) => {
   );
   const shopifySkus = (shopifySkusRaw || []) as { sku: string; product_title: string | null; variant_title: string | null }[];
 
-  const inventoryItems = await getAllObjects(database);
+  const inventoryItems = await getAllObjects(requireCtx(locals));
   const spoolPresets = await db.getAllSpoolPresets(database);
 
   return { shopifyConfigured, shopifyConfig, shopifySyncState, shopifyRecentOrders, skuMappings, shopifySkus, inventoryItems, spoolPresets };
 };
 
 export const actions: Actions = {
-  syncShopify: async ({ platform }) => {
+  syncShopify: async ({ platform, locals }) => {
     const database = platform?.env?.DB;
     const config = await getShopifyConfig(database, platform?.env);
     if (!database || !config) return fail(400, { error: 'Shopify not configured' });
     try {
       const client = new ShopifyClient(config.storeDomain, config.accessToken);
-      const syncService = new ShopifySyncService(database, client);
+      const syncService = new ShopifySyncService(database, requireCtx(locals).workspaceId, client);
       const result = await syncService.sync(true);
       return { success: result.success, ordersProcessed: result.ordersProcessed, itemsDeducted: result.itemsDeducted, skippedOrders: result.skippedOrders, errors: result.errors.slice(0, 10), debug: result.debug };
     } catch (err) {
@@ -85,13 +86,13 @@ export const actions: Actions = {
 
   // One-time onboarding: mark all current orders as processed without deducting,
   // so adopting the integration on a store with history doesn't replay past sales.
-  baselineShopify: async ({ platform }) => {
+  baselineShopify: async ({ platform, locals }) => {
     const database = platform?.env?.DB;
     const config = await getShopifyConfig(database, platform?.env);
     if (!database || !config) return fail(400, { error: 'Shopify not configured' });
     try {
       const client = new ShopifyClient(config.storeDomain, config.accessToken);
-      const syncService = new ShopifySyncService(database, client);
+      const syncService = new ShopifySyncService(database, requireCtx(locals).workspaceId, client);
       const result = await syncService.baseline();
       return { success: true, message: `Baseline set — recorded ${result.recorded} (${result.alreadyPresent} already present, ${result.fetched} fetched). Newest order recorded: #${result.latestOrderNumber}. Verify that matches your latest order in Shopify — only orders after it will deduct.` };
     } catch (err) {
@@ -99,13 +100,13 @@ export const actions: Actions = {
     }
   },
 
-  syncShopifySkus: async ({ platform }) => {
+  syncShopifySkus: async ({ platform, locals }) => {
     const database = platform?.env?.DB;
     const config = await getShopifyConfig(database, platform?.env);
     if (!database || !config) return fail(400, { error: 'Shopify not configured' });
     try {
       const client = new ShopifyClient(config.storeDomain, config.accessToken);
-      const syncService = new ShopifySyncService(database, client);
+      const syncService = new ShopifySyncService(database, requireCtx(locals).workspaceId, client);
       const result = await syncService.syncSkus();
       if (!result.success) return fail(500, { error: `SKU refresh failed: ${result.error}` });
       return { success: true, message: `Synced ${result.count} SKU${result.count === 1 ? '' : 's'} from Shopify` };
@@ -202,12 +203,11 @@ export const actions: Actions = {
     } catch (err) { return fail(400, { error: `Failed to delete set: ${err}` }); }
   },
 
-  addInventoryItem: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return fail(400, { error: 'Database not available' });
+  addInventoryItem: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
     const form = await request.formData();
     const name = (form.get('name') as string | null)?.trim();
     if (!name) return fail(400, { error: 'Name is required' });
-    return createObject(database, { name });
+    return createObject(ctx, { name });
   },
 };

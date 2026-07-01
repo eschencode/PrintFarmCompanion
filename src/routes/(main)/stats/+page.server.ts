@@ -10,8 +10,9 @@ import {
 import { getAllPrintJobsForStats, type PrintJobStatsRow } from '$lib/server/jobs';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
+import { requireCtx } from '$lib/server/context';
 
-export const load: PageServerLoad = async ({ platform }) => {
+export const load: PageServerLoad = async ({ platform, locals }) => {
   const database = platform?.env?.DB;
 
   if (!database) {
@@ -26,6 +27,7 @@ export const load: PageServerLoad = async ({ platform }) => {
     };
   }
 
+  const ctx = requireCtx(locals);
   const drizzleDb = getDb(database);
   const [printers, printJobs, modules, spools] = await Promise.all([
     db.getAllPrintersFull(database), // includes nested loaded_spools[] so the spool table can show "loaded on X"
@@ -205,7 +207,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   // ── Inventory stats ───────────────────────────────────────────────────────
   let inventoryStats = null;
   try {
-    const inventoryItems = await getAllObjects(database);
+    const inventoryItems = await getAllObjects(ctx);
 
     // inventory_log.created_at is stored as Unix seconds (D1 INTEGER, no /1000 conversion needed)
     const cutoff7d = Math.floor((now - 7 * 86400 * 1000) / 1000);
@@ -221,6 +223,7 @@ export const load: PageServerLoad = async ({ platform }) => {
         COALESCE(SUM(CASE WHEN il.change_type IN ('- sold b2c','- sold b2b') AND il.created_at > ${cutoff30d} THEN il.quantity ELSE 0 END), 0) as sold_30d
       FROM objects o
       LEFT JOIN inventory_log il ON il.object_id = o.id
+      WHERE o.workspace_id = ${ctx.workspaceId}
       GROUP BY o.id
     `);
     const velocityItems = (velocityResult || []).map((r: any) => ({
@@ -239,7 +242,7 @@ export const load: PageServerLoad = async ({ platform }) => {
         SUM(CASE WHEN change_type = '- sold b2b'    THEN quantity ELSE 0 END) as sold_b2b,
         SUM(CASE WHEN change_type = '- stock count' THEN quantity ELSE 0 END) as removed
       FROM inventory_log
-      WHERE created_at > ${cutoff30d}
+      WHERE workspace_id = ${ctx.workspaceId} AND created_at > ${cutoff30d}
       GROUP BY day
       ORDER BY day ASC
     `);
