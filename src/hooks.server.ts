@@ -42,7 +42,11 @@ export const handle: Handle = async ({ event, resolve }) => {
     // Tenant context for Phase 3 domain queries. Non-null whenever the user has
     // a workspace (signup guarantees one).
     event.locals.ctx = workspace
-      ? { db: getDb(event.platform!.env!.DB), workspaceId: workspace.id }
+      ? {
+          db: getDb(event.platform!.env!.DB),
+          d1: event.platform!.env!.DB,
+          workspaceId: workspace.id,
+        }
       : null;
   } else {
     event.locals.user = null;

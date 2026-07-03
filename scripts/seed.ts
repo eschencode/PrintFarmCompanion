@@ -63,27 +63,11 @@ const plateId = run(
   ["Textured PEI Plate", 256, 256, now, now],
 );
 
-const spoolPresets = [
-  { color: "Black", hex: "#1a1a1a", brand: "Bambu", material: "PLA", w: 1000, cost: 2500 },
-  { color: "White", hex: "#f5f5f5", brand: "Bambu", material: "PLA", w: 1000, cost: 2500 },
-  { color: "Ocean Blue", hex: "#1e6fd9", brand: "Bambu", material: "PETG", w: 1000, cost: 2900 },
-].map((p) =>
-  run(
-    `INSERT INTO spool_presets (color, color_hex, brand, material, default_weight, cost, in_storage, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
-    [p.color, p.hex, p.brand, p.material, p.w, p.cost, 3, now, now],
-  ),
-);
+// NOTE: spool_presets + spools are per-workspace as of Group 2 — seeded in the
+// per-user loop below. Shared printers/modules/jobs therefore reference NULL for
+// spool/preset FKs (a shared printer can't own a tenant's spool) until Groups 3–5.
 
-// A couple of physical spools (open rolls)
-const spoolIds = [
-  run(`INSERT INTO spools (preset_id, initial_weight, remaining_weight, created_at, updated_at) VALUES (?,?,?,?,?)`,
-    [spoolPresets[0], 1000, 640, now, now]),
-  run(`INSERT INTO spools (preset_id, initial_weight, remaining_weight, created_at, updated_at) VALUES (?,?,?,?,?)`,
-    [spoolPresets[1], 1000, 815, now, now]),
-];
-
-// Two printers, each with a secret row + one loaded slot
+// Two printers, each with a secret row + one (empty) loaded slot
 const printerIds: number[] = [];
 ["Farm Printer A", "Farm Printer B"].forEach((name, i) => {
   const pid = run(
@@ -98,12 +82,12 @@ const printerIds: number[] = [];
   );
   run(
     `INSERT INTO printer_loaded_spools (printer_id, slot_index, spool_id, created_at, updated_at) VALUES (?,?,?,?,?)`,
-    [pid, 0, spoolIds[i], now, now],
+    [pid, 0, null, now, now],
   );
   printerIds.push(pid);
 });
 
-// Two shared modules (object_id null — they don't tie to a per-workspace object)
+// Two shared modules (object_id null; slot preset null until modules are scoped)
 const moduleIds: number[] = [];
 [
   { name: "Wall Hook v3", weight: 24, mins: 95, per: 5, file: "wall_hook_v3.gcode.3mf" },
@@ -116,7 +100,7 @@ const moduleIds: number[] = [];
   );
   run(
     `INSERT INTO module_filament_slots (module_id, slot_index, spool_preset_id, weight) VALUES (?,?,?,?)`,
-    [mid, 0, spoolPresets[0], m.weight],
+    [mid, 0, null, m.weight],
   );
   moduleIds.push(mid);
 });
@@ -133,10 +117,10 @@ const moduleIds: number[] = [];
     ],
   );
   run(`INSERT INTO print_job_spools (print_job_id, slot_index, spool_id, used_weight) VALUES (?,?,?,?)`,
-    [jid, 0, spoolIds[i % spoolIds.length], status === "successful" ? 24 : 5]);
+    [jid, 0, null, status === "successful" ? 24 : 5]);
 });
 
-console.log("Seeded shared hardware (2 printers, 3 spool presets, 2 modules, 4 jobs).");
+console.log("Seeded shared hardware (2 printers, 2 modules, 4 jobs).");
 
 // ── PER-USER (isolated) ──────────────────────────────────────────────────────
 const passwordHash = await hashPassword(PASSWORD);
@@ -163,6 +147,23 @@ for (const u of users) {
     [crypto.randomUUID(), uid, "credential", uid, passwordHash, now, now]);
   const wsId = run(`INSERT INTO workspaces (name, slug, owner_user_id, created_at, updated_at) VALUES (?,?,?,?,?)`,
     [u.workspace, `${slug(u.workspace)}-${rand()}`, uid, now, now]);
+
+  // Per-workspace filament library + a couple of open spools
+  const presets = [
+    { color: "Black", hex: "#1a1a1a", brand: "Bambu", material: "PLA", w: 1000, cost: 2500 },
+    { color: "White", hex: "#f5f5f5", brand: "Bambu", material: "PLA", w: 1000, cost: 2500 },
+    { color: "Ocean Blue", hex: "#1e6fd9", brand: "Bambu", material: "PETG", w: 1000, cost: 2900 },
+  ].map((p) =>
+    run(
+      `INSERT INTO spool_presets (workspace_id, color, color_hex, brand, material, default_weight, cost, in_storage, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [wsId, p.color, p.hex, p.brand, p.material, p.w, p.cost, 3, now, now],
+    ),
+  );
+  run(`INSERT INTO spools (workspace_id, preset_id, initial_weight, remaining_weight, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+    [wsId, presets[0], 1000, 640, now, now]);
+  run(`INSERT INTO spools (workspace_id, preset_id, initial_weight, remaining_weight, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+    [wsId, presets[1], 1000, 815, now, now]);
 
   for (const p of products) {
     const oid = run(

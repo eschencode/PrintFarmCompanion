@@ -88,8 +88,13 @@ export const platePresets = sqliteTable(
 // SPOOL PRESETS
 // SCOPE: per-workspace (each user maintains their own filament library)
 // =============================================================================
-export const spoolPresets = sqliteTable("spool_presets", {
+export const spoolPresets = sqliteTable(
+  "spool_presets",
+  {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: integer("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
   color: text("color").notNull(),
   // Hex value (e.g. "#1a1a1a") used for UI swatches/gauges. `color` stays the
   // human-readable name. Nullable: legacy presets fall back to the name.
@@ -108,7 +113,9 @@ export const spoolPresets = sqliteTable("spool_presets", {
   updatedAt: integer("updated_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
-});
+  },
+  (t) => [index("idx_spool_presets_workspace").on(t.workspaceId)],
+);
 
 // =============================================================================
 // OBJECTS (inventory items the print farm produces)
@@ -176,6 +183,9 @@ export const spools = sqliteTable(
   "spools",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     // Nullable: ad-hoc spools that don't match any saved preset are allowed.
     presetId: integer("preset_id").references(() => spoolPresets.id, {
       onDelete: "set null",
@@ -193,7 +203,10 @@ export const spools = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [index("idx_spools_preset").on(t.presetId)],
+  (t) => [
+    index("idx_spools_preset").on(t.presetId),
+    index("idx_spools_workspace").on(t.workspaceId),
+  ],
 );
 
 // =============================================================================

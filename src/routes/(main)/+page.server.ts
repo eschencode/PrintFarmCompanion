@@ -4,7 +4,7 @@ import { regenerateGlobalQueueIfStale } from '$lib/server/printQueue';
 import { requireCtx } from '$lib/server/context';
 import type { DashboardPrinter, PrinterFull } from '$lib/types';
 
-export const load: PageServerLoad = async ({ platform }) => {
+export const load: PageServerLoad = async ({ platform, locals }) => {
   const database = platform?.env?.DB;
 
   if (!database) {
@@ -14,16 +14,17 @@ export const load: PageServerLoad = async ({ platform }) => {
 
   // Warm the global queue on dashboard load so the first per-printer spool-load
   // assignment is fast (no synchronous full regeneration on the click path).
+  const ctx = requireCtx(locals);
   await regenerateGlobalQueueIfStale(database);
 
   const [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets] = await Promise.all([
     db.getAllPrintersFull(database),
-    db.getAllSpools(database),
+    db.getAllSpools(ctx),
     db.getAllPrintModules(database),
     db.getActivePrintJobs(database),
     db.getAllPrintJobs(database),
-    db.getAllSpoolPresets(database),
-    db.getSpoolUsageStats(database),
+    db.getAllSpoolPresets(ctx),
+    db.getSpoolUsageStats(ctx),
     db.getAllGridPresets(database),
   ]);
 
@@ -60,9 +61,8 @@ export const load: PageServerLoad = async ({ platform }) => {
 };
 
 export const actions: Actions = {
-  loadSpool: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  loadSpool: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
 
     const formData = await request.formData();
     const printerId = Number(formData.get('printerId'));
@@ -71,7 +71,7 @@ export const actions: Actions = {
     const initialWeightRaw = formData.get('initialWeight');
     const initialWeight = initialWeightRaw ? Number(initialWeightRaw) : undefined;
 
-    const result = await db.loadSpool(database, { printerId, presetId, initialWeight, slotIndex });
+    const result = await db.loadSpool(ctx, { printerId, presetId, initialWeight, slotIndex });
     return result;
   },
 
@@ -100,9 +100,8 @@ export const actions: Actions = {
     return { success: true, message: 'Spool unloaded' };
   },
 
-  adjustSpoolWeight: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  adjustSpoolWeight: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
 
     const formData = await request.formData();
     const spoolId = Number(formData.get('spoolId'));
@@ -112,7 +111,7 @@ export const actions: Actions = {
     if (!Number.isFinite(remainingWeight) || remainingWeight < 0)
       return { success: false, error: 'Invalid weight' };
 
-    await db.updateSpoolWeight(database, spoolId, Math.round(remainingWeight));
+    await db.updateSpoolWeight(ctx, spoolId, Math.round(remainingWeight));
     return { success: true, message: 'Spool weight updated' };
   },
 

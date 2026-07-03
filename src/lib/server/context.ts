@@ -1,4 +1,5 @@
 import { error } from "@sveltejs/kit";
+import type { D1Database } from "@cloudflare/workers-types";
 import type { AppDB } from "../db";
 
 /**
@@ -11,6 +12,10 @@ import type { AppDB } from "../db";
  */
 export type TenantContext = {
   db: AppDB;
+  // Raw D1 binding, for calling server helpers not yet migrated to ctx during
+  // the Phase 3 rollout (e.g. printers.ts before Group 3). Drop once all groups
+  // are ctx-based.
+  d1: D1Database;
   workspaceId: number;
 };
 

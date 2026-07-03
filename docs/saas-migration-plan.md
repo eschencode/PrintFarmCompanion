@@ -227,7 +227,17 @@ catalog dedup on presets via `COALESCE(workspace_id,0)`.
 - [x] **Leak test passed:** two workspaces, each sees only its own objects; same object name allowed in both; all inventory/stats/products/modules pages render 200. svelte-check clean.
 - [ ] **DEFERRED to their groups (no visible leak on single-workspace dev; annotate-by-unique-id):** `AIContextBuilder` primary reads of objects/inventory_log (6 call sites) → group 6 (queue) / recommendation; `LEFT JOIN objects` module-name reads in `modules.ts`/`printQueue.ts`/`api/print-modules` → group 4 (modules get workspace_id, join self-scopes); `shopify_sku_mapping` reads → group 7.
 
-**Remaining groups (2–9): not started.**
+### Group 2 — spool_presets + spools ✅ DONE 2026-07-03
+
+- [x] Migration `0014_tenancy_spools.sql`: `workspace_id NOT NULL` + index on both.
+- [x] `server/spools.ts`: all 13 fns take `ctx`, every query scoped.
+- [x] `TenantContext` gained a raw `d1` handle (for calling not-yet-migrated helpers like `setLoadedSpool`); hook sets it.
+- [x] Callers updated: dashboard, spools page, settings/materials, modules, integrations, stats. Cross-group: `completePrintJob` builds a `ctx` for spool calls; stats spool edit/delete + `api/print-modules?presets` scoped.
+- [x] Seed updated — spool_presets + spools are now per-workspace; shared printers/modules/jobs reference NULL spool/preset FKs.
+- [x] **Leak test passed:** Alice presets [1,2,3], Bob [4,5,6]; 3/workspace; pages render.
+- [ ] DEFERRED: `getSpoolDemandFromQueue` spool reads (operate on the still-global print queue) → Group 6.
+
+**Remaining groups (3–9): not started.** Next: Group 3 (printers + printer_secrets + printer_loaded_spools).
 
 ### Step N — per table-group (repeat for each group, in this order)
 

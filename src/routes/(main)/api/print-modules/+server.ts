@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
+import { requireCtx } from '$lib/server/context';
 
 type SlotInput = {
   slot_index: number;
@@ -135,10 +136,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   }
 };
 
-export const GET: RequestHandler = async ({ platform, url }) => {
+export const GET: RequestHandler = async ({ platform, url, locals }) => {
   const db = platform?.env?.DB;
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
 
+  const ctx = requireCtx(locals);
   const drizzleDb = getDb(db);
 
   if (url.searchParams.get('presets') === 'true') {
@@ -146,6 +148,7 @@ export const GET: RequestHandler = async ({ platform, url }) => {
       const result = await drizzleDb.all(sql`
         SELECT id, brand, material, color, default_weight, cost, in_storage
         FROM spool_presets
+        WHERE workspace_id = ${ctx.workspaceId}
         ORDER BY brand, color
       `);
       return json({ success: true, data: result ?? [] });

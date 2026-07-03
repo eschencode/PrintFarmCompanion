@@ -5,6 +5,7 @@ import type { PrintJob, PrintJobFull, PrintJobWithDetails, PrintJobSpool, StartP
 import { getPrinterById, getLoadedSpools } from './printers';
 import { getSpoolById, updateSpoolWeight } from './spools';
 import { getPrintModuleById, getModuleFilamentSlots } from './modules';
+import type { TenantContext } from './context';
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -346,6 +347,8 @@ export async function completePrintJob(
 ): Promise<void> {
   const drizzleDb = getDb(db);
   const now = Math.floor(Date.now() / 1000);
+  // Spool helpers are ctx-based (Group 2); jobs.ts is still db-based (Group 5).
+  const ctx: TenantContext = { db: drizzleDb, d1: db, workspaceId };
 
   const status = success ? 'successful' : 'failed';
 
@@ -366,9 +369,9 @@ export async function completePrintJob(
         WHERE print_job_id = ${jobId} AND slot_index = ${row.slot_index}
       `);
       if (row.spool_id) {
-        const spool = await getSpoolById(db, row.spool_id);
+        const spool = await getSpoolById(ctx, row.spool_id);
         if (spool) {
-          await updateSpoolWeight(db, row.spool_id, Math.max(0, spool.remaining_weight - usedWeight));
+          await updateSpoolWeight(ctx, row.spool_id, Math.max(0, spool.remaining_weight - usedWeight));
         }
       }
     }

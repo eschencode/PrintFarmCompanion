@@ -63,8 +63,9 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   );
   const shopifySkus = (shopifySkusRaw || []) as { sku: string; product_title: string | null; variant_title: string | null }[];
 
-  const inventoryItems = await getAllObjects(requireCtx(locals));
-  const spoolPresets = await db.getAllSpoolPresets(database);
+  const ctx = requireCtx(locals);
+  const inventoryItems = await getAllObjects(ctx);
+  const spoolPresets = await db.getAllSpoolPresets(ctx);
 
   return { shopifyConfigured, shopifyConfig, shopifySyncState, shopifyRecentOrders, skuMappings, shopifySkus, inventoryItems, spoolPresets };
 };

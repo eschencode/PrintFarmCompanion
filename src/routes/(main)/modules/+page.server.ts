@@ -11,7 +11,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   const [modules, printers, spoolPresets, printerPresets, objects] = await Promise.all([
     getAllPrintModules(db),
     getAllPrinters(db),
-    getAllSpoolPresets(db),
+    getAllSpoolPresets(ctx),
     getAllPrinterPresets(db),
     getAllObjects(ctx),
   ]);

@@ -1,29 +1,29 @@
-import type { D1Database } from '@cloudflare/workers-types';
 import { sql } from 'drizzle-orm';
-import { getDb } from '../db';
 import type { Spool, SpoolPreset, SpoolWithPreset, LoadSpoolResponse, ServerResponse } from '../types';
+import type { TenantContext } from './context';
 import { setLoadedSpool } from './printers';
+
+// spool_presets + spools carry workspace_id NOT NULL (Phase 3, group 2).
+// Every query is scoped to ctx.workspaceId.
 
 // ─── Spool Presets ────────────────────────────────────────────────────────────
 
-export async function getAllSpoolPresets(db: D1Database): Promise<SpoolPreset[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all<SpoolPreset>(
-    sql`SELECT * FROM spool_presets ORDER BY brand, color`,
+export async function getAllSpoolPresets(ctx: TenantContext): Promise<SpoolPreset[]> {
+  const rows = await ctx.db.all<SpoolPreset>(
+    sql`SELECT * FROM spool_presets WHERE workspace_id = ${ctx.workspaceId} ORDER BY brand, color`,
   );
   return rows ?? [];
 }
 
-export async function getSpoolPresetById(db: D1Database, id: number): Promise<SpoolPreset | null> {
-  const drizzleDb = getDb(db);
-  const row = await drizzleDb.get<SpoolPreset>(
-    sql`SELECT * FROM spool_presets WHERE id = ${id}`,
+export async function getSpoolPresetById(ctx: TenantContext, id: number): Promise<SpoolPreset | null> {
+  const row = await ctx.db.get<SpoolPreset>(
+    sql`SELECT * FROM spool_presets WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`,
   );
   return row ?? null;
 }
 
 export async function createSpoolPreset(
-  db: D1Database,
+  ctx: TenantContext,
   preset: {
     color: string;
     colorHex?: string | null;
@@ -34,14 +34,13 @@ export async function createSpoolPreset(
     inStorage?: number;
   },
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
   try {
-    const result = await drizzleDb.run(sql`
-      INSERT INTO spool_presets (color, color_hex, brand, material, default_weight, cost, in_storage, created_at, updated_at)
+    const now = Math.floor(Date.now() / 1000);
+    const result = await ctx.db.run(sql`
+      INSERT INTO spool_presets (workspace_id, color, color_hex, brand, material, default_weight, cost, in_storage, created_at, updated_at)
       VALUES (
-        ${preset.color}, ${preset.colorHex ?? null}, ${preset.brand}, ${preset.material},
-        ${preset.defaultWeight}, ${preset.cost ?? 0}, ${preset.inStorage ?? 0},
-        ${Math.floor(Date.now() / 1000)}, ${Math.floor(Date.now() / 1000)}
+        ${ctx.workspaceId}, ${preset.color}, ${preset.colorHex ?? null}, ${preset.brand}, ${preset.material},
+        ${preset.defaultWeight}, ${preset.cost ?? 0}, ${preset.inStorage ?? 0}, ${now}, ${now}
       )
     `);
     return { success: true, message: 'Spool preset created', data: { id: result.meta.last_row_id } };
@@ -52,7 +51,7 @@ export async function createSpoolPreset(
 }
 
 export async function updateSpoolPreset(
-  db: D1Database,
+  ctx: TenantContext,
   id: number,
   preset: {
     color?: string;
@@ -64,7 +63,6 @@ export async function updateSpoolPreset(
     inStorage?: number;
   },
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
   try {
     const updates: ReturnType<typeof sql>[] = [];
     if (preset.color !== undefined) updates.push(sql`color = ${preset.color}`);
@@ -75,8 +73,8 @@ export async function updateSpoolPreset(
     if (preset.cost !== undefined) updates.push(sql`cost = ${preset.cost}`);
     if (preset.inStorage !== undefined) updates.push(sql`in_storage = ${preset.inStorage}`);
     if (updates.length === 0) return { success: false, error: 'No updates provided' };
-    await drizzleDb.run(
-      sql`UPDATE spool_presets SET ${sql.join(updates, sql`, `)}, updated_at = ${Math.floor(Date.now() / 1000)} WHERE id = ${id}`,
+    await ctx.db.run(
+      sql`UPDATE spool_presets SET ${sql.join(updates, sql`, `)}, updated_at = ${Math.floor(Date.now() / 1000)} WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`,
     );
     return { success: true, message: 'Spool preset updated' };
   } catch (error) {
@@ -85,17 +83,16 @@ export async function updateSpoolPreset(
   }
 }
 
-export async function deleteSpoolPreset(db: D1Database, id: number): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
+export async function deleteSpoolPreset(ctx: TenantContext, id: number): Promise<ServerResponse> {
   try {
     // module_filament_slots has restrict on spool_preset_id — give friendly message
-    const slotCount = await drizzleDb.get<{ count: number }>(
+    const slotCount = await ctx.db.get<{ count: number }>(
       sql`SELECT COUNT(*) as count FROM module_filament_slots WHERE spool_preset_id = ${id}`,
     );
     if ((slotCount?.count ?? 0) > 0) {
       return { success: false, error: 'Cannot delete: preset is used by one or more print modules' };
     }
-    await drizzleDb.run(sql`DELETE FROM spool_presets WHERE id = ${id}`);
+    await ctx.db.run(sql`DELETE FROM spool_presets WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`);
     return { success: true, message: 'Spool preset deleted' };
   } catch (error) {
     console.error('Error deleting spool preset:', error);
@@ -105,17 +102,16 @@ export async function deleteSpoolPreset(db: D1Database, id: number): Promise<Ser
 
 /** Adjust storage count by delta (positive = add, negative = remove). */
 export async function updateStorageCount(
-  db: D1Database,
+  ctx: TenantContext,
   presetId: number,
   delta: number,
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
   try {
-    await drizzleDb.run(sql`
+    await ctx.db.run(sql`
       UPDATE spool_presets
       SET in_storage = MAX(0, in_storage + ${delta}),
           updated_at = ${Math.floor(Date.now() / 1000)}
-      WHERE id = ${presetId}
+      WHERE id = ${presetId} AND workspace_id = ${ctx.workspaceId}
     `);
     return { success: true, message: 'Storage count updated' };
   } catch (error) {
@@ -126,17 +122,16 @@ export async function updateStorageCount(
 
 /** Set an absolute storage count for a preset. */
 export async function setStorageCount(
-  db: D1Database,
+  ctx: TenantContext,
   presetId: number,
   count: number,
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
   try {
-    await drizzleDb.run(sql`
+    await ctx.db.run(sql`
       UPDATE spool_presets
       SET in_storage = ${Math.max(0, count)},
           updated_at = ${Math.floor(Date.now() / 1000)}
-      WHERE id = ${presetId}
+      WHERE id = ${presetId} AND workspace_id = ${ctx.workspaceId}
     `);
     return { success: true, message: 'Storage count set' };
   } catch (error) {
@@ -156,18 +151,17 @@ export interface SpoolUsageStat {
  * per preset over recent windows. Each `spools` row = one unit pulled from
  * storage, so this is the consumption signal for usage/depletion prediction.
  */
-export async function getSpoolUsageStats(db: D1Database): Promise<SpoolUsageStat[]> {
-  const drizzleDb = getDb(db);
+export async function getSpoolUsageStats(ctx: TenantContext): Promise<SpoolUsageStat[]> {
   const now = Math.floor(Date.now() / 1000);
   const d7 = now - 7 * 86400;
   const d30 = now - 30 * 86400;
-  const rows = await drizzleDb.all<SpoolUsageStat>(sql`
+  const rows = await ctx.db.all<SpoolUsageStat>(sql`
     SELECT
       preset_id,
       SUM(CASE WHEN created_at >= ${d7} THEN 1 ELSE 0 END)  AS used_7d,
       SUM(CASE WHEN created_at >= ${d30} THEN 1 ELSE 0 END) AS used_30d
     FROM spools
-    WHERE preset_id IS NOT NULL
+    WHERE workspace_id = ${ctx.workspaceId} AND preset_id IS NOT NULL
     GROUP BY preset_id
   `);
   return rows ?? [];
@@ -175,9 +169,8 @@ export async function getSpoolUsageStats(db: D1Database): Promise<SpoolUsageStat
 
 // ─── Spools ───────────────────────────────────────────────────────────────────
 
-export async function getAllSpools(db: D1Database): Promise<SpoolWithPreset[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all<{
+export async function getAllSpools(ctx: TenantContext): Promise<SpoolWithPreset[]> {
+  const rows = await ctx.db.all<{
     id: number;
     preset_id: number | null;
     initial_weight: number;
@@ -203,6 +196,7 @@ export async function getAllSpools(db: D1Database): Promise<SpoolWithPreset[]> {
       sp.updated_at    as sp_updated_at
     FROM spools s
     LEFT JOIN spool_presets sp ON s.preset_id = sp.id
+    WHERE s.workspace_id = ${ctx.workspaceId}
     ORDER BY s.created_at DESC
   `);
 
@@ -230,40 +224,39 @@ export async function getAllSpools(db: D1Database): Promise<SpoolWithPreset[]> {
   }));
 }
 
-export async function getSpoolById(db: D1Database, id: number): Promise<Spool | null> {
-  const drizzleDb = getDb(db);
-  const row = await drizzleDb.get<Spool>(sql`SELECT * FROM spools WHERE id = ${id}`);
+export async function getSpoolById(ctx: TenantContext, id: number): Promise<Spool | null> {
+  const row = await ctx.db.get<Spool>(
+    sql`SELECT * FROM spools WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`,
+  );
   return row ?? null;
 }
 
 export async function createSpool(
-  db: D1Database,
+  ctx: TenantContext,
   spool: {
     presetId?: number | null;
     initialWeight: number;
     remainingWeight: number;
   },
 ): Promise<{ id: number }> {
-  const drizzleDb = getDb(db);
   const now = Math.floor(Date.now() / 1000);
-  const result = await drizzleDb.run(sql`
-    INSERT INTO spools (preset_id, initial_weight, remaining_weight, created_at, updated_at)
-    VALUES (${spool.presetId ?? null}, ${spool.initialWeight}, ${spool.remainingWeight}, ${now}, ${now})
+  const result = await ctx.db.run(sql`
+    INSERT INTO spools (workspace_id, preset_id, initial_weight, remaining_weight, created_at, updated_at)
+    VALUES (${ctx.workspaceId}, ${spool.presetId ?? null}, ${spool.initialWeight}, ${spool.remainingWeight}, ${now}, ${now})
   `);
   return { id: result.meta.last_row_id as number };
 }
 
 export async function updateSpoolWeight(
-  db: D1Database,
+  ctx: TenantContext,
   id: number | null,
   remainingWeight: number,
 ): Promise<void> {
   if (!id) return;
-  const drizzleDb = getDb(db);
-  await drizzleDb.run(sql`
+  await ctx.db.run(sql`
     UPDATE spools
     SET remaining_weight = ${remainingWeight}, updated_at = ${Math.floor(Date.now() / 1000)}
-    WHERE id = ${id}
+    WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}
   `);
 }
 
@@ -273,7 +266,7 @@ export async function updateSpoolWeight(
  * Then load it into the specified slot on the printer.
  */
 export async function loadSpool(
-  db: D1Database,
+  ctx: TenantContext,
   params: {
     printerId: number;
     presetId: number;
@@ -284,23 +277,24 @@ export async function loadSpool(
 ): Promise<LoadSpoolResponse> {
   const { printerId, presetId, slotIndex = 0 } = params;
 
-  const preset = await getSpoolPresetById(db, presetId);
+  const preset = await getSpoolPresetById(ctx, presetId);
   if (!preset) return { success: false, error: 'Spool preset not found' };
 
   const initialWeight = params.initialWeight ?? preset.default_weight;
 
   // Create the physical spool row
-  const { id: spoolId } = await createSpool(db, {
+  const { id: spoolId } = await createSpool(ctx, {
     presetId,
     initialWeight,
     remainingWeight: initialWeight,
   });
 
   // Decrement in_storage (was already in storage, now opened)
-  await updateStorageCount(db, presetId, -1);
+  await updateStorageCount(ctx, presetId, -1);
 
-  // Slot the spool into the printer
-  await setLoadedSpool(db, printerId, slotIndex, spoolId);
+  // Slot the spool into the printer. setLoadedSpool is not ctx-based yet
+  // (printers.ts — Group 3), so use the raw D1 handle from ctx.
+  await setLoadedSpool(ctx.d1, printerId, slotIndex, spoolId);
 
   return {
     success: true,

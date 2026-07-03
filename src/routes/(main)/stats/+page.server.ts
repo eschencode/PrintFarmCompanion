@@ -33,7 +33,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     db.getAllPrintersFull(database), // includes nested loaded_spools[] so the spool table can show "loaded on X"
     getAllPrintJobsForStats(database),
     db.getAllPrintModules(database),
-    db.getAllSpools(database),
+    db.getAllSpools(ctx),
   ]);
 
   const sortedJobs = [...printJobs].sort((a, b) => (b.start_time ?? 0) - (a.start_time ?? 0));
@@ -444,11 +444,12 @@ function emptyStats() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const actions: Actions = {
-  updateSpool: async ({ platform, request }) => {
+  updateSpool: async ({ platform, request, locals }) => {
     // Spool brand/material/color/cost live on the preset now — those fields are
     // immutable on the physical spool. Only remaining_weight is editable here.
     const database = platform?.env?.DB;
     if (!database) return { error: 'Database not available' };
+    const ctx = requireCtx(locals);
     const drizzleDb = getDb(database);
     const formData = await request.formData();
     const spoolId = Number(formData.get('spoolId'));
@@ -458,7 +459,7 @@ export const actions: Actions = {
         UPDATE spools
         SET remaining_weight = ${remaining_weight},
             updated_at = ${Math.floor(Date.now() / 1000)}
-        WHERE id = ${spoolId}
+        WHERE id = ${spoolId} AND workspace_id = ${ctx.workspaceId}
       `);
       return { success: true, message: 'Spool updated' };
     } catch (error) {
@@ -467,9 +468,10 @@ export const actions: Actions = {
     }
   },
 
-  deleteSpool: async ({ platform, request }) => {
+  deleteSpool: async ({ platform, request, locals }) => {
     const database = platform?.env?.DB;
     if (!database) return { error: 'Database not available' };
+    const ctx = requireCtx(locals);
     const drizzleDb = getDb(database);
     const formData = await request.formData();
     const spoolId = Number(formData.get('spoolId'));
@@ -485,7 +487,7 @@ export const actions: Actions = {
       if (loadedPrinter) {
         return { error: `Cannot delete spool - it's currently loaded on ${loadedPrinter.name}` };
       }
-      await drizzleDb.run(sql`DELETE FROM spools WHERE id = ${spoolId}`);
+      await drizzleDb.run(sql`DELETE FROM spools WHERE id = ${spoolId} AND workspace_id = ${ctx.workspaceId}`);
       return { success: true, message: 'Spool deleted' };
     } catch (error) {
       console.error('Error deleting spool:', error);
