@@ -292,9 +292,8 @@ export async function loadSpool(
   // Decrement in_storage (was already in storage, now opened)
   await updateStorageCount(ctx, presetId, -1);
 
-  // Slot the spool into the printer. setLoadedSpool is not ctx-based yet
-  // (printers.ts — Group 3), so use the raw D1 handle from ctx.
-  await setLoadedSpool(ctx.d1, printerId, slotIndex, spoolId);
+  // Slot the spool into the printer.
+  await setLoadedSpool(ctx, printerId, slotIndex, spoolId);
 
   return {
     success: true,

@@ -217,6 +217,9 @@ export const printers = sqliteTable(
   "printers",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     // Required: a printer must be tied to a known model.
     // "restrict" so a preset can't be deleted while printers reference it.
@@ -246,6 +249,7 @@ export const printers = sqliteTable(
   (t) => [
     index("idx_printers_preset").on(t.printerPresetId),
     index("idx_printers_active").on(t.active),
+    index("idx_printers_workspace").on(t.workspaceId),
   ],
 );
 
@@ -259,6 +263,9 @@ export const printers = sqliteTable(
 export const printerLoadedSpools = sqliteTable(
   "printer_loaded_spools",
   {
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     printerId: integer("printer_id")
       .notNull()
       .references(() => printers.id, { onDelete: "cascade" }),
@@ -278,6 +285,7 @@ export const printerLoadedSpools = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.printerId, t.slotIndex] }),
     index("idx_printer_loaded_spools_spool").on(t.spoolId),
+    index("idx_printer_loaded_spools_workspace").on(t.workspaceId),
   ],
 );
 
@@ -290,6 +298,9 @@ export const printerSecrets = sqliteTable(
   "printer_secrets",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     printerId: integer("printer_id")
       .notNull()
       .references(() => printers.id, { onDelete: "cascade" }),
@@ -306,7 +317,10 @@ export const printerSecrets = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [uniqueIndex("uniq_printer_secrets_printer").on(t.printerId)],
+  (t) => [
+    uniqueIndex("uniq_printer_secrets_printer").on(t.printerId),
+    index("idx_printer_secrets_workspace").on(t.workspaceId),
+  ],
 );
 
 // =============================================================================

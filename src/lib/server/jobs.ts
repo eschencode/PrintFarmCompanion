@@ -225,19 +225,19 @@ export async function getActivePrintJobs(db: D1Database): Promise<PrintJobWithDe
  * historical record is accurate even if spools are swapped after the print.
  */
 export async function startPrintJob(
-  db: D1Database,
+  ctx: TenantContext,
   params: { printerId: number; moduleId: number },
 ): Promise<StartPrintResponse> {
   const { printerId, moduleId } = params;
-  const drizzleDb = getDb(db);
+  const drizzleDb = ctx.db;
 
-  const printer = await getPrinterById(db, printerId);
+  const printer = await getPrinterById(ctx, printerId);
   if (!printer) return { success: false, error: 'Printer not found' };
 
-  const module = await getPrintModuleById(db, moduleId);
+  const module = await getPrintModuleById(ctx.d1, moduleId);
   if (!module) return { success: false, error: 'Print module not found' };
 
-  const loadedSlots = await getLoadedSpools(db, printerId);
+  const loadedSlots = await getLoadedSpools(ctx, printerId);
 
   // Warn if module has filament requirements but printer has nothing loaded
   const lowMaterial =
@@ -248,7 +248,7 @@ export async function startPrintJob(
     });
 
   // Close any currently-printing jobs on this printer
-  await closeOpenPrintJobsForPrinter(db, printerId, moduleId);
+  await closeOpenPrintJobsForPrinter(ctx.d1, printerId, moduleId);
 
   const now = Math.floor(Date.now() / 1000);
   const expectedEndTime = now + module.expected_time_minutes * 60;
@@ -466,10 +466,10 @@ export async function getPrintJobByExternalTaskId(
  * Idempotent on external_task_id; never closes/fails other jobs.
  */
 export async function adoptExternalPrintJob(
-  db: D1Database,
+  ctx: TenantContext,
   params: { printerId: number; moduleId: number | null; externalTaskId: string },
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
+  const drizzleDb = ctx.db;
   try {
     const existing = await drizzleDb.get(
       sql`SELECT id FROM print_jobs WHERE external_task_id = ${params.externalTaskId} LIMIT 1`,
@@ -484,7 +484,7 @@ export async function adoptExternalPrintJob(
     const jobId = result.meta.last_row_id as number;
 
     // Snapshot loaded spools so completion can deduct used weight. Mirrors startPrintJob.
-    const loadedSlots = await getLoadedSpools(db, params.printerId);
+    const loadedSlots = await getLoadedSpools(ctx, params.printerId);
     for (const slot of loadedSlots) {
       const s = slot as unknown as { slot_index: number; spool_id: number | null };
       await drizzleDb.run(sql`

@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { updatePrinterTransport, setPrinterActive } from '$lib/server';
+import { requireCtx } from '$lib/server/context';
 import type { TransportMode } from '$lib/types';
 
 /** PATCH /api/printer/:id
@@ -9,9 +10,10 @@ import type { TransportMode } from '$lib/types';
  *    { action: 'broken', note?: string } — deactivate printer
  *    { action: 'repaired' }              — reactivate printer
  */
-export const PATCH: RequestHandler = async ({ params, request, platform }) => {
+export const PATCH: RequestHandler = async ({ params, request, platform, locals }) => {
   const db = platform?.env?.DB;
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
+  const ctx = requireCtx(locals);
 
   const id = Number(params.id);
   if (!id) return json({ success: false, error: 'Invalid printer id' }, { status: 400 });
@@ -24,11 +26,11 @@ export const PATCH: RequestHandler = async ({ params, request, platform }) => {
   }
 
   if (body.action === 'broken') {
-    await setPrinterActive(db, id, false);
+    await setPrinterActive(ctx, id, false);
     return json({ success: true });
   }
   if (body.action === 'repaired') {
-    await setPrinterActive(db, id, true);
+    await setPrinterActive(ctx, id, true);
     return json({ success: true });
   }
 
@@ -37,6 +39,6 @@ export const PATCH: RequestHandler = async ({ params, request, platform }) => {
     return json({ success: false, error: 'transport must be auto | direct | pi' }, { status: 400 });
   }
 
-  await updatePrinterTransport(db, id, transport);
+  await updatePrinterTransport(ctx, id, transport);
   return json({ success: true });
 };

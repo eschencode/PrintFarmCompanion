@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { closeOpenPrintJobsForPrinter, getLoadedSpools } from '$lib/server';
+import { requireCtx } from '$lib/server/context';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
@@ -13,8 +14,9 @@ import { getDb } from '$lib/db';
  * 3. Tells Pi to FTPS-upload + MQTT-command the printer
  * 4. Creates a print_jobs record with external_task_id
  */
-export const POST: RequestHandler = async ({ request, platform }) => {
+export const POST: RequestHandler = async ({ request, platform, locals }) => {
   const db = platform?.env?.DB;
+  const ctx = requireCtx(locals);
   const piUrl = platform?.env?.PI_TUNNEL_URL;
   const piSecret = platform?.env?.PI_SECRET ?? '';
 
@@ -49,7 +51,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     FROM printers p
     LEFT JOIN printer_secrets ps ON p.id = ps.printer_id
     LEFT JOIN printer_presets pp ON p.printer_preset_id = pp.id
-    WHERE p.id = ${printer_id}
+    WHERE p.id = ${printer_id} AND p.workspace_id = ${ctx.workspaceId}
   `) as Record<string, unknown> | null;
 
   if (!printerRow) return json({ success: false, error: 'Printer not found' }, { status: 404 });
@@ -106,7 +108,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     WHERE id = ${jobId}
   `);
 
-  const loadedSlots = await getLoadedSpools(db, printer_id);
+  const loadedSlots = await getLoadedSpools(ctx, printer_id);
   for (const slot of loadedSlots) {
     const s = slot as unknown as { slot_index: number; spool_id: number | null };
     await drizzleDb.run(sql`

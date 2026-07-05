@@ -1,13 +1,15 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
 import type { GridCell } from '$lib/types';
+import { requireCtx } from '$lib/server/context';
 
-export const load: PageServerLoad = async ({ platform }) => {
+export const load: PageServerLoad = async ({ platform, locals }) => {
   const database = platform?.env?.DB;
   if (!database) return { gridPresets: [], printers: [] };
+  const ctx = requireCtx(locals);
   const [gridPresets, printers] = await Promise.all([
     db.getAllGridPresets(database),
-    db.getAllPrinters(database),
+    db.getAllPrinters(ctx),
   ]);
   return { gridPresets, printers };
 };

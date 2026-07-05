@@ -30,7 +30,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   const ctx = requireCtx(locals);
   const drizzleDb = getDb(database);
   const [printers, printJobs, modules, spools] = await Promise.all([
-    db.getAllPrintersFull(database), // includes nested loaded_spools[] so the spool table can show "loaded on X"
+    db.getAllPrintersFull(ctx), // includes nested loaded_spools[] so the spool table can show "loaded on X"
     getAllPrintJobsForStats(database),
     db.getAllPrintModules(database),
     db.getAllSpools(ctx),
@@ -481,7 +481,7 @@ export const actions: Actions = {
         SELECT p.id, p.name
         FROM printer_loaded_spools pls
         JOIN printers p ON pls.printer_id = p.id
-        WHERE pls.spool_id = ${spoolId}
+        WHERE pls.spool_id = ${spoolId} AND pls.workspace_id = ${ctx.workspaceId}
         LIMIT 1
       `);
       if (loadedPrinter) {

@@ -63,29 +63,10 @@ const plateId = run(
   ["Textured PEI Plate", 256, 256, now, now],
 );
 
-// NOTE: spool_presets + spools are per-workspace as of Group 2 — seeded in the
-// per-user loop below. Shared printers/modules/jobs therefore reference NULL for
-// spool/preset FKs (a shared printer can't own a tenant's spool) until Groups 3–5.
-
-// Two printers, each with a secret row + one (empty) loaded slot
-const printerIds: number[] = [];
-["Farm Printer A", "Farm Printer B"].forEach((name, i) => {
-  const pid = run(
-    `INSERT INTO printers (name, printer_preset_id, loaded_plate_id, loaded_nozzle_diameter, slot_count, active, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?)`,
-    [name, printerPresetId, plateId, 0.4, 1, 1, now, now],
-  );
-  run(
-    `INSERT INTO printer_secrets (printer_id, printer_ip, serial, access_code, transport, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?)`,
-    [pid, `192.168.1.${20 + i}`, `SERIAL${1000 + i}`, "12345678", "pi", now, now],
-  );
-  run(
-    `INSERT INTO printer_loaded_spools (printer_id, slot_index, spool_id, created_at, updated_at) VALUES (?,?,?,?,?)`,
-    [pid, 0, null, now, now],
-  );
-  printerIds.push(pid);
-});
+// NOTE: spool_presets + spools + printers (+secrets, +loaded slots) are
+// per-workspace as of Groups 2–3 — seeded in the per-user loop below. Shared
+// modules/jobs therefore reference NULL for spool/preset/printer FKs until
+// modules/jobs are scoped (Groups 4–5).
 
 // Two shared modules (object_id null; slot preset null until modules are scoped)
 const moduleIds: number[] = [];
@@ -111,7 +92,7 @@ const moduleIds: number[] = [];
     `INSERT INTO print_jobs (module_id, printer_id, external_task_id, start_time, expected_end_time, status, failure_reason, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?)`,
     [
-      moduleIds[i % moduleIds.length], printerIds[i % printerIds.length],
+      moduleIds[i % moduleIds.length], null,
       crypto.randomUUID(), msAgo(i + 1), msAgo(i + 1) + 90 * 60_000,
       status, status === "failed" ? "Spaghetti / detach" : null, now, now,
     ],
@@ -120,7 +101,7 @@ const moduleIds: number[] = [];
     [jid, 0, null, status === "successful" ? 24 : 5]);
 });
 
-console.log("Seeded shared hardware (2 printers, 2 modules, 4 jobs).");
+console.log("Seeded shared catalog + 2 modules + 4 jobs.");
 
 // ── PER-USER (isolated) ──────────────────────────────────────────────────────
 const passwordHash = await hashPassword(PASSWORD);
@@ -160,10 +141,29 @@ for (const u of users) {
       [wsId, p.color, p.hex, p.brand, p.material, p.w, p.cost, 3, now, now],
     ),
   );
-  run(`INSERT INTO spools (workspace_id, preset_id, initial_weight, remaining_weight, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+  const spoolA = run(`INSERT INTO spools (workspace_id, preset_id, initial_weight, remaining_weight, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
     [wsId, presets[0], 1000, 640, now, now]);
   run(`INSERT INTO spools (workspace_id, preset_id, initial_weight, remaining_weight, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
     [wsId, presets[1], 1000, 815, now, now]);
+
+  // Two printers per workspace, each with a secret row + one loaded slot.
+  ["Printer A", "Printer B"].forEach((pname, i) => {
+    const pid = run(
+      `INSERT INTO printers (workspace_id, name, printer_preset_id, loaded_plate_id, loaded_nozzle_diameter, slot_count, active, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [wsId, `${u.name.split(" ")[0]} ${pname}`, printerPresetId, plateId, 0.4, 1, 1, now, now],
+    );
+    run(
+      `INSERT INTO printer_secrets (workspace_id, printer_id, printer_ip, serial, access_code, transport, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [wsId, pid, `192.168.${wsId}.${20 + i}`, `SER${wsId}${1000 + i}`, "12345678", "pi", now, now],
+    );
+    // Slot 0 loads the first printer with the workspace's black spool.
+    run(
+      `INSERT INTO printer_loaded_spools (workspace_id, printer_id, slot_index, spool_id, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+      [wsId, pid, 0, i === 0 ? spoolA : null, now, now],
+    );
+  });
 
   for (const p of products) {
     const oid = run(

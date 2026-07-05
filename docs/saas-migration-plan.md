@@ -237,7 +237,17 @@ catalog dedup on presets via `COALESCE(workspace_id,0)`.
 - [x] **Leak test passed:** Alice presets [1,2,3], Bob [4,5,6]; 3/workspace; pages render.
 - [ ] DEFERRED: `getSpoolDemandFromQueue` spool reads (operate on the still-global print queue) → Group 6.
 
-**Remaining groups (3–9): not started.** Next: Group 3 (printers + printer_secrets + printer_loaded_spools).
+### Group 3 — printers + printer_secrets + printer_loaded_spools ✅ DONE 2026-07-05
+
+- [x] Migration `0015`: `workspace_id NOT NULL` + index on all three.
+- [x] `printers.ts`: 15 fns → `ctx` (printers/secrets/loaded_spools). Printer *presets* stay catalog (db, Group 9); `printer_queued_jobs` fns stay db (Group 6).
+- [x] Cross-group threading: `startPrintJob`, `adoptExternalPrintJob` (jobs.ts), `assignQueueToPrinter` (printQueue.ts), `AIRecommendationService` + `generateAndSaveSuggestedQueue` (recommendation) all take `ctx` now (they operate on printers). `spools.ts loadSpool` calls `setLoadedSpool(ctx)` directly.
+- [x] Pi-control endpoints scoped by `workspace_id` (were the real leak: control another workspace's printer by id/serial): `api/pi/print`, `api/pi/control`, `api/pi/status` (both queries). Plus dashboard, settings/printers, settings/connections, settings/dashboard, modules, stats (+deleteSpool loaded-check), api/printer/[id], api/stats.
+- [x] Seed: printers/secrets/loaded-spools per-workspace, loaded with each workspace's own spools; shared jobs now `printer_id = NULL`.
+- [x] **Leak test passed:** each workspace sees only its 2 printers; pages render.
+- [ ] DEFERRED: `jobs.ts` print_jobs→printers joins (print_jobs global) → Group 5.
+
+**Remaining groups (4–9): not started.** Next: Group 4 (print_modules + module_filament_slots).
 
 ### Step N — per table-group (repeat for each group, in this order)
 

@@ -18,7 +18,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   await regenerateGlobalQueueIfStale(database);
 
   const [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets] = await Promise.all([
-    db.getAllPrintersFull(database),
+    db.getAllPrintersFull(ctx),
     db.getAllSpools(ctx),
     db.getAllPrintModules(database),
     db.getActivePrintJobs(database),
@@ -75,9 +75,8 @@ export const actions: Actions = {
     return result;
   },
 
-  loadExistingSpool: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  loadExistingSpool: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
 
     const formData = await request.formData();
     const printerId = Number(formData.get('printerId'));
@@ -85,18 +84,17 @@ export const actions: Actions = {
     const spoolId = Number(formData.get('spoolId'));
 
     if (!spoolId) return { success: false, error: 'No spool selected' };
-    return db.loadExistingSpoolIntoSlot(database, printerId, slotIndex, spoolId);
+    return db.loadExistingSpoolIntoSlot(ctx, printerId, slotIndex, spoolId);
   },
 
-  unloadSpool: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false };
+  unloadSpool: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
 
     const formData = await request.formData();
     const printerId = Number(formData.get('printerId'));
     const slotIndex = Number(formData.get('slotIndex') ?? 0);
 
-    await db.unloadSpool(database, printerId, slotIndex);
+    await db.unloadSpool(ctx, printerId, slotIndex);
     return { success: true, message: 'Spool unloaded' };
   },
 
@@ -115,20 +113,18 @@ export const actions: Actions = {
     return { success: true, message: 'Spool weight updated' };
   },
 
-  startPrint: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  startPrint: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
 
     const formData = await request.formData();
     const printerId = Number(formData.get('printerId'));
     const moduleId = Number(formData.get('moduleId'));
 
-    return db.startPrintJob(database, { printerId, moduleId });
+    return db.startPrintJob(ctx, { printerId, moduleId });
   },
 
-  confirmExternalPrint: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  confirmExternalPrint: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
 
     const formData = await request.formData();
     const printerId = Number(formData.get('printerId'));
@@ -138,7 +134,7 @@ export const actions: Actions = {
 
     if (!printerId || !taskId) return { success: false, error: 'Missing printer or task' };
 
-    return db.adoptExternalPrintJob(database, { printerId, moduleId, externalTaskId: taskId });
+    return db.adoptExternalPrintJob(ctx, { printerId, moduleId, externalTaskId: taskId });
   },
 
   completePrint: async ({ platform, request, locals }) => {

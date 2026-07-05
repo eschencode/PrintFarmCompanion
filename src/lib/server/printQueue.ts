@@ -5,6 +5,7 @@ import { getDb } from '../db';
 import { AIContextBuilder } from '../recomendation/context-builder';
 import { bucketPriority } from '../recomendation/forecast';
 import { getPrinterById, getLoadedSpools, addPrinterQueuedJob } from './printers';
+import type { TenantContext } from './context';
 
 const PRIORITY_SCORES: Record<InventoryPriority, number> = {
   CRITICAL: 100000,
@@ -247,12 +248,12 @@ export async function removeQueueItem(db: D1Database, id: number): Promise<Serve
  * multi-dimensional bin-packing across slots is unnecessary for the AMS setups
  * in use today.
  */
-export async function assignQueueToPrinter(db: D1Database, printerId: number): Promise<{ assigned: number }> {
-  const drizzleDb = getDb(db);
-  const printer = await getPrinterById(db, printerId);
+export async function assignQueueToPrinter(ctx: TenantContext, printerId: number): Promise<{ assigned: number }> {
+  const drizzleDb = ctx.db;
+  const printer = await getPrinterById(ctx, printerId);
   if (!printer) return { assigned: 0 };
 
-  const loadedSlots = await getLoadedSpools(db, printerId);
+  const loadedSlots = await getLoadedSpools(ctx, printerId);
   const loadedByIndex = new Map(loadedSlots.map((s) => [s.slot_index, s.spool]));
   if (!loadedSlots.some((s) => s.spool_id)) return { assigned: 0 };
 
@@ -388,7 +389,7 @@ export async function assignQueueToPrinter(db: D1Database, printerId: number): P
   const assignedQueueIds = new Set<number>();
   for (let i = 0; i < chosenCopies.length; i++) {
     const { candidate: c, filler } = chosenCopies[i];
-    await addPrinterQueuedJob(db, { printerId, moduleId: c.moduleId, reason: filler ? 'TOPUP' : c.priority, sortOrder: i });
+    await addPrinterQueuedJob(ctx.d1, { printerId, moduleId: c.moduleId, reason: filler ? 'TOPUP' : c.priority, sortOrder: i });
     assignedQueueIds.add(c.queueId);
   }
 

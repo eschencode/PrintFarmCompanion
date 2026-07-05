@@ -4,9 +4,6 @@ import { getDb } from '../db';
 import {
   printerPresets,
   printers,
-  printerSecrets,
-  printerLoadedSpools,
-  printerQueuedJobs,
 } from '../db/schema';
 import type {
   Printer,
@@ -18,8 +15,14 @@ import type {
   SpoolWithPreset,
   ServerResponse,
 } from '../types';
+import type { TenantContext } from './context';
 
-// ─── Printer Presets (catalog) ───────────────────────────────────────────────
+// printers / printer_secrets / printer_loaded_spools carry workspace_id NOT NULL
+// (Phase 3, group 3) and are scoped to ctx.workspaceId.
+// printer_presets stays catalog (hybrid, Group 9) — still db-based.
+// printer_queued_jobs stays Group 6 — still db-based.
+
+// ─── Printer Presets (catalog — db-based until Group 9) ──────────────────────
 
 export async function getAllPrinterPresets(db: D1Database): Promise<PrinterPreset[]> {
   const drizzleDb = getDb(db);
@@ -123,51 +126,49 @@ export async function deletePrinterPreset(db: D1Database, id: number): Promise<S
 
 // ─── Printers ─────────────────────────────────────────────────────────────────
 
-export async function getAllPrinters(db: D1Database): Promise<Printer[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all<Printer>(sql`
+export async function getAllPrinters(ctx: TenantContext): Promise<Printer[]> {
+  const rows = await ctx.db.all<Printer>(sql`
     SELECT
       p.id, p.name, p.printer_preset_id, p.loaded_plate_id,
       p.loaded_nozzle_diameter, p.slot_count, p.active, p.created_at, p.updated_at
     FROM printers p
+    WHERE p.workspace_id = ${ctx.workspaceId}
     ORDER BY p.name
   `);
   return rows ?? [];
 }
 
-export async function getPrinterById(db: D1Database, id: number): Promise<Printer | null> {
-  const drizzleDb = getDb(db);
-  const row = await drizzleDb.get<Printer>(sql`
+export async function getPrinterById(ctx: TenantContext, id: number): Promise<Printer | null> {
+  const row = await ctx.db.get<Printer>(sql`
     SELECT
       p.id, p.name, p.printer_preset_id, p.loaded_plate_id,
       p.loaded_nozzle_diameter, p.slot_count, p.active, p.created_at, p.updated_at
     FROM printers p
-    WHERE p.id = ${id}
+    WHERE p.id = ${id} AND p.workspace_id = ${ctx.workspaceId}
   `);
   return row ?? null;
 }
 
 /** Full printer with preset, secrets, and loaded spools — for dashboard. */
-export async function getPrinterFull(db: D1Database, id: number): Promise<PrinterFull | null> {
-  const drizzleDb = getDb(db);
-
-  const printer = await getPrinterById(db, id);
+export async function getPrinterFull(ctx: TenantContext, id: number): Promise<PrinterFull | null> {
+  const printer = await getPrinterById(ctx, id);
   if (!printer) return null;
 
-  const preset = await getPrinterPresetById(db, printer.printer_preset_id);
-  const secrets = await getPrinterSecrets(db, id);
-  const loadedSpools = await getLoadedSpools(db, id);
+  // Preset is catalog (not workspace-scoped) — use the raw D1 handle.
+  const preset = await getPrinterPresetById(ctx.d1, printer.printer_preset_id);
+  const secrets = await getPrinterSecrets(ctx, id);
+  const loadedSpools = await getLoadedSpools(ctx, id);
 
   return { ...printer, preset: preset ?? null, secrets: secrets ?? null, loaded_spools: loadedSpools as PrinterFull['loaded_spools'] };
 }
 
-export async function getAllPrintersFull(db: D1Database): Promise<PrinterFull[]> {
-  const printerList = await getAllPrinters(db);
-  return Promise.all(printerList.map((p) => getPrinterFull(db, p.id) as Promise<PrinterFull>));
+export async function getAllPrintersFull(ctx: TenantContext): Promise<PrinterFull[]> {
+  const printerList = await getAllPrinters(ctx);
+  return Promise.all(printerList.map((p) => getPrinterFull(ctx, p.id) as Promise<PrinterFull>));
 }
 
 export async function createPrinter(
-  db: D1Database,
+  ctx: TenantContext,
   printer: {
     name: string;
     printerPresetId: number;
@@ -180,10 +181,10 @@ export async function createPrinter(
     accessCode?: string | null;
   },
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
   const slotCount = Math.max(1, printer.slotCount ?? 1);
   try {
-    const result = await drizzleDb.insert(printers).values({
+    const result = await ctx.db.insert(printers).values({
+      workspaceId: ctx.workspaceId,
       name: printer.name,
       printerPresetId: printer.printerPresetId,
       loadedNozzleDiameter: printer.loadedNozzleDiameter ?? null,
@@ -193,15 +194,15 @@ export async function createPrinter(
     const printerId = result.meta.last_row_id as number;
 
     if (secrets) {
-      await upsertPrinterSecrets(db, printerId, secrets);
+      await upsertPrinterSecrets(ctx, printerId, secrets);
     }
 
     // Seed one empty slot row per slot so the printer is immediately addressable.
     const now = Math.floor(Date.now() / 1000);
     for (let i = 0; i < slotCount; i++) {
-      await drizzleDb.run(sql`
-        INSERT OR IGNORE INTO printer_loaded_spools (printer_id, slot_index, spool_id, created_at, updated_at)
-        VALUES (${printerId}, ${i}, NULL, ${now}, ${now})
+      await ctx.db.run(sql`
+        INSERT OR IGNORE INTO printer_loaded_spools (workspace_id, printer_id, slot_index, spool_id, created_at, updated_at)
+        VALUES (${ctx.workspaceId}, ${printerId}, ${i}, NULL, ${now}, ${now})
       `);
     }
 
@@ -213,7 +214,7 @@ export async function createPrinter(
 }
 
 export async function updatePrinter(
-  db: D1Database,
+  ctx: TenantContext,
   id: number,
   printer: {
     name?: string;
@@ -224,11 +225,10 @@ export async function updatePrinter(
     slotCount?: number;
   },
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
   try {
     // Reconcile slot rows before updating the printer row.
     if (printer.slotCount !== undefined) {
-      const current = await getPrinterById(db, id);
+      const current = await getPrinterById(ctx, id);
       if (current) {
         const oldCount = current.slot_count ?? 1;
         const newCount = Math.max(1, printer.slotCount);
@@ -236,15 +236,15 @@ export async function updatePrinter(
 
         if (newCount > oldCount) {
           for (let i = oldCount; i < newCount; i++) {
-            await drizzleDb.run(sql`
-              INSERT OR IGNORE INTO printer_loaded_spools (printer_id, slot_index, spool_id, created_at, updated_at)
-              VALUES (${id}, ${i}, NULL, ${now}, ${now})
+            await ctx.db.run(sql`
+              INSERT OR IGNORE INTO printer_loaded_spools (workspace_id, printer_id, slot_index, spool_id, created_at, updated_at)
+              VALUES (${ctx.workspaceId}, ${id}, ${i}, NULL, ${now}, ${now})
             `);
           }
         } else if (newCount < oldCount) {
-          const occupied = await drizzleDb.get<{ count: number }>(
+          const occupied = await ctx.db.get<{ count: number }>(
             sql`SELECT COUNT(*) as count FROM printer_loaded_spools
-                WHERE printer_id = ${id} AND slot_index >= ${newCount} AND spool_id IS NOT NULL`,
+                WHERE printer_id = ${id} AND workspace_id = ${ctx.workspaceId} AND slot_index >= ${newCount} AND spool_id IS NOT NULL`,
           );
           if ((occupied?.count ?? 0) > 0) {
             return {
@@ -252,8 +252,8 @@ export async function updatePrinter(
               error: `Cannot reduce to ${newCount} slot(s): unload spools from slots ${newCount + 1}–${oldCount} first`,
             };
           }
-          await drizzleDb.run(
-            sql`DELETE FROM printer_loaded_spools WHERE printer_id = ${id} AND slot_index >= ${newCount}`,
+          await ctx.db.run(
+            sql`DELETE FROM printer_loaded_spools WHERE printer_id = ${id} AND workspace_id = ${ctx.workspaceId} AND slot_index >= ${newCount}`,
           );
         }
       }
@@ -267,8 +267,8 @@ export async function updatePrinter(
     if (printer.active !== undefined) updates.push(sql`active = ${printer.active ? 1 : 0}`);
     if (printer.slotCount !== undefined) updates.push(sql`slot_count = ${Math.max(1, printer.slotCount)}`);
     if (updates.length === 0) return { success: true, message: 'Nothing to update' };
-    await drizzleDb.run(
-      sql`UPDATE printers SET ${sql.join(updates, sql`, `)}, updated_at = ${Math.floor(Date.now() / 1000)} WHERE id = ${id}`,
+    await ctx.db.run(
+      sql`UPDATE printers SET ${sql.join(updates, sql`, `)}, updated_at = ${Math.floor(Date.now() / 1000)} WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`,
     );
     return { success: true, message: 'Printer updated' };
   } catch (error) {
@@ -277,17 +277,16 @@ export async function updatePrinter(
   }
 }
 
-export async function deletePrinter(db: D1Database, id: number): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
+export async function deletePrinter(ctx: TenantContext, id: number): Promise<ServerResponse> {
   try {
-    const activeJob = await drizzleDb.get<{ count: number }>(
+    const activeJob = await ctx.db.get<{ count: number }>(
       sql`SELECT COUNT(*) as count FROM print_jobs WHERE printer_id = ${id} AND status = 'printing'`,
     );
     if ((activeJob?.count ?? 0) > 0) {
       return { success: false, error: 'Cannot delete printer with an active print job' };
     }
     // Cascade handles printer_secrets, printer_loaded_spools, printer_queued_jobs
-    await drizzleDb.run(sql`DELETE FROM printers WHERE id = ${id}`);
+    await ctx.db.run(sql`DELETE FROM printers WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`);
     return { success: true, message: 'Printer deleted' };
   } catch (error) {
     console.error('Error deleting printer:', error);
@@ -296,22 +295,21 @@ export async function deletePrinter(db: D1Database, id: number): Promise<ServerR
 }
 
 /** Decommission / recommission a printer. Sets active flag. */
-export async function setPrinterActive(db: D1Database, id: number, active: boolean): Promise<ServerResponse> {
-  return updatePrinter(db, id, { active });
+export async function setPrinterActive(ctx: TenantContext, id: number, active: boolean): Promise<ServerResponse> {
+  return updatePrinter(ctx, id, { active });
 }
 
 /** Update the transport mode stored in printer_secrets. */
 export async function updatePrinterTransport(
-  db: D1Database,
+  ctx: TenantContext,
   printerId: number,
   transport: import('../types').TransportMode,
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
   try {
     const now = Math.floor(Date.now() / 1000);
-    await drizzleDb.run(sql`
-      INSERT INTO printer_secrets (printer_id, transport, created_at, updated_at)
-      VALUES (${printerId}, ${transport}, ${now}, ${now})
+    await ctx.db.run(sql`
+      INSERT INTO printer_secrets (workspace_id, printer_id, transport, created_at, updated_at)
+      VALUES (${ctx.workspaceId}, ${printerId}, ${transport}, ${now}, ${now})
       ON CONFLICT (printer_id) DO UPDATE SET
         transport  = excluded.transport,
         updated_at = excluded.updated_at
@@ -325,25 +323,23 @@ export async function updatePrinterTransport(
 
 // ─── Printer Secrets ─────────────────────────────────────────────────────────
 
-export async function getPrinterSecrets(db: D1Database, printerId: number): Promise<PrinterSecrets | null> {
-  const drizzleDb = getDb(db);
-  const row = await drizzleDb.get<PrinterSecrets>(
-    sql`SELECT * FROM printer_secrets WHERE printer_id = ${printerId}`,
+export async function getPrinterSecrets(ctx: TenantContext, printerId: number): Promise<PrinterSecrets | null> {
+  const row = await ctx.db.get<PrinterSecrets>(
+    sql`SELECT * FROM printer_secrets WHERE printer_id = ${printerId} AND workspace_id = ${ctx.workspaceId}`,
   );
   return row ?? null;
 }
 
 export async function upsertPrinterSecrets(
-  db: D1Database,
+  ctx: TenantContext,
   printerId: number,
   secrets: { printerIp?: string | null; serial?: string | null; accessCode?: string | null },
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
   try {
     const now = Math.floor(Date.now() / 1000);
-    await drizzleDb.run(sql`
-      INSERT INTO printer_secrets (printer_id, printer_ip, serial, access_code, created_at, updated_at)
-      VALUES (${printerId}, ${secrets.printerIp ?? null}, ${secrets.serial ?? null}, ${secrets.accessCode ?? null}, ${now}, ${now})
+    await ctx.db.run(sql`
+      INSERT INTO printer_secrets (workspace_id, printer_id, printer_ip, serial, access_code, created_at, updated_at)
+      VALUES (${ctx.workspaceId}, ${printerId}, ${secrets.printerIp ?? null}, ${secrets.serial ?? null}, ${secrets.accessCode ?? null}, ${now}, ${now})
       ON CONFLICT (printer_id) DO UPDATE SET
         printer_ip   = excluded.printer_ip,
         serial       = excluded.serial,
@@ -361,11 +357,10 @@ export async function upsertPrinterSecrets(
 
 /** Get all loaded spool slots for a printer, with spool + preset nested. */
 export async function getLoadedSpools(
-  db: D1Database,
+  ctx: TenantContext,
   printerId: number,
 ): Promise<(PrinterLoadedSpool & { spool: SpoolWithPreset | null })[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all<{
+  const rows = await ctx.db.all<{
     printer_id: number;
     slot_index: number;
     spool_id: number | null;
@@ -393,7 +388,7 @@ export async function getLoadedSpools(
     FROM printer_loaded_spools pls
     LEFT JOIN spools s ON pls.spool_id = s.id
     LEFT JOIN spool_presets sp ON s.preset_id = sp.id
-    WHERE pls.printer_id = ${printerId}
+    WHERE pls.printer_id = ${printerId} AND pls.workspace_id = ${ctx.workspaceId}
     ORDER BY pls.slot_index
   `);
 
@@ -439,44 +434,44 @@ export async function getLoadedSpools(
  * physical spool can only sit in one place at a time.
  */
 export async function setLoadedSpool(
-  db: D1Database,
+  ctx: TenantContext,
   printerId: number,
   slotIndex: number,
   spoolId: number | null,
 ): Promise<void> {
-  const drizzleDb = getDb(db);
   const now = Math.floor(Date.now() / 1000);
 
   if (spoolId !== null) {
-    await drizzleDb.run(sql`
+    await ctx.db.run(sql`
       UPDATE printer_loaded_spools
       SET spool_id = NULL, updated_at = ${now}
       WHERE spool_id = ${spoolId}
+        AND workspace_id = ${ctx.workspaceId}
         AND NOT (printer_id = ${printerId} AND slot_index = ${slotIndex})
     `);
   }
 
-  await drizzleDb.run(sql`
+  await ctx.db.run(sql`
     UPDATE printer_loaded_spools
     SET spool_id = ${spoolId}, updated_at = ${now}
-    WHERE printer_id = ${printerId} AND slot_index = ${slotIndex}
+    WHERE printer_id = ${printerId} AND slot_index = ${slotIndex} AND workspace_id = ${ctx.workspaceId}
   `);
 }
 
 /** Clear the spool from a slot (null out spool_id; the slot row stays). */
-export async function unloadSpool(db: D1Database, printerId: number, slotIndex = 0): Promise<void> {
-  await setLoadedSpool(db, printerId, slotIndex, null);
+export async function unloadSpool(ctx: TenantContext, printerId: number, slotIndex = 0): Promise<void> {
+  await setLoadedSpool(ctx, printerId, slotIndex, null);
 }
 
 /** Load an already-open physical spool into a printer slot without touching in_storage. */
 export async function loadExistingSpoolIntoSlot(
-  db: D1Database,
+  ctx: TenantContext,
   printerId: number,
   slotIndex: number,
   spoolId: number,
 ): Promise<ServerResponse> {
   try {
-    await setLoadedSpool(db, printerId, slotIndex, spoolId);
+    await setLoadedSpool(ctx, printerId, slotIndex, spoolId);
     return { success: true, message: `Spool loaded into slot ${slotIndex}` };
   } catch (error) {
     console.error('Error loading existing spool:', error);
@@ -484,7 +479,7 @@ export async function loadExistingSpoolIntoSlot(
   }
 }
 
-// ─── Printer Queue ────────────────────────────────────────────────────────────
+// ─── Printer Queue (db-based until Group 6) ──────────────────────────────────
 
 export async function getPrinterQueuedJobs(
   db: D1Database,

@@ -2,14 +2,16 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
+import { requireCtx } from '$lib/server/context';
 
 /**
  * GET /api/pi/status?serial=SERIALNUMBER
  * Proxies to the Pi's /status/{serial} endpoint.
  * Passes printer credentials as headers so Pi can auto-register after restart.
  */
-export const GET: RequestHandler = async ({ url, platform }) => {
+export const GET: RequestHandler = async ({ url, platform, locals }) => {
   const db = platform?.env?.DB;
+  const ctx = requireCtx(locals);
   const piUrl = platform?.env?.PI_TUNNEL_URL;
   const piSecret = platform?.env?.PI_SECRET ?? '';
 
@@ -33,7 +35,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
       sql`SELECT ps.printer_ip, ps.access_code, p.name
           FROM printers p
           JOIN printer_secrets ps ON p.id = ps.printer_id
-          WHERE ps.serial = ${serial}`
+          WHERE ps.serial = ${serial} AND ps.workspace_id = ${ctx.workspaceId}`
     );
     printerIp = printer?.printer_ip ?? '';
     printerCode = printer?.access_code ?? '';
@@ -63,7 +65,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
       try {
         const drizzleDb = getDb(db);
         const printer = await drizzleDb.get<{ id: number }>(
-          sql`SELECT p.id FROM printers p JOIN printer_secrets ps ON p.id = ps.printer_id WHERE ps.serial = ${serial}`
+          sql`SELECT p.id FROM printers p JOIN printer_secrets ps ON p.id = ps.printer_id WHERE ps.serial = ${serial} AND ps.workspace_id = ${ctx.workspaceId}`
         );
 
         if (printer) {
