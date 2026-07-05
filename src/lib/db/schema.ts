@@ -334,6 +334,9 @@ export const printModules = sqliteTable(
   "print_modules",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     // Total expected filament weight across all slots (sum of slot weights).
     weight: integer("weight").notNull().default(0),
@@ -369,6 +372,7 @@ export const printModules = sqliteTable(
     index("idx_print_modules_printer_preset").on(t.printerPresetId),
     index("idx_print_modules_plate_preset").on(t.platePresetId),
     index("idx_print_modules_active").on(t.active),
+    index("idx_print_modules_workspace").on(t.workspaceId),
   ],
 );
 
@@ -382,6 +386,9 @@ export const printModules = sqliteTable(
 export const moduleFilamentSlots = sqliteTable(
   "module_filament_slots",
   {
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     moduleId: integer("module_id")
       .notNull()
       .references(() => printModules.id, { onDelete: "cascade" }),
@@ -397,6 +404,7 @@ export const moduleFilamentSlots = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.moduleId, t.slotIndex] }),
     index("idx_module_filament_slots_preset").on(t.spoolPresetId),
+    index("idx_module_filament_slots_workspace").on(t.workspaceId),
   ],
 );
 

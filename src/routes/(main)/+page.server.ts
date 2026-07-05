@@ -20,7 +20,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   const [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets] = await Promise.all([
     db.getAllPrintersFull(ctx),
     db.getAllSpools(ctx),
-    db.getAllPrintModules(database),
+    db.getAllPrintModules(ctx),
     db.getActivePrintJobs(database),
     db.getAllPrintJobs(database),
     db.getAllSpoolPresets(ctx),
@@ -156,7 +156,7 @@ export const actions: Actions = {
       if (success && actualWeight > 0) {
         const job = await db.getPrintJobById(database, jobId);
         usedWeightBySlot = job?.module_id
-          ? await db.distributeWeightAcrossSlots(database, job.module_id, actualWeight)
+          ? await db.distributeWeightAcrossSlots(ctx, job.module_id, actualWeight)
           : { 0: actualWeight };
       }
 

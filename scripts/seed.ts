@@ -63,45 +63,11 @@ const plateId = run(
   ["Textured PEI Plate", 256, 256, now, now],
 );
 
-// NOTE: spool_presets + spools + printers (+secrets, +loaded slots) are
-// per-workspace as of Groups 2–3 — seeded in the per-user loop below. Shared
-// modules/jobs therefore reference NULL for spool/preset/printer FKs until
-// modules/jobs are scoped (Groups 4–5).
-
-// Two shared modules (object_id null; slot preset null until modules are scoped)
-const moduleIds: number[] = [];
-[
-  { name: "Wall Hook v3", weight: 24, mins: 95, per: 5, file: "wall_hook_v3.gcode.3mf" },
-  { name: "Desk Organizer", weight: 180, mins: 410, per: 1, file: "desk_organizer.gcode.3mf" },
-].forEach((m) => {
-  const mid = run(
-    `INSERT INTO print_modules (name, weight, expected_time_minutes, objects_per_print, plate_preset_id, printer_preset_id, object_id, nozzle_diameter, filename, active, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [m.name, m.weight, m.mins, m.per, plateId, printerPresetId, null, 0.4, m.file, 1, now, now],
-  );
-  run(
-    `INSERT INTO module_filament_slots (module_id, slot_index, spool_preset_id, weight) VALUES (?,?,?,?)`,
-    [mid, 0, null, m.weight],
-  );
-  moduleIds.push(mid);
-});
-
-// A handful of shared print jobs (start_time in ms to match the stats page)
-["successful", "successful", "failed", "successful"].forEach((status, i) => {
-  const jid = run(
-    `INSERT INTO print_jobs (module_id, printer_id, external_task_id, start_time, expected_end_time, status, failure_reason, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
-    [
-      moduleIds[i % moduleIds.length], null,
-      crypto.randomUUID(), msAgo(i + 1), msAgo(i + 1) + 90 * 60_000,
-      status, status === "failed" ? "Spaghetti / detach" : null, now, now,
-    ],
-  );
-  run(`INSERT INTO print_job_spools (print_job_id, slot_index, spool_id, used_weight) VALUES (?,?,?,?)`,
-    [jid, 0, null, status === "successful" ? 24 : 5]);
-});
-
-console.log("Seeded shared catalog + 2 modules + 4 jobs.");
+// NOTE: printers/spools/modules are per-workspace (Groups 2–4). Only the catalog
+// (printer_presets, plate_presets) is shared here. print_jobs stay un-scoped
+// (Group 5) but are seeded per-workspace below with coherent FKs so they're
+// realistic — they're just globally visible until scoped.
+console.log("Seeded shared catalog (1 printer preset, 1 plate).");
 
 // ── PER-USER (isolated) ──────────────────────────────────────────────────────
 const passwordHash = await hashPassword(PASSWORD);
@@ -147,12 +113,14 @@ for (const u of users) {
     [wsId, presets[1], 1000, 815, now, now]);
 
   // Two printers per workspace, each with a secret row + one loaded slot.
+  const printerIds: number[] = [];
   ["Printer A", "Printer B"].forEach((pname, i) => {
     const pid = run(
       `INSERT INTO printers (workspace_id, name, printer_preset_id, loaded_plate_id, loaded_nozzle_diameter, slot_count, active, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?)`,
       [wsId, `${u.name.split(" ")[0]} ${pname}`, printerPresetId, plateId, 0.4, 1, 1, now, now],
     );
+    printerIds.push(pid);
     run(
       `INSERT INTO printer_secrets (workspace_id, printer_id, printer_ip, serial, access_code, transport, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?)`,
@@ -165,12 +133,14 @@ for (const u of users) {
     );
   });
 
+  const objectIds: number[] = [];
   for (const p of products) {
     const oid = run(
       `INSERT INTO objects (workspace_id, name, in_stock, min_threshold, category, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?)`,
       [wsId, p.name, p.stock, p.min, null, now, now],
     );
+    objectIds.push(oid);
     // Rich history spread over the last 30 days: printed + sold (b2c/b2b) + a count.
     const history: [string, number, number][] = [
       ["+ printed", 20, 28], ["- sold b2c", 6, 24], ["+ printed", 15, 18],
@@ -185,7 +155,40 @@ for (const u of users) {
       );
     }
   }
-  console.log(`  ${u.email}  (workspace #${wsId} "${u.workspace}") — 4 products + history`);
+
+  // Two modules per workspace, each producing one of the workspace's objects,
+  // slot 0 requiring the workspace's black PLA.
+  const modules = [
+    { name: "Wall Hook v3", weight: 24, mins: 95, per: 5, file: "wall_hook_v3.gcode.3mf", oid: objectIds[0] },
+    { name: "Desk Organizer", weight: 180, mins: 410, per: 1, file: "desk_organizer.gcode.3mf", oid: objectIds[3] },
+  ].map((m) => {
+    const mid = run(
+      `INSERT INTO print_modules (workspace_id, name, weight, expected_time_minutes, objects_per_print, plate_preset_id, printer_preset_id, object_id, nozzle_diameter, filename, active, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [wsId, m.name, m.weight, m.mins, m.per, plateId, printerPresetId, m.oid, 0.4, m.file, 1, now, now],
+    );
+    run(`INSERT INTO module_filament_slots (workspace_id, module_id, slot_index, spool_preset_id, weight) VALUES (?,?,?,?,?)`,
+      [wsId, mid, 0, presets[0], m.weight]);
+    return mid;
+  });
+
+  // A few coherent print jobs (module + printer + spool all in this workspace).
+  // print_jobs are still global (Group 5) but the FKs are real. start_time in ms.
+  ["successful", "successful", "failed", "successful"].forEach((status, i) => {
+    const jid = run(
+      `INSERT INTO print_jobs (module_id, printer_id, external_task_id, start_time, expected_end_time, status, failure_reason, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [
+        modules[i % modules.length], printerIds[i % printerIds.length],
+        crypto.randomUUID(), msAgo(i + 1), msAgo(i + 1) + 90 * 60_000,
+        status, status === "failed" ? "Spaghetti / detach" : null, now, now,
+      ],
+    );
+    run(`INSERT INTO print_job_spools (print_job_id, slot_index, spool_id, used_weight) VALUES (?,?,?,?)`,
+      [jid, 0, spoolA, status === "successful" ? 24 : 5]);
+  });
+
+  console.log(`  ${u.email}  (workspace #${wsId} "${u.workspace}") — 4 products, 2 modules, 4 jobs`);
 }
 
 db.close();

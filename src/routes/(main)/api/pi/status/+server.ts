@@ -81,8 +81,9 @@ export const GET: RequestHandler = async ({ url, platform, locals }) => {
             if (normalized) {
               matchedModule = await drizzleDb.get(sql`
                 SELECT id, name FROM print_modules
-                WHERE LOWER(filename) LIKE ${`%${normalized}%`}
-                   OR LOWER(name)     LIKE ${`%${normalized}%`}
+                WHERE workspace_id = ${ctx.workspaceId}
+                  AND (LOWER(filename) LIKE ${`%${normalized}%`}
+                   OR LOWER(name)     LIKE ${`%${normalized}%`})
                 LIMIT 1
               `) ?? null;
             }

@@ -9,7 +9,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   const ctx = requireCtx(locals);
 
   const [modules, printers, spoolPresets, printerPresets, objects] = await Promise.all([
-    getAllPrintModules(db),
+    getAllPrintModules(ctx),
     getAllPrinters(ctx),
     getAllSpoolPresets(ctx),
     getAllPrinterPresets(db),

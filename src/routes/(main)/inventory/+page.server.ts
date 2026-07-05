@@ -91,15 +91,14 @@ interface ProductionStat {
 
 // Per-object production effort from its active print module: filament grams and
 // print minutes per finished unit. Drives the "cost to refill" hint (C).
-async function getProductionStats(db: any): Promise<ProductionStat[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all(sql`
+async function getProductionStats(ctx: TenantContext): Promise<ProductionStat[]> {
+  const rows = await ctx.db.all(sql`
     SELECT pm.object_id,
            ROUND(CAST(pm.weight AS FLOAT) / pm.objects_per_print, 1) as weight_per_unit,
            ROUND(CAST(pm.expected_time_minutes AS FLOAT) / pm.objects_per_print, 1) as minutes_per_unit,
            pm.objects_per_print
     FROM print_modules pm
-    WHERE pm.object_id IS NOT NULL AND pm.active = 1
+    WHERE pm.object_id IS NOT NULL AND pm.active = 1 AND pm.workspace_id = ${ctx.workspaceId}
     GROUP BY pm.object_id
   `);
   return (rows || []) as ProductionStat[];
@@ -157,7 +156,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     [setDefinitions, unitWeights, productionStats, salesWindows] = await Promise.all([
       getSetDefinitions(ctx),
       getUnitWeights(ctx),
-      getProductionStats(db),
+      getProductionStats(ctx),
       getSalesWindows(ctx),
     ]);
   } catch (err) {

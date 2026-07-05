@@ -44,14 +44,15 @@ function normalizeSlots(body: Record<string, unknown>): SlotInput[] | null {
 
 async function writeSlots(
   drizzleDb: ReturnType<typeof getDb>,
+  workspaceId: number,
   moduleId: number | string,
   slots: SlotInput[],
 ) {
-  await drizzleDb.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${moduleId}`);
+  await drizzleDb.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${moduleId} AND workspace_id = ${workspaceId}`);
   for (const s of slots) {
     await drizzleDb.run(sql`
-      INSERT INTO module_filament_slots (module_id, slot_index, spool_preset_id, weight)
-      VALUES (${moduleId}, ${s.slot_index}, ${s.spool_preset_id}, ${s.weight})
+      INSERT INTO module_filament_slots (workspace_id, module_id, slot_index, spool_preset_id, weight)
+      VALUES (${workspaceId}, ${moduleId}, ${s.slot_index}, ${s.spool_preset_id}, ${s.weight})
     `);
   }
 }
@@ -68,6 +69,7 @@ function totalSlotWeight(slots: SlotInput[]): number {
  */
 async function syncModuleWeight(
   drizzleDb: ReturnType<typeof getDb>,
+  workspaceId: number,
   moduleId: number | string,
   slots: SlotInput[],
   now: number,
@@ -75,14 +77,15 @@ async function syncModuleWeight(
   await drizzleDb.run(sql`
     UPDATE print_modules
     SET weight = ${totalSlotWeight(slots)}, updated_at = ${now}
-    WHERE id = ${moduleId}
+    WHERE id = ${moduleId} AND workspace_id = ${workspaceId}
   `);
 }
 
-export const POST: RequestHandler = async ({ request, platform }) => {
+export const POST: RequestHandler = async ({ request, platform, locals }) => {
   const db = platform?.env?.DB;
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
 
+  const ctx = requireCtx(locals);
   const drizzleDb = getDb(db);
   let body: Record<string, unknown>;
   try {
@@ -113,10 +116,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   try {
     const result = await drizzleDb.run(sql`
       INSERT INTO print_modules
-        (name, filename, thumbnail, weight, expected_time_minutes, objects_per_print,
+        (workspace_id, name, filename, thumbnail, weight, expected_time_minutes, objects_per_print,
          nozzle_diameter, object_id, printer_preset_id, active, created_at, updated_at)
       VALUES (
-        ${name}, ${filename}, ${thumbnail ?? null},
+        ${ctx.workspaceId}, ${name}, ${filename}, ${thumbnail ?? null},
         ${moduleWeight}, ${estimated_time ?? 0}, ${objects_per_print ?? 1},
         ${nozzle_diameter ?? null}, ${resolvedObjectId}, ${resolvedPresetId},
         1, ${now}, ${now}
@@ -126,7 +129,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const moduleId = result.meta.last_row_id as number;
 
     if (slots.length > 0 && moduleId) {
-      await writeSlots(drizzleDb, moduleId, slots);
+      await writeSlots(drizzleDb, ctx.workspaceId, moduleId, slots);
     }
 
     return json({ success: true, data: { id: moduleId, name } });
@@ -170,6 +173,7 @@ export const GET: RequestHandler = async ({ platform, url, locals }) => {
       LEFT JOIN module_filament_slots mfs0 ON pm.id = mfs0.module_id AND mfs0.slot_index = 0
       LEFT JOIN spool_presets sp0 ON mfs0.spool_preset_id = sp0.id
       LEFT JOIN objects o ON pm.object_id = o.id
+      WHERE pm.workspace_id = ${ctx.workspaceId}
       ORDER BY pm.id DESC
     `);
 
@@ -187,6 +191,7 @@ export const GET: RequestHandler = async ({ platform, url, locals }) => {
              sp.brand as preset_brand, sp.material as preset_material, sp.color as preset_color
       FROM module_filament_slots mfs
       LEFT JOIN spool_presets sp ON mfs.spool_preset_id = sp.id
+      WHERE mfs.workspace_id = ${ctx.workspaceId}
       ORDER BY mfs.module_id, mfs.slot_index
     `);
 
@@ -209,10 +214,11 @@ export const GET: RequestHandler = async ({ platform, url, locals }) => {
   }
 };
 
-export const PATCH: RequestHandler = async ({ url, request, platform }) => {
+export const PATCH: RequestHandler = async ({ url, request, platform, locals }) => {
   const db = platform?.env?.DB;
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
 
+  const ctx = requireCtx(locals);
   const drizzleDb = getDb(db);
   const id = url.searchParams.get('id');
   if (!id) return json({ success: false, error: 'id is required' }, { status: 400 });
@@ -226,7 +232,7 @@ export const PATCH: RequestHandler = async ({ url, request, platform }) => {
 
   if ('active' in body) {
     const now = Math.floor(Date.now() / 1000);
-    await drizzleDb.run(sql`UPDATE print_modules SET active = ${body.active ? 1 : 0}, updated_at = ${now} WHERE id = ${id}`);
+    await drizzleDb.run(sql`UPDATE print_modules SET active = ${body.active ? 1 : 0}, updated_at = ${now} WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`);
     return json({ success: true });
   }
 
@@ -252,13 +258,13 @@ export const PATCH: RequestHandler = async ({ url, request, platform }) => {
         object_id = ${resolvedObjectId},
         printer_preset_id = ${resolvedPresetId},
         updated_at = ${now}
-      WHERE id = ${id}
+      WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}
     `);
 
     const slots = normalizeSlots(body);
     if (slots !== null) {
-      await writeSlots(drizzleDb, id, slots);
-      await syncModuleWeight(drizzleDb, id, slots, now);
+      await writeSlots(drizzleDb, ctx.workspaceId, id, slots);
+      await syncModuleWeight(drizzleDb, ctx.workspaceId, id, slots, now);
     }
 
     return json({ success: true });
@@ -268,18 +274,20 @@ export const PATCH: RequestHandler = async ({ url, request, platform }) => {
   }
 };
 
-export const DELETE: RequestHandler = async ({ url, platform }) => {
+export const DELETE: RequestHandler = async ({ url, platform, locals }) => {
   const db = platform?.env?.DB;
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
 
+  const ctx = requireCtx(locals);
   const drizzleDb = getDb(db);
   const id = url.searchParams.get('id');
   if (!id) return json({ success: false, error: 'id is required' }, { status: 400 });
 
   try {
     const module = await drizzleDb.get<{ filename: string | null }>(
-      sql`SELECT filename FROM print_modules WHERE id = ${id}`
+      sql`SELECT filename FROM print_modules WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`
     );
+    if (!module) return json({ success: false, error: 'Module not found' }, { status: 404 });
 
     const piUrl = platform?.env?.PI_TUNNEL_URL;
     const piSecret = (platform?.env?.PI_SECRET as string | undefined) ?? '';
@@ -296,8 +304,8 @@ export const DELETE: RequestHandler = async ({ url, platform }) => {
     }
 
     await drizzleDb.run(sql`UPDATE print_jobs SET module_id = NULL WHERE module_id = ${id}`);
-    await drizzleDb.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${id}`);
-    await drizzleDb.run(sql`DELETE FROM print_modules WHERE id = ${id}`);
+    await drizzleDb.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${id} AND workspace_id = ${ctx.workspaceId}`);
+    await drizzleDb.run(sql`DELETE FROM print_modules WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`);
 
     return json({ success: true, local_file_handler_path: module?.filename ?? null });
   } catch (e) {

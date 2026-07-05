@@ -37,7 +37,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
   }
 
   const module = await drizzleDb.get(
-    sql`SELECT * FROM print_modules WHERE id = ${module_id}`
+    sql`SELECT * FROM print_modules WHERE id = ${module_id} AND workspace_id = ${ctx.workspaceId}`
   ) as Record<string, unknown> | null;
 
   if (!module) return json({ success: false, error: 'Module not found' }, { status: 404 });

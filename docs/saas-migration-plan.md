@@ -247,7 +247,17 @@ catalog dedup on presets via `COALESCE(workspace_id,0)`.
 - [x] **Leak test passed:** each workspace sees only its 2 printers; pages render.
 - [ ] DEFERRED: `jobs.ts` print_jobs→printers joins (print_jobs global) → Group 5.
 
-**Remaining groups (4–9): not started.** Next: Group 4 (print_modules + module_filament_slots).
+### Group 4 — print_modules + module_filament_slots ✅ DONE 2026-07-05
+
+- [x] Migration `0016`: `workspace_id NOT NULL` + index on both.
+- [x] `modules.ts`: all 7 fns → `ctx`, every query scoped.
+- [x] Cross-group: `distributeWeightAcrossSlots` (jobs.ts) → ctx; `startPrintJob`/`completePrintJob` call `getPrintModuleById(ctx)`.
+- [x] **`api/print-modules`** (raw-SQL module CRUD — POST/GET/PATCH/DELETE + writeSlots/syncModuleWeight helpers) fully scoped by `workspace_id`. Plus `api/pi/print` (module fetch), `api/pi/status` (external-print module match), inventory `getProductionStats`, products module read, spools preset-delete check.
+- [x] Seed: modules per-workspace (produce the workspace's objects, slots require its presets); jobs per-workspace with coherent module/printer/spool FKs (still globally visible until Group 5).
+- [x] **Leak test passed:** Alice modules [1,2], Bob [3,4]; pages render.
+- [ ] DEFERRED to Group 6 (queue/recommendation module reads): `printQueue.ts` (assignQueueToPrinter, demand, regen), `context-builder`, `recommendation-service`, `getPrinterQueuedJobs` join. DEFERRED to Group 5: `jobs.ts` print_jobs→modules joins.
+
+**Remaining groups (5–9): not started.** Next: Group 5 (print_jobs + print_job_spools).
 
 ### Step N — per table-group (repeat for each group, in this order)
 

@@ -41,7 +41,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
              pp.brand || ' ' || pp.model AS printer_preset_name
       FROM print_modules pm
       LEFT JOIN printer_presets pp ON pm.printer_preset_id = pp.id
-      WHERE pm.object_id IS NOT NULL AND pm.active = 1
+      WHERE pm.object_id IS NOT NULL AND pm.active = 1 AND pm.workspace_id = ${ctx.workspaceId}
       ORDER BY pm.name ASC
     `),
     drizzleDb.all(sql`

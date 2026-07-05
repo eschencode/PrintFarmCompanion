@@ -87,7 +87,7 @@ export async function deleteSpoolPreset(ctx: TenantContext, id: number): Promise
   try {
     // module_filament_slots has restrict on spool_preset_id — give friendly message
     const slotCount = await ctx.db.get<{ count: number }>(
-      sql`SELECT COUNT(*) as count FROM module_filament_slots WHERE spool_preset_id = ${id}`,
+      sql`SELECT COUNT(*) as count FROM module_filament_slots WHERE spool_preset_id = ${id} AND workspace_id = ${ctx.workspaceId}`,
     );
     if ((slotCount?.count ?? 0) > 0) {
       return { success: false, error: 'Cannot delete: preset is used by one or more print modules' };

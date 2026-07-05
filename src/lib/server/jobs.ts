@@ -234,7 +234,7 @@ export async function startPrintJob(
   const printer = await getPrinterById(ctx, printerId);
   if (!printer) return { success: false, error: 'Printer not found' };
 
-  const module = await getPrintModuleById(ctx.d1, moduleId);
+  const module = await getPrintModuleById(ctx, moduleId);
   if (!module) return { success: false, error: 'Print module not found' };
 
   const loadedSlots = await getLoadedSpools(ctx, printerId);
@@ -296,11 +296,11 @@ export async function startPrintJob(
  * to each spool correctly.
  */
 export async function distributeWeightAcrossSlots(
-  db: D1Database,
+  ctx: TenantContext,
   moduleId: number,
   totalUsedWeight: number,
 ): Promise<Record<number, number>> {
-  const slots = await getModuleFilamentSlots(db, moduleId);
+  const slots = await getModuleFilamentSlots(ctx, moduleId);
   if (slots.length === 0) {
     return totalUsedWeight > 0 ? { 0: totalUsedWeight } : {};
   }
@@ -381,7 +381,7 @@ export async function completePrintJob(
   if (success) {
     const job = await getPrintJobById(db, jobId);
     if (job?.module_id) {
-      const module = await getPrintModuleById(db, job.module_id);
+      const module = await getPrintModuleById(ctx, job.module_id);
       if (module?.object_id) {
         const quantity = module.objects_per_print ?? 1;
         await drizzleDb.run(sql`
