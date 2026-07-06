@@ -18,21 +18,21 @@ export const GET: RequestHandler = async ({ url, platform, locals }) => {
   try {
 
   if (type === 'spool') {
-    await regenerateGlobalQueueIfStale(db);
+    await regenerateGlobalQueueIfStale(ctx);
     const aiService = new AIRecommendationService(ctx);
     const suggestion = await aiService.suggestSpoolToLoad(printerId ? Number(printerId) : undefined);
     return json(suggestion);
   }
 
   if (type === 'global') {
-    await regenerateGlobalQueueIfStale(db);
-    const queue = await getGlobalQueue(db);
+    await regenerateGlobalQueueIfStale(ctx);
+    const queue = await getGlobalQueue(ctx);
     return json(queue);
   }
 
   if (type === 'spool-demand') {
-    await regenerateGlobalQueueIfStale(db);
-    const demand = await getSpoolDemandFromQueue(db);
+    await regenerateGlobalQueueIfStale(ctx);
+    const demand = await getSpoolDemandFromQueue(ctx);
     return json(demand);
   }
 

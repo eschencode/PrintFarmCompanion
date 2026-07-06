@@ -43,6 +43,7 @@ const rand = () => Math.random().toString(36).slice(2, 7);
 
 // ── wipe (FK-off, order-independent) ─────────────────────────────────────────
 for (const t of [
+  "printer_queued_jobs", "print_queue",
   "inventory_log", "print_job_spools", "print_jobs", "module_filament_slots",
   "print_modules", "printer_loaded_spools", "printer_secrets", "printers",
   "spools", "spool_presets", "plate_presets", "printer_presets", "objects",

@@ -136,10 +136,10 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
 
   // Keep the global backlog fresh on visit, then read it as the single source of
   // truth for the "Print queue" panel (same table that feeds printer assignment).
-  await regenerateGlobalQueueIfStale(db);
+  await regenerateGlobalQueueIfStale(ctx);
   let globalQueue: PrintQueueItem[] = [];
   try {
-    globalQueue = await getGlobalQueue(db);
+    globalQueue = await getGlobalQueue(ctx);
   } catch (err) {
     console.error('Failed to load global print queue:', err);
   }
@@ -168,7 +168,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   const weeklyThroughput = salesWindows.reduce((sum, s) => sum + (s.sold_7d ?? 0), 0);
 
   try {
-    const builder = new AIContextBuilder(db);
+    const builder = new AIContextBuilder(ctx);
     const velocityList = await builder.getInventoryWithVelocity();
     const itemsWithVelocity = items.map(i => {
       const v = velocityList.find(v => v.id === i.id);
@@ -199,10 +199,9 @@ export const actions: Actions = {
   // Force a full rebuild (used by the "Print queue" button). Unlike the lazy
   // staleness check, this also picks up changes that don't write inventory_log
   // (e.g. module weight / preferred-module edits).
-  regenerateQueue: async ({ platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
-    await regenerateGlobalQueue(db);
+  regenerateQueue: async ({ locals }) => {
+    const ctx = requireCtx(locals);
+    await regenerateGlobalQueue(ctx);
     return { success: true };
   },
 

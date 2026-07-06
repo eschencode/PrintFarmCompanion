@@ -687,6 +687,9 @@ export const printerQueuedJobs = sqliteTable(
   "printer_queued_jobs",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     printerId: integer("printer_id")
       .notNull()
       .references(() => printers.id, { onDelete: "cascade" }),
@@ -714,6 +717,7 @@ export const printerQueuedJobs = sqliteTable(
       t.sortOrder,
     ),
     index("idx_printer_queued_jobs_printer").on(t.printerId),
+    index("idx_printer_queued_jobs_workspace").on(t.workspaceId),
   ],
 );
 
@@ -729,6 +733,9 @@ export const printQueue = sqliteTable(
   "print_queue",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     objectId: integer("object_id")
       .notNull()
       .references(() => objects.id, { onDelete: "cascade" }),
@@ -764,6 +771,7 @@ export const printQueue = sqliteTable(
     uniqueIndex("uniq_print_queue_object_source").on(t.objectId, t.source),
     index("idx_print_queue_status").on(t.status),
     index("idx_print_queue_source").on(t.source),
+    index("idx_print_queue_workspace").on(t.workspaceId),
   ],
 );
 

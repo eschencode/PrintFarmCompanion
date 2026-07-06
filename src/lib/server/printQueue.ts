@@ -34,16 +34,16 @@ const COVER_TARGET_DAYS = 45;
  * Idempotent: upserts auto rows keyed on (object_id, 'auto'); never touches
  * `source='manual'` pins; deletes obsolete auto rows.
  */
-export async function regenerateGlobalQueue(db: D1Database): Promise<{ updated: number }> {
-  const drizzleDb = getDb(db);
-  const builder = new AIContextBuilder(db);
+export async function regenerateGlobalQueue(ctx: TenantContext): Promise<{ updated: number }> {
+  const drizzleDb = ctx.db;
+  const builder = new AIContextBuilder(ctx);
   const inventory = await builder.getInventoryWithVelocity();
 
   // object -> preferred active module (lowest id wins; stable).
   const moduleRows = await drizzleDb.all<{ object_id: number; module_id: number }>(sql`
     SELECT object_id, MIN(id) as module_id
     FROM print_modules
-    WHERE active = 1 AND object_id IS NOT NULL
+    WHERE active = 1 AND object_id IS NOT NULL AND workspace_id = ${ctx.workspaceId}
     GROUP BY object_id
   `);
   const moduleByObject = new Map<number, number>();
@@ -80,8 +80,8 @@ export async function regenerateGlobalQueue(db: D1Database): Promise<{ updated: 
   const now = Math.floor(Date.now() / 1000);
   for (const d of desired) {
     await drizzleDb.run(sql`
-      INSERT INTO print_queue (object_id, module_id, quantity, priority, reason, source, status, created_at, updated_at)
-      VALUES (${d.objectId}, ${d.moduleId}, ${d.quantity}, ${d.priority}, ${d.reason}, 'auto', 'pending', ${now}, ${now})
+      INSERT INTO print_queue (workspace_id, object_id, module_id, quantity, priority, reason, source, status, created_at, updated_at)
+      VALUES (${ctx.workspaceId}, ${d.objectId}, ${d.moduleId}, ${d.quantity}, ${d.priority}, ${d.reason}, 'auto', 'pending', ${now}, ${now})
       ON CONFLICT(object_id, source) DO UPDATE SET
         module_id = excluded.module_id,
         quantity  = excluded.quantity,
@@ -96,11 +96,11 @@ export async function regenerateGlobalQueue(db: D1Database): Promise<{ updated: 
   if (keepIds.length > 0) {
     await drizzleDb.run(sql`
       DELETE FROM print_queue
-      WHERE source = 'auto'
+      WHERE source = 'auto' AND workspace_id = ${ctx.workspaceId}
         AND object_id NOT IN (${sql.join(keepIds.map((id) => sql`${id}`), sql`, `)})
     `);
   } else {
-    await drizzleDb.run(sql`DELETE FROM print_queue WHERE source = 'auto'`);
+    await drizzleDb.run(sql`DELETE FROM print_queue WHERE source = 'auto' AND workspace_id = ${ctx.workspaceId}`);
   }
 
   return { updated: desired.length };
@@ -116,16 +116,16 @@ export async function regenerateGlobalQueue(db: D1Database): Promise<{ updated: 
  *   - the queue is older than `ttlSeconds` (safety net for clock edge cases).
  * Best-effort — never throws into the caller's load().
  */
-export async function regenerateGlobalQueueIfStale(db: D1Database, ttlSeconds = 3600): Promise<void> {
+export async function regenerateGlobalQueueIfStale(ctx: TenantContext, ttlSeconds = 3600): Promise<void> {
   try {
-    const drizzleDb = getDb(db);
+    const drizzleDb = ctx.db;
     const row = await drizzleDb.get<{ newest: number | null; n: number }>(sql`
-      SELECT MAX(updated_at) as newest, COUNT(*) as n FROM print_queue WHERE source = 'auto'
+      SELECT MAX(updated_at) as newest, COUNT(*) as n FROM print_queue WHERE source = 'auto' AND workspace_id = ${ctx.workspaceId}
     `);
     const queueNewest = row?.newest ?? 0;
 
     const logRow = await drizzleDb.get<{ newest: number | null }>(sql`
-      SELECT MAX(created_at) as newest FROM inventory_log
+      SELECT MAX(created_at) as newest FROM inventory_log WHERE workspace_id = ${ctx.workspaceId}
     `);
     const inventoryNewest = logRow?.newest ?? 0;
 
@@ -135,15 +135,15 @@ export async function regenerateGlobalQueueIfStale(db: D1Database, ttlSeconds = 
       row.n === 0 ||
       inventoryNewest > queueNewest ||
       queueNewest < now - ttlSeconds;
-    if (stale) await regenerateGlobalQueue(db);
+    if (stale) await regenerateGlobalQueue(ctx);
   } catch (err) {
     console.error('regenerateGlobalQueueIfStale failed:', err);
   }
 }
 
 /** The full backlog (auto + manual), tier-ordered, with live forecast fields attached. */
-export async function getGlobalQueue(db: D1Database): Promise<PrintQueueItem[]> {
-  const drizzleDb = getDb(db);
+export async function getGlobalQueue(ctx: TenantContext): Promise<PrintQueueItem[]> {
+  const drizzleDb = ctx.db;
   const rows = await drizzleDb.all<{
     id: number;
     object_id: number;
@@ -164,10 +164,11 @@ export async function getGlobalQueue(db: D1Database): Promise<PrintQueueItem[]> 
     FROM print_queue pq
     JOIN objects o ON pq.object_id = o.id
     LEFT JOIN print_modules pm ON pq.module_id = pm.id
+    WHERE pq.workspace_id = ${ctx.workspaceId}
   `);
 
   // Attach live velocity/risk (not stored on the row) for display + sorting.
-  const builder = new AIContextBuilder(db);
+  const builder = new AIContextBuilder(ctx);
   const inv = await builder.getInventoryWithVelocity();
   const byId = new Map(inv.map((i) => [i.id, i]));
 
@@ -197,15 +198,15 @@ export async function getGlobalQueue(db: D1Database): Promise<PrintQueueItem[]> 
 
 /** Add or update a manual pin. Survives regeneration (source='manual'). */
 export async function addManualQueueItem(
-  db: D1Database,
+  ctx: TenantContext,
   item: { objectId: number; moduleId?: number | null; quantity: number; priority?: InventoryPriority; reason?: string },
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
+  const drizzleDb = ctx.db;
   try {
     const now = Math.floor(Date.now() / 1000);
     await drizzleDb.run(sql`
-      INSERT INTO print_queue (object_id, module_id, quantity, priority, reason, source, status, created_at, updated_at)
-      VALUES (${item.objectId}, ${item.moduleId ?? null}, ${item.quantity}, ${item.priority ?? 'HIGH'}, ${item.reason ?? 'Manual pin'}, 'manual', 'pending', ${now}, ${now})
+      INSERT INTO print_queue (workspace_id, object_id, module_id, quantity, priority, reason, source, status, created_at, updated_at)
+      VALUES (${ctx.workspaceId}, ${item.objectId}, ${item.moduleId ?? null}, ${item.quantity}, ${item.priority ?? 'HIGH'}, ${item.reason ?? 'Manual pin'}, 'manual', 'pending', ${now}, ${now})
       ON CONFLICT(object_id, source) DO UPDATE SET
         module_id = excluded.module_id,
         quantity  = excluded.quantity,
@@ -220,10 +221,9 @@ export async function addManualQueueItem(
   }
 }
 
-export async function removeQueueItem(db: D1Database, id: number): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
+export async function removeQueueItem(ctx: TenantContext, id: number): Promise<ServerResponse> {
   try {
-    await drizzleDb.run(sql`DELETE FROM print_queue WHERE id = ${id}`);
+    await ctx.db.run(sql`DELETE FROM print_queue WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`);
     return { success: true, message: 'Removed from print queue' };
   } catch (error) {
     console.error('Error removing queue item:', error);
@@ -270,7 +270,7 @@ export async function assignQueueToPrinter(ctx: TenantContext, printerId: number
            pm.printer_preset_id, pm.weight as module_weight
     FROM print_queue pq
     JOIN print_modules pm ON pq.module_id = pm.id
-    WHERE pq.status != 'done'
+    WHERE pq.status != 'done' AND pq.workspace_id = ${ctx.workspaceId}
   `);
 
   const slotRows = await drizzleDb.all<{
@@ -278,7 +278,7 @@ export async function assignQueueToPrinter(ctx: TenantContext, printerId: number
     slot_index: number;
     spool_preset_id: number | null;
     weight: number | null;
-  }>(sql`SELECT module_id, slot_index, spool_preset_id, weight FROM module_filament_slots`);
+  }>(sql`SELECT module_id, slot_index, spool_preset_id, weight FROM module_filament_slots WHERE workspace_id = ${ctx.workspaceId}`);
 
   const slotsByModule = new Map<number, typeof slotRows>();
   for (const r of slotRows ?? []) {
@@ -384,12 +384,12 @@ export async function assignQueueToPrinter(ctx: TenantContext, printerId: number
     return PRIORITY_SCORES[b.candidate.priority] - PRIORITY_SCORES[a.candidate.priority];
   });
 
-  await drizzleDb.run(sql`DELETE FROM printer_queued_jobs WHERE printer_id = ${printerId} AND is_completed = 0`);
+  await drizzleDb.run(sql`DELETE FROM printer_queued_jobs WHERE printer_id = ${printerId} AND is_completed = 0 AND workspace_id = ${ctx.workspaceId}`);
 
   const assignedQueueIds = new Set<number>();
   for (let i = 0; i < chosenCopies.length; i++) {
     const { candidate: c, filler } = chosenCopies[i];
-    await addPrinterQueuedJob(ctx.d1, { printerId, moduleId: c.moduleId, reason: filler ? 'TOPUP' : c.priority, sortOrder: i });
+    await addPrinterQueuedJob(ctx, { printerId, moduleId: c.moduleId, reason: filler ? 'TOPUP' : c.priority, sortOrder: i });
     assignedQueueIds.add(c.queueId);
   }
 
@@ -399,7 +399,7 @@ export async function assignQueueToPrinter(ctx: TenantContext, printerId: number
     const now = Math.floor(Date.now() / 1000);
     await drizzleDb.run(sql`
       UPDATE print_queue SET assigned_printer_id = ${printerId}, updated_at = ${now}
-      WHERE id IN (${sql.join([...assignedQueueIds].map((id) => sql`${id}`), sql`, `)})
+      WHERE workspace_id = ${ctx.workspaceId} AND id IN (${sql.join([...assignedQueueIds].map((id) => sql`${id}`), sql`, `)})
     `);
   }
 
@@ -418,20 +418,20 @@ export async function assignQueueToPrinter(ctx: TenantContext, printerId: number
  * using it raw over-orders filament.) A queued item with no recent velocity
  * (manual pin / new SKU) keeps its full quantity so it isn't silently dropped.
  */
-export async function getSpoolDemandFromQueue(db: D1Database, horizonDays = 30): Promise<QueueSpoolDemand[]> {
-  const drizzleDb = getDb(db);
+export async function getSpoolDemandFromQueue(ctx: TenantContext, horizonDays = 30): Promise<QueueSpoolDemand[]> {
+  const drizzleDb = ctx.db;
 
   const queueRows = await drizzleDb.all<{ object_id: number; module_id: number; quantity: number }>(sql`
-    SELECT object_id, module_id, quantity FROM print_queue WHERE module_id IS NOT NULL AND status != 'done'
+    SELECT object_id, module_id, quantity FROM print_queue WHERE module_id IS NOT NULL AND status != 'done' AND workspace_id = ${ctx.workspaceId}
   `);
 
   // Per-object velocity + finished-goods stock, to scope copies to the horizon.
-  const builder = new AIContextBuilder(db);
+  const builder = new AIContextBuilder(ctx);
   const inv = await builder.getInventoryWithVelocity();
   const invByObject = new Map(inv.map((i) => [i.id, i]));
 
   const slotRows = await drizzleDb.all<{ module_id: number; spool_preset_id: number | null; weight: number | null }>(sql`
-    SELECT module_id, spool_preset_id, weight FROM module_filament_slots
+    SELECT module_id, spool_preset_id, weight FROM module_filament_slots WHERE workspace_id = ${ctx.workspaceId}
   `);
   const slotsByModule = new Map<number, typeof slotRows>();
   for (const r of slotRows ?? []) {
@@ -465,11 +465,11 @@ export async function getSpoolDemandFromQueue(db: D1Database, horizonDays = 30):
     material: string;
     default_weight: number;
     in_storage: number;
-  }>(sql`SELECT id, color, color_hex, brand, material, default_weight, in_storage FROM spool_presets`);
+  }>(sql`SELECT id, color, color_hex, brand, material, default_weight, in_storage FROM spool_presets WHERE workspace_id = ${ctx.workspaceId}`);
   const presetById = new Map((presetRows ?? []).map((p) => [p.id, p]));
 
   const loadedRows = await drizzleDb.all<{ preset_id: number; remaining_weight: number }>(sql`
-    SELECT preset_id, remaining_weight FROM spools WHERE preset_id IS NOT NULL
+    SELECT preset_id, remaining_weight FROM spools WHERE preset_id IS NOT NULL AND workspace_id = ${ctx.workspaceId}
   `);
   const loadedByPreset = new Map<number, number>();
   for (const r of loadedRows ?? []) {

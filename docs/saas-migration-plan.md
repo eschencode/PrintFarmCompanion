@@ -267,7 +267,16 @@ catalog dedup on presets via `COALESCE(workspace_id,0)`.
 - [x] Seed: jobs + job_spools per-workspace.
 - [x] **Verified:** DB 4 jobs/workspace scoped; all queries `WHERE workspace_id`; pages render; typecheck clean.
 
-**Remaining groups (6–9): not started.** Next: Group 6 (print_queue + printer_queued_jobs) — unblocks all the deferred queue/recommendation reads.
+### Group 6 — print_queue + printer_queued_jobs ✅ DONE 2026-07-06
+
+- [x] Migration `0018`: `workspace_id NOT NULL` + index on both.
+- [x] `printQueue.ts`: all 7 fns → `ctx`, scoped (regenerate/getGlobalQueue/addManual/remove/assign/spoolDemand). `printers.ts` 4 queue fns → `ctx`.
+- [x] **`AIContextBuilder` (context-builder.ts) → `ctx`** — this closes ALL the deferred queue/recommendation leaks flagged in Groups 1–4 (objects/inventory_log/modules primary reads). `AIRecommendationService` + `generateAndSaveSuggestedQueue` fully ctx.
+- [x] Callers: dashboard, inventory (+regenerateQueue action), spools, `api/ai-recommendations` (all 3 types).
+- [x] Seed wipe list extended (queue tables are runtime-generated, not seeded).
+- [x] **Leak test passed:** Alice queue object_ids [1-4], Bob [5-8]; spool-demand presets differ per workspace; print_queue 4 rows/workspace.
+
+**Remaining groups (7–9): not started.** Next: Group 7 (Shopify — the trickiest: `shopify_settings` single-row→per-workspace, `shopify_sku_mapping`, `shopify_orders`, `shopify_skus`, + the external cron loop + per-workspace encrypted creds).
 
 ### Step N — per table-group (repeat for each group, in this order)
 

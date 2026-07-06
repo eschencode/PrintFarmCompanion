@@ -12,12 +12,12 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   }
   const ctx = requireCtx(locals);
 
-  await regenerateGlobalQueueIfStale(database);
+  await regenerateGlobalQueueIfStale(ctx);
 
   const [spoolPresets, usageStats, spoolDemand] = await Promise.all([
     db.getAllSpoolPresets(ctx),
     db.getSpoolUsageStats(ctx),
-    getSpoolDemandFromQueue(database),
+    getSpoolDemandFromQueue(ctx),
   ]);
 
   return { spoolPresets, usageStats, spoolDemand };

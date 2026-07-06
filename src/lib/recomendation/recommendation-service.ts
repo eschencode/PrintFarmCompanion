@@ -19,8 +19,7 @@ export class AIRecommendationService {
 
   constructor(ctx: TenantContext) {
     this.ctx = ctx;
-    // AIContextBuilder is still db-based (Group 6) — pass the raw handle.
-    this.contextBuilder = new AIContextBuilder(ctx.d1);
+    this.contextBuilder = new AIContextBuilder(ctx);
   }
 
   /**
@@ -31,7 +30,7 @@ export class AIRecommendationService {
    * Deduped by preset_id — the most urgent queue item a preset can satisfy wins.
    */
   async suggestSpoolToLoad(printerId?: number): Promise<SpoolSuggestion[]> {
-    const queue = await getGlobalQueue(this.ctx.d1);
+    const queue = await getGlobalQueue(this.ctx);
     const modules = await this.contextBuilder.getModulesContext();
     const moduleById = new Map(modules.map(m => [m.id, m]));
 
@@ -112,7 +111,7 @@ export async function generateAndSaveSuggestedQueue(
   ctx: TenantContext,
   printerId: number
 ): Promise<SuggestedPrintQueueItem[]> {
-  await regenerateGlobalQueueIfStale(ctx.d1);
+  await regenerateGlobalQueueIfStale(ctx);
   await assignQueueToPrinter(ctx, printerId);
 
   const drizzleDb = ctx.db;
@@ -128,12 +127,12 @@ export async function generateAndSaveSuggestedQueue(
     FROM printer_queued_jobs pqj
     JOIN print_modules pm ON pqj.module_id = pm.id
     LEFT JOIN objects o ON pm.object_id = o.id
-    WHERE pqj.printer_id = ${printerId} AND pqj.is_completed = 0
+    WHERE pqj.printer_id = ${printerId} AND pqj.is_completed = 0 AND pqj.workspace_id = ${ctx.workspaceId}
     ORDER BY pqj.sort_order
   `);
 
   // Live days-of-cover per object, so the card can show "Xd left" on needed prints.
-  const inv = await new AIContextBuilder(ctx.d1).getInventoryWithVelocity();
+  const inv = await new AIContextBuilder(ctx).getInventoryWithVelocity();
   const coverByObject = new Map(inv.map((i) => [i.id, i.days_until_stockout]));
 
   const loadedSlots = await getLoadedSpools(ctx, printerId);

@@ -479,33 +479,31 @@ export async function loadExistingSpoolIntoSlot(
   }
 }
 
-// ─── Printer Queue (db-based until Group 6) ──────────────────────────────────
+// ─── Printer Queue ───────────────────────────────────────────────────────────
 
 export async function getPrinterQueuedJobs(
-  db: D1Database,
+  ctx: TenantContext,
   printerId: number,
 ): Promise<PrinterQueuedJob[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all<PrinterQueuedJob>(sql`
+  const rows = await ctx.db.all<PrinterQueuedJob>(sql`
     SELECT pqj.*, pm.name as module_name, pm.thumbnail
     FROM printer_queued_jobs pqj
     LEFT JOIN print_modules pm ON pqj.module_id = pm.id
-    WHERE pqj.printer_id = ${printerId}
+    WHERE pqj.printer_id = ${printerId} AND pqj.workspace_id = ${ctx.workspaceId}
     ORDER BY pqj.sort_order
   `);
   return rows ?? [];
 }
 
 export async function addPrinterQueuedJob(
-  db: D1Database,
+  ctx: TenantContext,
   job: { printerId: number; moduleId: number; reason: string; sortOrder: number },
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
   try {
     const now = Math.floor(Date.now() / 1000);
-    await drizzleDb.run(sql`
-      INSERT INTO printer_queued_jobs (printer_id, module_id, reason, sort_order, is_completed, created_at, updated_at)
-      VALUES (${job.printerId}, ${job.moduleId}, ${job.reason}, ${job.sortOrder}, 0, ${now}, ${now})
+    await ctx.db.run(sql`
+      INSERT INTO printer_queued_jobs (workspace_id, printer_id, module_id, reason, sort_order, is_completed, created_at, updated_at)
+      VALUES (${ctx.workspaceId}, ${job.printerId}, ${job.moduleId}, ${job.reason}, ${job.sortOrder}, 0, ${now}, ${now})
     `);
     return { success: true, message: 'Queue item added' };
   } catch (error) {
@@ -514,11 +512,10 @@ export async function addPrinterQueuedJob(
   }
 }
 
-export async function completePrinterQueuedJob(db: D1Database, id: number): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
+export async function completePrinterQueuedJob(ctx: TenantContext, id: number): Promise<ServerResponse> {
   try {
-    await drizzleDb.run(
-      sql`UPDATE printer_queued_jobs SET is_completed = 1, updated_at = ${Math.floor(Date.now() / 1000)} WHERE id = ${id}`,
+    await ctx.db.run(
+      sql`UPDATE printer_queued_jobs SET is_completed = 1, updated_at = ${Math.floor(Date.now() / 1000)} WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`,
     );
     return { success: true, message: 'Queue item completed' };
   } catch (error) {
@@ -527,10 +524,9 @@ export async function completePrinterQueuedJob(db: D1Database, id: number): Prom
   }
 }
 
-export async function deletePrinterQueuedJob(db: D1Database, id: number): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
+export async function deletePrinterQueuedJob(ctx: TenantContext, id: number): Promise<ServerResponse> {
   try {
-    await drizzleDb.run(sql`DELETE FROM printer_queued_jobs WHERE id = ${id}`);
+    await ctx.db.run(sql`DELETE FROM printer_queued_jobs WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`);
     return { success: true, message: 'Queue item removed' };
   } catch (error) {
     console.error('Error deleting queue item:', error);

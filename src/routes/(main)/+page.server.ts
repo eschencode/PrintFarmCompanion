@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   // Warm the global queue on dashboard load so the first per-printer spool-load
   // assignment is fast (no synchronous full regeneration on the click path).
   const ctx = requireCtx(locals);
-  await regenerateGlobalQueueIfStale(database);
+  await regenerateGlobalQueueIfStale(ctx);
 
   const [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets] = await Promise.all([
     db.getAllPrintersFull(ctx),
