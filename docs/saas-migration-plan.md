@@ -257,7 +257,17 @@ catalog dedup on presets via `COALESCE(workspace_id,0)`.
 - [x] **Leak test passed:** Alice modules [1,2], Bob [3,4]; pages render.
 - [ ] DEFERRED to Group 6 (queue/recommendation module reads): `printQueue.ts` (assignQueueToPrinter, demand, regen), `context-builder`, `recommendation-service`, `getPrinterQueuedJobs` join. DEFERRED to Group 5: `jobs.ts` print_jobs→modules joins.
 
-**Remaining groups (5–9): not started.** Next: Group 5 (print_jobs + print_job_spools).
+### Group 5 — print_jobs + print_job_spools ✅ DONE 2026-07-06
+
+- [x] Migration `0017`: `workspace_id NOT NULL` + index on both.
+- [x] `jobs.ts`: all 14 fns → `ctx`, every query scoped. `completePrintJob` signature simplified from `(db, workspaceId, …)` → `(ctx, …)`.
+- [x] Resolves the deferred `print_jobs → printers/modules` joins from Groups 3/4 (now filtered by `pj.workspace_id` directly).
+- [x] Raw job SQL in endpoints scoped: `api/pi/print` (insert/delete/update job + job_spools), `api/pi/control` (cancel stamp), `api/pi/status` (open-job lookup), `api/printer/[id]/finished`, `api/print-modules` DELETE (null module refs), `printers.ts` delete-check.
+- [x] **`api/pi/webhook`** (external, no session): left as-is — matches by globally-unique `external_task_id` (UNIQUE), returns no tenant data, so workspace-safe by construction.
+- [x] Seed: jobs + job_spools per-workspace.
+- [x] **Verified:** DB 4 jobs/workspace scoped; all queries `WHERE workspace_id`; pages render; typecheck clean.
+
+**Remaining groups (6–9): not started.** Next: Group 6 (print_queue + printer_queued_jobs) — unblocks all the deferred queue/recommendation reads.
 
 ### Step N — per table-group (repeat for each group, in this order)
 

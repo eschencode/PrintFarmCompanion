@@ -31,7 +31,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   const drizzleDb = getDb(database);
   const [printers, printJobs, modules, spools] = await Promise.all([
     db.getAllPrintersFull(ctx), // includes nested loaded_spools[] so the spool table can show "loaded on X"
-    getAllPrintJobsForStats(database),
+    getAllPrintJobsForStats(ctx),
     db.getAllPrintModules(ctx),
     db.getAllSpools(ctx),
   ]);

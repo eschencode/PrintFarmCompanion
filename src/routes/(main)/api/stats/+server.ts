@@ -31,7 +31,7 @@ export const GET: RequestHandler = async ({ url, platform, locals }) => {
   try {
     const [printers, allJobs] = await Promise.all([
       db.getAllPrinters(ctx),
-      getAllPrintJobsForStats(database),
+      getAllPrintJobsForStats(ctx),
     ]);
 
     const windowJobs = allJobs.filter(

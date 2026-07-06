@@ -303,7 +303,7 @@ export const DELETE: RequestHandler = async ({ url, platform, locals }) => {
       }
     }
 
-    await drizzleDb.run(sql`UPDATE print_jobs SET module_id = NULL WHERE module_id = ${id}`);
+    await drizzleDb.run(sql`UPDATE print_jobs SET module_id = NULL WHERE module_id = ${id} AND workspace_id = ${ctx.workspaceId}`);
     await drizzleDb.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${id} AND workspace_id = ${ctx.workspaceId}`);
     await drizzleDb.run(sql`DELETE FROM print_modules WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`);
 

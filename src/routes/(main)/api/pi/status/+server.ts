@@ -70,7 +70,7 @@ export const GET: RequestHandler = async ({ url, platform, locals }) => {
 
         if (printer) {
           const openJob = await drizzleDb.get(
-            sql`SELECT id FROM print_jobs WHERE printer_id = ${printer.id} AND status = 'printing' LIMIT 1`
+            sql`SELECT id FROM print_jobs WHERE printer_id = ${printer.id} AND status = 'printing' AND workspace_id = ${ctx.workspaceId} LIMIT 1`
           );
 
           if (!openJob) {

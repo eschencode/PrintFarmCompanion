@@ -173,19 +173,18 @@ for (const u of users) {
   });
 
   // A few coherent print jobs (module + printer + spool all in this workspace).
-  // print_jobs are still global (Group 5) but the FKs are real. start_time in ms.
   ["successful", "successful", "failed", "successful"].forEach((status, i) => {
     const jid = run(
-      `INSERT INTO print_jobs (module_id, printer_id, external_task_id, start_time, expected_end_time, status, failure_reason, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO print_jobs (workspace_id, module_id, printer_id, external_task_id, start_time, expected_end_time, status, failure_reason, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [
-        modules[i % modules.length], printerIds[i % printerIds.length],
+        wsId, modules[i % modules.length], printerIds[i % printerIds.length],
         crypto.randomUUID(), msAgo(i + 1), msAgo(i + 1) + 90 * 60_000,
         status, status === "failed" ? "Spaghetti / detach" : null, now, now,
       ],
     );
-    run(`INSERT INTO print_job_spools (print_job_id, slot_index, spool_id, used_weight) VALUES (?,?,?,?)`,
-      [jid, 0, spoolA, status === "successful" ? 24 : 5]);
+    run(`INSERT INTO print_job_spools (workspace_id, print_job_id, slot_index, spool_id, used_weight) VALUES (?,?,?,?,?)`,
+      [wsId, jid, 0, spoolA, status === "successful" ? 24 : 5]);
   });
 
   console.log(`  ${u.email}  (workspace #${wsId} "${u.workspace}") — 4 products, 2 modules, 4 jobs`);

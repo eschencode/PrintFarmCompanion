@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
+import { requireCtx } from '$lib/server/context';
 
 /**
  * POST /api/printer/:id/finished
@@ -12,9 +13,10 @@ import { getDb } from '$lib/db';
  * path for desktop-direct (which has no webhook) and a frontend fallback for the
  * stuck-at-99% case. Idempotent: when the job is already finished it matches 0 rows.
  */
-export const POST: RequestHandler = async ({ params, request, platform }) => {
+export const POST: RequestHandler = async ({ params, request, platform, locals }) => {
   const db = platform?.env?.DB;
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
+  const ctx = requireCtx(locals);
 
   const id = Number(params.id);
   if (!id) return json({ success: false, error: 'Invalid printer id' }, { status: 400 });
@@ -34,7 +36,7 @@ export const POST: RequestHandler = async ({ params, request, platform }) => {
     SET status = 'print_finished',
         failure_reason = COALESCE(${failureHint}, failure_reason),
         updated_at = ${now}
-    WHERE printer_id = ${id} AND status = 'printing'
+    WHERE printer_id = ${id} AND status = 'printing' AND workspace_id = ${ctx.workspaceId}
   `);
 
   return json({ success: true });

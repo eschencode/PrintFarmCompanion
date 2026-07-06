@@ -280,7 +280,7 @@ export async function updatePrinter(
 export async function deletePrinter(ctx: TenantContext, id: number): Promise<ServerResponse> {
   try {
     const activeJob = await ctx.db.get<{ count: number }>(
-      sql`SELECT COUNT(*) as count FROM print_jobs WHERE printer_id = ${id} AND status = 'printing'`,
+      sql`SELECT COUNT(*) as count FROM print_jobs WHERE printer_id = ${id} AND status = 'printing' AND workspace_id = ${ctx.workspaceId}`,
     );
     if ((activeJob?.count ?? 0) > 0) {
       return { success: false, error: 'Cannot delete printer with an active print job' };

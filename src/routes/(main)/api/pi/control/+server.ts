@@ -64,7 +64,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
       await drizzleDb.run(sql`
         UPDATE print_jobs
         SET failure_reason = 'Cancelled by user'
-        WHERE printer_id = ${body.printer_id} AND status = 'printing'
+        WHERE printer_id = ${body.printer_id} AND status = 'printing' AND workspace_id = ${ctx.workspaceId}
       `);
     }
 

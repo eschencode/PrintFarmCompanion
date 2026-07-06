@@ -418,6 +418,9 @@ export const printJobs = sqliteTable(
   "print_jobs",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     moduleId: integer("module_id").references(() => printModules.id, {
       onDelete: "set null",
     }),
@@ -458,6 +461,7 @@ export const printJobs = sqliteTable(
     index("idx_print_jobs_module").on(t.moduleId),
     index("idx_print_jobs_status").on(t.status),
     index("idx_print_jobs_created_at").on(t.createdAt),
+    index("idx_print_jobs_workspace").on(t.workspaceId),
   ],
 );
 
@@ -470,6 +474,9 @@ export const printJobs = sqliteTable(
 export const printJobSpools = sqliteTable(
   "print_job_spools",
   {
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     printJobId: integer("print_job_id")
       .notNull()
       .references(() => printJobs.id, { onDelete: "cascade" }),
@@ -484,6 +491,7 @@ export const printJobSpools = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.printJobId, t.slotIndex] }),
     index("idx_print_job_spools_spool").on(t.spoolId),
+    index("idx_print_job_spools_workspace").on(t.workspaceId),
   ],
 );
 

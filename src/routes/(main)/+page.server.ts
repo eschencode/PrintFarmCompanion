@@ -21,8 +21,8 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     db.getAllPrintersFull(ctx),
     db.getAllSpools(ctx),
     db.getAllPrintModules(ctx),
-    db.getActivePrintJobs(database),
-    db.getAllPrintJobs(database),
+    db.getActivePrintJobs(ctx),
+    db.getAllPrintJobs(ctx),
     db.getAllSpoolPresets(ctx),
     db.getSpoolUsageStats(ctx),
     db.getAllGridPresets(database),
@@ -154,15 +154,14 @@ export const actions: Actions = {
       // {0: total} when the module has no per-slot weights.
       let usedWeightBySlot: Record<number, number> = {};
       if (success && actualWeight > 0) {
-        const job = await db.getPrintJobById(database, jobId);
+        const job = await db.getPrintJobById(ctx, jobId);
         usedWeightBySlot = job?.module_id
           ? await db.distributeWeightAcrossSlots(ctx, job.module_id, actualWeight)
           : { 0: actualWeight };
       }
 
       await db.completePrintJob(
-        database,
-        ctx.workspaceId,
+        ctx,
         jobId,
         success,
         usedWeightBySlot,

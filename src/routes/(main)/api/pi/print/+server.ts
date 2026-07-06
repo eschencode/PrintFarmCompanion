@@ -64,12 +64,12 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
   // concurrent /api/pi/status poll would see the printer RUNNING with no open
   // job and misfire `detected_external` for our own print (and the card would
   // sit idle until the row landed). Inserting first closes that race.
-  await closeOpenPrintJobsForPrinter(db, printer_id, module_id);
+  await closeOpenPrintJobsForPrinter(ctx, printer_id, module_id);
 
   const now = Math.floor(Date.now() / 1000);
   const insert = await drizzleDb.run(sql`
-    INSERT INTO print_jobs (module_id, printer_id, start_time, status, created_at, updated_at)
-    VALUES (${module_id}, ${printer_id}, ${now}, 'printing', ${now}, ${now})
+    INSERT INTO print_jobs (workspace_id, module_id, printer_id, start_time, status, created_at, updated_at)
+    VALUES (${ctx.workspaceId}, ${module_id}, ${printer_id}, ${now}, 'printing', ${now}, ${now})
   `);
   const jobId = insert.meta.last_row_id as number;
 
@@ -91,12 +91,12 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
     piResult = await piResp.json() as typeof piResult;
   } catch (e) {
     // Pi never started the print — drop the placeholder so it can't be adopted.
-    await drizzleDb.run(sql`DELETE FROM print_jobs WHERE id = ${jobId}`);
+    await drizzleDb.run(sql`DELETE FROM print_jobs WHERE id = ${jobId} AND workspace_id = ${ctx.workspaceId}`);
     return json({ success: false, error: `Pi unreachable: ${e}` }, { status: 502 });
   }
 
   if (!piResult.success) {
-    await drizzleDb.run(sql`DELETE FROM print_jobs WHERE id = ${jobId}`);
+    await drizzleDb.run(sql`DELETE FROM print_jobs WHERE id = ${jobId} AND workspace_id = ${ctx.workspaceId}`);
     return json({ success: false, error: piResult.error ?? 'Pi print failed' }, { status: 502 });
   }
 
@@ -105,15 +105,15 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
   await drizzleDb.run(sql`
     UPDATE print_jobs
     SET external_task_id = ${piResult.task_id ?? null}, updated_at = ${Math.floor(Date.now() / 1000)}
-    WHERE id = ${jobId}
+    WHERE id = ${jobId} AND workspace_id = ${ctx.workspaceId}
   `);
 
   const loadedSlots = await getLoadedSpools(ctx, printer_id);
   for (const slot of loadedSlots) {
     const s = slot as unknown as { slot_index: number; spool_id: number | null };
     await drizzleDb.run(sql`
-      INSERT INTO print_job_spools (print_job_id, slot_index, spool_id, used_weight)
-      VALUES (${jobId}, ${s.slot_index}, ${s.spool_id ?? null}, NULL)
+      INSERT INTO print_job_spools (workspace_id, print_job_id, slot_index, spool_id, used_weight)
+      VALUES (${ctx.workspaceId}, ${jobId}, ${s.slot_index}, ${s.spool_id ?? null}, NULL)
     `);
   }
 
