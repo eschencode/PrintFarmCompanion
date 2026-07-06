@@ -43,6 +43,7 @@ const rand = () => Math.random().toString(36).slice(2, 7);
 
 // ── wipe (FK-off, order-independent) ─────────────────────────────────────────
 for (const t of [
+  "shopify_orders", "shopify_skus", "shopify_sku_mapping", "shopify_settings",
   "printer_queued_jobs", "print_queue",
   "inventory_log", "print_job_spools", "print_jobs", "module_filament_slots",
   "print_modules", "printer_loaded_spools", "printer_secrets", "printers",
@@ -142,6 +143,9 @@ for (const u of users) {
       [wsId, p.name, p.stock, p.min, null, now, now],
     );
     objectIds.push(oid);
+    // A Shopify SKU mapping per product (testable isolation without real creds).
+    run(`INSERT INTO shopify_sku_mapping (workspace_id, shopify_sku, object_id, quantity, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+      [wsId, `SKU-${p.name.replace(/\s+/g, "").toUpperCase()}`, oid, 1, now, now]);
     // Rich history spread over the last 30 days: printed + sold (b2c/b2b) + a count.
     const history: [string, number, number][] = [
       ["+ printed", 20, 28], ["- sold b2c", 6, 24], ["+ printed", 15, 18],

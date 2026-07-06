@@ -24,13 +24,14 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     };
   }
 
+  const ctx = requireCtx(locals);
   const drizzleDb = getDb(database);
-  const shopifyConfig = await getShopifyConfigSummary(database, platform?.env);
+  const shopifyConfig = await getShopifyConfigSummary(database, platform?.env, ctx.workspaceId);
   // Decryption can throw on a missing/wrong ENCRYPTION_KEY — don't let that lock
   // the settings page (you still need it to fix the config). Degrade to "not configured".
   let runtimeConfig = null;
   try {
-    runtimeConfig = await getShopifyConfig(database, platform?.env);
+    runtimeConfig = await getShopifyConfig(database, platform?.env, ctx.workspaceId);
   } catch (e) {
     console.error('Failed to resolve Shopify config (decryption?):', e);
   }
@@ -42,7 +43,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   if (shopifyConfigured && runtimeConfig) {
     try {
       const client = new ShopifyClient(runtimeConfig.storeDomain, runtimeConfig.accessToken);
-      const syncService = new ShopifySyncService(database, requireCtx(locals).workspaceId, client);
+      const syncService = new ShopifySyncService(database, ctx.workspaceId, client);
       shopifySyncState = await syncService.getSyncState();
       shopifyRecentOrders = await syncService.getRecentOrders(10);
     } catch (e) {
@@ -54,16 +55,16 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     sql`SELECT sm.id, sm.shopify_sku, sm.object_id, sm.quantity, o.name as object_name
         FROM shopify_sku_mapping sm
         LEFT JOIN objects o ON sm.object_id = o.id
+        WHERE sm.workspace_id = ${ctx.workspaceId}
         ORDER BY sm.shopify_sku, o.name`
   );
   const skuMappings = (skuMappingsRaw || []) as { id: number; shopify_sku: string; object_id: number; quantity: number; object_name: string }[];
 
   const shopifySkusRaw = await drizzleDb.all(
-    sql`SELECT sku, product_title, variant_title FROM shopify_skus ORDER BY product_title, sku`
+    sql`SELECT sku, product_title, variant_title FROM shopify_skus WHERE workspace_id = ${ctx.workspaceId} ORDER BY product_title, sku`
   );
   const shopifySkus = (shopifySkusRaw || []) as { sku: string; product_title: string | null; variant_title: string | null }[];
 
-  const ctx = requireCtx(locals);
   const inventoryItems = await getAllObjects(ctx);
   const spoolPresets = await db.getAllSpoolPresets(ctx);
 
@@ -73,11 +74,12 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
 export const actions: Actions = {
   syncShopify: async ({ platform, locals }) => {
     const database = platform?.env?.DB;
-    const config = await getShopifyConfig(database, platform?.env);
+    const ctx = requireCtx(locals);
+    const config = await getShopifyConfig(database, platform?.env, ctx.workspaceId);
     if (!database || !config) return fail(400, { error: 'Shopify not configured' });
     try {
       const client = new ShopifyClient(config.storeDomain, config.accessToken);
-      const syncService = new ShopifySyncService(database, requireCtx(locals).workspaceId, client);
+      const syncService = new ShopifySyncService(database, ctx.workspaceId, client);
       const result = await syncService.sync(true);
       return { success: result.success, ordersProcessed: result.ordersProcessed, itemsDeducted: result.itemsDeducted, skippedOrders: result.skippedOrders, errors: result.errors.slice(0, 10), debug: result.debug };
     } catch (err) {
@@ -89,11 +91,12 @@ export const actions: Actions = {
   // so adopting the integration on a store with history doesn't replay past sales.
   baselineShopify: async ({ platform, locals }) => {
     const database = platform?.env?.DB;
-    const config = await getShopifyConfig(database, platform?.env);
+    const ctx = requireCtx(locals);
+    const config = await getShopifyConfig(database, platform?.env, ctx.workspaceId);
     if (!database || !config) return fail(400, { error: 'Shopify not configured' });
     try {
       const client = new ShopifyClient(config.storeDomain, config.accessToken);
-      const syncService = new ShopifySyncService(database, requireCtx(locals).workspaceId, client);
+      const syncService = new ShopifySyncService(database, ctx.workspaceId, client);
       const result = await syncService.baseline();
       return { success: true, message: `Baseline set — recorded ${result.recorded} (${result.alreadyPresent} already present, ${result.fetched} fetched). Newest order recorded: #${result.latestOrderNumber}. Verify that matches your latest order in Shopify — only orders after it will deduct.` };
     } catch (err) {
@@ -103,11 +106,12 @@ export const actions: Actions = {
 
   syncShopifySkus: async ({ platform, locals }) => {
     const database = platform?.env?.DB;
-    const config = await getShopifyConfig(database, platform?.env);
+    const ctx = requireCtx(locals);
+    const config = await getShopifyConfig(database, platform?.env, ctx.workspaceId);
     if (!database || !config) return fail(400, { error: 'Shopify not configured' });
     try {
       const client = new ShopifyClient(config.storeDomain, config.accessToken);
-      const syncService = new ShopifySyncService(database, requireCtx(locals).workspaceId, client);
+      const syncService = new ShopifySyncService(database, ctx.workspaceId, client);
       const result = await syncService.syncSkus();
       if (!result.success) return fail(500, { error: `SKU refresh failed: ${result.error}` });
       return { success: true, message: `Synced ${result.count} SKU${result.count === 1 ? '' : 's'} from Shopify` };
@@ -116,19 +120,18 @@ export const actions: Actions = {
     }
   },
 
-  testShopifyConnection: async ({ platform }) => {
-    const config = await getShopifyConfig(platform?.env?.DB, platform?.env);
+  testShopifyConnection: async ({ platform, locals }) => {
+    const config = await getShopifyConfig(platform?.env?.DB, platform?.env, requireCtx(locals).workspaceId);
     if (!config) return { success: false, error: 'Shopify not configured' };
     const client = new ShopifyClient(config.storeDomain, config.accessToken);
     const result = await client.testConnection();
     return { success: result.success, shopName: result.shopName, error: result.error };
   },
 
-  // MULTI-USER (Phase 3): the id=1 singleton upsert must become a per-workspace
-  // upsert (workspace_id key). Today every caller shares one credential row.
-  saveShopifyConfig: async ({ platform, request }) => {
+  saveShopifyConfig: async ({ platform, request, locals }) => {
     const database = platform?.env?.DB;
     if (!database) return fail(500, { error: 'Database not available' });
+    const ctx = requireCtx(locals);
     const encryptionKey = platform?.env?.ENCRYPTION_KEY;
     if (!encryptionKey) return fail(500, { error: 'ENCRYPTION_KEY not configured on the server' });
     const form = await request.formData();
@@ -146,7 +149,7 @@ export const actions: Actions = {
 
     const drizzleDb = getDb(database);
     const existing = await drizzleDb.get<{ access_token: string }>(
-      sql`SELECT access_token FROM shopify_settings ORDER BY updated_at DESC LIMIT 1`
+      sql`SELECT access_token FROM shopify_settings WHERE workspace_id = ${ctx.workspaceId} LIMIT 1`
     );
     // Freshly-entered token → encrypt. Blank → reuse the stored (already-encrypted) value as-is.
     const tokenToSave = accessToken
@@ -156,9 +159,9 @@ export const actions: Actions = {
 
     const now = Math.floor(Date.now() / 1000);
     await drizzleDb.run(sql`
-      INSERT INTO shopify_settings (id, store_domain, access_token, updated_at)
-      VALUES (1, ${storeDomain}, ${tokenToSave}, ${now})
-      ON CONFLICT(id) DO UPDATE SET
+      INSERT INTO shopify_settings (workspace_id, store_domain, access_token, updated_at)
+      VALUES (${ctx.workspaceId}, ${storeDomain}, ${tokenToSave}, ${now})
+      ON CONFLICT(workspace_id) DO UPDATE SET
         store_domain = excluded.store_domain,
         access_token = excluded.access_token,
         updated_at = excluded.updated_at
@@ -167,9 +170,10 @@ export const actions: Actions = {
     return { success: true, message: 'Shopify settings saved' };
   },
 
-  saveSkuSet: async ({ platform, request }) => {
+  saveSkuSet: async ({ platform, request, locals }) => {
     const database = platform?.env?.DB;
     if (!database) return fail(400, { error: 'Database not available' });
+    const ctx = requireCtx(locals);
     const drizzleDb = getDb(database);
     const form = await request.formData();
     const shopifySku = (form.get('shopifySku') as string).trim();
@@ -180,26 +184,27 @@ export const actions: Actions = {
     catch { return fail(400, { error: 'Invalid items data' }); }
     if (items.length === 0) return fail(400, { error: 'At least one item is required' });
     try {
-      if (originalSku) await drizzleDb.run(sql`DELETE FROM shopify_sku_mapping WHERE shopify_sku = ${originalSku}`);
+      if (originalSku) await drizzleDb.run(sql`DELETE FROM shopify_sku_mapping WHERE shopify_sku = ${originalSku} AND workspace_id = ${ctx.workspaceId}`);
       for (const item of items) {
         await drizzleDb.run(sql`
-          INSERT INTO shopify_sku_mapping (shopify_sku, object_id, quantity)
-          VALUES (${shopifySku}, ${item.object_id}, ${item.quantity})
-          ON CONFLICT (shopify_sku, object_id) DO UPDATE SET quantity = excluded.quantity
+          INSERT INTO shopify_sku_mapping (workspace_id, shopify_sku, object_id, quantity)
+          VALUES (${ctx.workspaceId}, ${shopifySku}, ${item.object_id}, ${item.quantity})
+          ON CONFLICT (workspace_id, shopify_sku, object_id) DO UPDATE SET quantity = excluded.quantity
         `);
       }
       return { success: true };
     } catch (err) { return fail(400, { error: `Failed to save set: ${err}` }); }
   },
 
-  deleteSkuSet: async ({ platform, request }) => {
+  deleteSkuSet: async ({ platform, request, locals }) => {
     const database = platform?.env?.DB;
     if (!database) return fail(400, { error: 'Database not available' });
+    const ctx = requireCtx(locals);
     const drizzleDb = getDb(database);
     const form = await request.formData();
     const shopifySku = (form.get('shopifySku') as string).trim();
     try {
-      await drizzleDb.run(sql`DELETE FROM shopify_sku_mapping WHERE shopify_sku = ${shopifySku}`);
+      await drizzleDb.run(sql`DELETE FROM shopify_sku_mapping WHERE shopify_sku = ${shopifySku} AND workspace_id = ${ctx.workspaceId}`);
       return { success: true };
     } catch (err) { return fail(400, { error: `Failed to delete set: ${err}` }); }
   },

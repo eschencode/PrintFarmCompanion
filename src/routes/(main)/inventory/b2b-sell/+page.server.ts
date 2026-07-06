@@ -73,7 +73,7 @@ export const actions: Actions = {
       for (const entry of entries) {
         if (entry.count <= 0) continue;
         const components = await drizzleDb.all(sql`
-          SELECT sm.object_id, sm.quantity FROM shopify_sku_mapping sm WHERE sm.shopify_sku = ${entry.shopify_sku}
+          SELECT sm.object_id, sm.quantity FROM shopify_sku_mapping sm WHERE sm.shopify_sku = ${entry.shopify_sku} AND sm.workspace_id = ${ctx.workspaceId}
         `);
         for (const comp of (components || []) as { object_id: number; quantity: number }[]) {
           await recordSaleB2B(ctx, comp.object_id, comp.quantity * entry.count);

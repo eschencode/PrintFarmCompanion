@@ -69,7 +69,7 @@ export class ShopifySyncService {
     async getSyncState(): Promise<SyncState> {
         const drizzleDb = getDb(this.db);
         const row = await drizzleDb.get<{ max_id: number | null; last_at: number | null }>(
-            sql`SELECT MAX(CAST(order_id AS INTEGER)) AS max_id, MAX(processed_at) AS last_at FROM shopify_orders`
+            sql`SELECT MAX(CAST(order_id AS INTEGER)) AS max_id, MAX(processed_at) AS last_at FROM shopify_orders WHERE workspace_id = ${this.workspaceId}`
         );
         return {
             last_order_id: row?.max_id != null ? String(row.max_id) : null,
@@ -92,11 +92,11 @@ export class ShopifySyncService {
 
             const drizzleDb = getDb(this.db);
             const now = Math.floor(Date.now() / 1000);
-            await drizzleDb.run(sql`DELETE FROM shopify_skus`);
+            await drizzleDb.run(sql`DELETE FROM shopify_skus WHERE workspace_id = ${this.workspaceId}`);
             for (const v of bySku.values()) {
                 await drizzleDb.run(sql`
-                    INSERT INTO shopify_skus (sku, product_title, variant_title, product_id, variant_id, synced_at)
-                    VALUES (${v.sku}, ${v.product_title}, ${v.variant_title}, ${v.product_id}, ${v.variant_id}, ${now})
+                    INSERT INTO shopify_skus (workspace_id, sku, product_title, variant_title, product_id, variant_id, synced_at)
+                    VALUES (${this.workspaceId}, ${v.sku}, ${v.product_title}, ${v.variant_title}, ${v.product_id}, ${v.variant_id}, ${now})
                 `);
             }
             return { success: true, count: bySku.size };
@@ -111,7 +111,7 @@ export class ShopifySyncService {
     async getSkuMappings(): Promise<Map<string, SkuMapping[]>> {
         const drizzleDb = getDb(this.db);
         const rows = await drizzleDb.all<SkuMapping>(
-            sql`SELECT shopify_sku, object_id, quantity FROM shopify_sku_mapping`
+            sql`SELECT shopify_sku, object_id, quantity FROM shopify_sku_mapping WHERE workspace_id = ${this.workspaceId}`
         );
 
         const mappings = new Map<string, SkuMapping[]>();
@@ -131,7 +131,7 @@ export class ShopifySyncService {
     async isOrderProcessed(orderId: number): Promise<boolean> {
         const drizzleDb = getDb(this.db);
         const result = await drizzleDb.get<{ found: number }>(
-            sql`SELECT 1 AS found FROM shopify_orders WHERE order_id = ${String(orderId)} LIMIT 1`
+            sql`SELECT 1 AS found FROM shopify_orders WHERE order_id = ${String(orderId)} AND workspace_id = ${this.workspaceId} LIMIT 1`
         );
 
         // drizzle .get() returns `undefined` (not null) for no match — the old
@@ -201,8 +201,8 @@ export class ShopifySyncService {
         const drizzleDb = getDb(this.db);
         const now = Math.floor(Date.now() / 1000);
         await drizzleDb.run(sql`
-            INSERT OR IGNORE INTO shopify_orders (order_id, order_number, processed_at, total_items, created_at, updated_at)
-            VALUES (${String(order.id)}, ${String(order.order_number)}, ${now}, ${itemsDeducted}, ${now}, ${now})
+            INSERT OR IGNORE INTO shopify_orders (workspace_id, order_id, order_number, processed_at, total_items, created_at, updated_at)
+            VALUES (${this.workspaceId}, ${String(order.id)}, ${String(order.order_number)}, ${now}, ${itemsDeducted}, ${now}, ${now})
         `);
 
         return { itemsDeducted, errors };
@@ -229,7 +229,7 @@ export class ShopifySyncService {
 
         try {
             const countRow = await getDb(this.db).get<{ n: number }>(
-                sql`SELECT COUNT(*) AS n FROM shopify_orders`
+                sql`SELECT COUNT(*) AS n FROM shopify_orders WHERE workspace_id = ${this.workspaceId}`
             );
             debug.ordersInTable = countRow?.n ?? -1;
 
@@ -322,26 +322,26 @@ export class ShopifySyncService {
         const drizzleDb = getDb(this.db);
         const now = Math.floor(Date.now() / 1000);
 
-        const before = await drizzleDb.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM shopify_orders`);
+        const before = await drizzleDb.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM shopify_orders WHERE workspace_id = ${this.workspaceId}`);
 
         // Batch the inserts — one INSERT per chunk instead of one per order — so
         // the whole baseline fits inside Cloudflare's subrequest/CPU budget and
         // can't die partway (which would leave the high-water-mark too low).
-        // D1 caps bound parameters at 100 per query; this row binds 5 each, so
-        // 20 orders/chunk is the ceiling (100 params).
-        const CHUNK = 20;
+        // D1 caps bound parameters at 100 per query; this row binds 6 each, so
+        // 16 orders/chunk keeps us under the ceiling (96 params).
+        const CHUNK = 16;
         for (let i = 0; i < orders.length; i += CHUNK) {
             const rows = orders.slice(i, i + CHUNK).map(
-                (o) => sql`(${String(o.id)}, ${String(o.order_number)}, ${now}, 0, ${now}, ${now})`
+                (o) => sql`(${this.workspaceId}, ${String(o.id)}, ${String(o.order_number)}, ${now}, 0, ${now}, ${now})`
             );
             await drizzleDb.run(sql`
                 INSERT OR IGNORE INTO shopify_orders
-                    (order_id, order_number, processed_at, total_items, created_at, updated_at)
+                    (workspace_id, order_id, order_number, processed_at, total_items, created_at, updated_at)
                 VALUES ${sql.join(rows, sql`, `)}
             `);
         }
 
-        const after = await drizzleDb.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM shopify_orders`);
+        const after = await drizzleDb.get<{ n: number }>(sql`SELECT COUNT(*) AS n FROM shopify_orders WHERE workspace_id = ${this.workspaceId}`);
         const recorded = (after?.n ?? 0) - (before?.n ?? 0);
 
         // Orders come back ascending by id, so the last one is the newest. This is
@@ -387,6 +387,7 @@ export class ShopifySyncService {
         }>(sql`
             SELECT order_id, order_number, processed_at, total_items
             FROM shopify_orders
+            WHERE workspace_id = ${this.workspaceId}
             ORDER BY processed_at DESC
             LIMIT ${limit}
         `);

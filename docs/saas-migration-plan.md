@@ -276,7 +276,17 @@ catalog dedup on presets via `COALESCE(workspace_id,0)`.
 - [x] Seed wipe list extended (queue tables are runtime-generated, not seeded).
 - [x] **Leak test passed:** Alice queue object_ids [1-4], Bob [5-8]; spool-demand presets differ per workspace; print_queue 4 rows/workspace.
 
-**Remaining groups (7–9): not started.** Next: Group 7 (Shopify — the trickiest: `shopify_settings` single-row→per-workspace, `shopify_sku_mapping`, `shopify_orders`, `shopify_skus`, + the external cron loop + per-workspace encrypted creds).
+### Group 7 — Shopify (settings, sku_mapping, orders, skus) ✅ DONE 2026-07-06
+
+- [x] Migration `0019`: `workspace_id NOT NULL` on all 4; unique constraints re-scoped to `(workspace_id, …)`. `shopify_settings` singleton → one row per workspace (UNIQUE(workspace_id)).
+- [x] `shopifyConfig.ts`: `getShopifyConfig`/`Summary` take `workspaceId`, scope the DB read (env fallback kept). `saveShopifyConfig` upsert now keys on `workspace_id` (was `id=1`).
+- [x] `sync.ts` (ShopifySyncService): all ~11 order/sku/mapping queries scoped by `this.workspaceId` (already had it from Group 1).
+- [x] **`cron-sync` (external): now loops over EVERY workspace's `shopify_settings`** and syncs each with its own config/workspaceId (was: first workspace only).
+- [x] Scoped: integrations page (load + all actions), stats order charts, products/inventory/b2b raw `sku_mapping WHERE shopify_sku` reads, `inventory_handler` delete + recent-logs order join.
+- [x] All `MULTI-USER (Phase 3)` code markers removed.
+- [x] Seed: one SKU mapping per product per workspace. **Leak test passed:** 4 mappings/workspace, integrations page scoped, pages render.
+
+**Remaining groups (8–9).** Next: Group 8 (grid_presets + categories) — small. Then Group 9 (catalog: printer_presets + plate_presets — hybrid NULLable) + secrets encryption + prod cutover.
 
 ### Step N — per table-group (repeat for each group, in this order)
 

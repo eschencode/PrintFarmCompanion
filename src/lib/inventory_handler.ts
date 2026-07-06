@@ -71,7 +71,7 @@ export async function getAllRecentLogs(
     SELECT il.*, o.name as object_name, so.order_number
     FROM inventory_log il
     JOIN objects o ON il.object_id = o.id
-    LEFT JOIN shopify_orders so ON so.order_id = il.shopify_order_id
+    LEFT JOIN shopify_orders so ON so.order_id = il.shopify_order_id AND so.workspace_id = il.workspace_id
     WHERE il.workspace_id = ${ctx.workspaceId}
     ORDER BY il.created_at DESC
     LIMIT ${limit}
@@ -157,7 +157,7 @@ export async function deleteObject(ctx: TenantContext, id: number): Promise<Serv
       };
     }
 
-    await ctx.db.run(sql`DELETE FROM shopify_sku_mapping WHERE object_id = ${id}`);
+    await ctx.db.run(sql`DELETE FROM shopify_sku_mapping WHERE object_id = ${id} AND workspace_id = ${ctx.workspaceId}`);
     await ctx.db.run(sql`DELETE FROM objects WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`);
 
     return { success: true, message: 'Object deleted' };

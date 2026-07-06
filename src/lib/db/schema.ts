@@ -577,9 +577,11 @@ export const inventoryLog = sqliteTable(
 export const shopifySettings = sqliteTable(
   "shopify_settings",
   {
-    // Phase 3 (multi-user): add workspaceId NOT NULL refs workspaces.id; the
-    // saveShopifyConfig id=1 singleton upsert becomes a per-workspace upsert.
     id: integer("id").primaryKey({ autoIncrement: true }),
+    // One settings row per workspace (UNIQUE below); the config upsert keys on it.
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     storeDomain: text("store_domain").notNull(),
     // AES-256-GCM ciphertext (see src/lib/server/crypto.ts), encrypted with the
     // ENCRYPTION_KEY Worker secret. Never store or return the raw token.
@@ -591,6 +593,7 @@ export const shopifySettings = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
+  (t) => [uniqueIndex("uniq_shopify_settings_workspace").on(t.workspaceId)],
 );
 
 // =============================================================================
@@ -603,6 +606,9 @@ export const shopifySkuMapping = sqliteTable(
   "shopify_sku_mapping",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     shopifySku: text("shopify_sku").notNull(),
     objectId: integer("object_id")
       .notNull()
@@ -616,12 +622,13 @@ export const shopifySkuMapping = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
-    // Phase 3: becomes UNIQUE(workspaceId, shopifySku, objectId).
     uniqueIndex("uniq_shopify_sku_mapping_sku_object").on(
+      t.workspaceId,
       t.shopifySku,
       t.objectId,
     ),
     index("idx_shopify_sku_mapping_sku").on(t.shopifySku),
+    index("idx_shopify_sku_mapping_workspace").on(t.workspaceId),
   ],
 );
 
@@ -634,6 +641,9 @@ export const shopifyOrders = sqliteTable(
   "shopify_orders",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     orderId: text("order_id").notNull(),
     orderNumber: text("order_number"),
     processedAt: integer("processed_at", { mode: "timestamp" }),
@@ -646,9 +656,9 @@ export const shopifyOrders = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
-    // Phase 3: becomes UNIQUE(workspaceId, orderId).
-    uniqueIndex("uniq_shopify_orders_order_id").on(t.orderId),
+    uniqueIndex("uniq_shopify_orders_order_id").on(t.workspaceId, t.orderId),
     index("idx_shopify_orders_processed_at").on(t.processedAt),
+    index("idx_shopify_orders_workspace").on(t.workspaceId),
   ],
 );
 
@@ -664,6 +674,9 @@ export const shopifySkus = sqliteTable(
   "shopify_skus",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     sku: text("sku").notNull(),
     productTitle: text("product_title"),
     variantTitle: text("variant_title"),
@@ -673,7 +686,10 @@ export const shopifySkus = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [uniqueIndex("uniq_shopify_skus_sku").on(t.sku)],
+  (t) => [
+    uniqueIndex("uniq_shopify_skus_sku").on(t.workspaceId, t.sku),
+    index("idx_shopify_skus_workspace").on(t.workspaceId),
+  ],
 );
 
 // =============================================================================

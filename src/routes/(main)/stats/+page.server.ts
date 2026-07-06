@@ -298,11 +298,13 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
         MIN(processed_at) as first_order,
         MAX(processed_at) as last_order
       FROM shopify_orders
+      WHERE workspace_id = ${ctx.workspaceId}
     `)) as { total_orders: number; total_items: number; first_order: number; last_order: number } | undefined;
 
     const recentOrders = (await drizzleDb.all(sql`
       SELECT order_id, order_number, processed_at, total_items
       FROM shopify_orders
+      WHERE workspace_id = ${ctx.workspaceId}
       ORDER BY processed_at DESC
       LIMIT 15
     `)) as { order_id: string; order_number: string; processed_at: number; total_items: number }[];
@@ -313,7 +315,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
         COUNT(*) as order_count,
         SUM(total_items) as items_count
       FROM shopify_orders
-      WHERE processed_at > ${cutoff30s}
+      WHERE workspace_id = ${ctx.workspaceId} AND processed_at > ${cutoff30s}
       GROUP BY day
       ORDER BY day ASC
     `)) as { day: string; order_count: number; items_count: number }[];

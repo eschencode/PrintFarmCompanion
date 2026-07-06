@@ -47,6 +47,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     drizzleDb.all(sql`
       SELECT sm.shopify_sku, sm.quantity, sm.object_id
       FROM shopify_sku_mapping sm
+      WHERE sm.workspace_id = ${ctx.workspaceId}
       ORDER BY sm.shopify_sku ASC
     `),
   ]);
