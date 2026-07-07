@@ -25,7 +25,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     db.getAllPrintJobs(ctx),
     db.getAllSpoolPresets(ctx),
     db.getSpoolUsageStats(ctx),
-    db.getAllGridPresets(database),
+    db.getAllGridPresets(ctx),
   ]);
 
   // Flatten secrets + derive status onto each printer for the UI

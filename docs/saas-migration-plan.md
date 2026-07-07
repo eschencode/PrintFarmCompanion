@@ -286,7 +286,15 @@ catalog dedup on presets via `COALESCE(workspace_id,0)`.
 - [x] All `MULTI-USER (Phase 3)` code markers removed.
 - [x] Seed: one SKU mapping per product per workspace. **Leak test passed:** 4 mappings/workspace, integrations page scoped, pages render.
 
-**Remaining groups (8–9).** Next: Group 8 (grid_presets + categories) — small. Then Group 9 (catalog: printer_presets + plate_presets — hybrid NULLable) + secrets encryption + prod cutover.
+### Group 8 — grid_presets + categories ✅ DONE 2026-07-06
+
+- [x] Migration `0020`: `workspace_id NOT NULL` + index on both.
+- [x] `grid.ts` (7 fns) + `categories.ts` (5 fns) → `ctx`, every query scoped — including the `is_default` "unset all" writes (per-workspace) and the sort-order/parent lookups. `assignObjectCategory` dropped its explicit `workspaceId` param (now on `ctx`).
+- [x] Callers: dashboard load, `settings/dashboard` (load + 4 grid actions), inventory (categories load + 4 category actions).
+- [x] `modules.ts` category join left as-is (`o.category_id` is workspace-owned + module query already filters `pm.workspace_id`).
+- [x] **Leak test passed:** Alice's category + grid preset are workspace-scoped; Bob doesn't see them.
+
+**Remaining: Group 9** — catalog (`printer_presets` + `plate_presets`, hybrid: `workspace_id` NULLable = system rows) + `printer_secrets` access-code encryption + the production cutover runbook.
 
 ### Step N — per table-group (repeat for each group, in this order)
 

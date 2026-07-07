@@ -146,7 +146,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
 
   const items = await getAllObjects(ctx);
   const logs = await getAllRecentLogs(ctx, 50);
-  const categories = await getAllCategories(db);
+  const categories = await getAllCategories(ctx);
 
   let setDefinitions: SetDefinition[] = [];
   let unitWeights: UnitWeight[] = [];
@@ -229,42 +229,37 @@ export const actions: Actions = {
     return performManualCount(ctx, id, count);
   },
 
-  createCategory: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  createCategory: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const name = (formData.get('name') as string) ?? '';
     const parentRaw = formData.get('parentId') as string | null;
     const parentId = parentRaw ? parseInt(parentRaw) : null;
-    return createCategory(db, name, parentId);
+    return createCategory(ctx, name, parentId);
   },
 
-  renameCategory: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  renameCategory: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const id = parseInt(formData.get('id') as string);
     const name = (formData.get('name') as string) ?? '';
-    return renameCategory(db, id, name);
+    return renameCategory(ctx, id, name);
   },
 
-  deleteCategory: async ({ request, platform }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  deleteCategory: async ({ request, locals }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const id = parseInt(formData.get('id') as string);
-    return deleteCategory(db, id);
+    return deleteCategory(ctx, id);
   },
 
-  assignCategory: async ({ request, platform, locals }) => {
-    const db = platform?.env?.DB;
-    if (!db) return { success: false, error: 'Database not available' };
+  assignCategory: async ({ request, locals }) => {
     const ctx = requireCtx(locals);
     const formData = await request.formData();
     const objectId = parseInt(formData.get('objectId') as string);
     const categoryRaw = formData.get('categoryId') as string | null;
     const categoryId = categoryRaw ? parseInt(categoryRaw) : null;
-    return assignObjectCategory(db, ctx.workspaceId, objectId, categoryId);
+    return assignObjectCategory(ctx, objectId, categoryId);
   },
 
   // Bulk add from set bundles

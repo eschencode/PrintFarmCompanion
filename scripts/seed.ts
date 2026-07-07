@@ -48,7 +48,7 @@ for (const t of [
   "inventory_log", "print_job_spools", "print_jobs", "module_filament_slots",
   "print_modules", "printer_loaded_spools", "printer_secrets", "printers",
   "spools", "spool_presets", "plate_presets", "printer_presets", "objects",
-  "grid_presets", "session", "account", "verification", "workspaces", "user",
+  "categories", "grid_presets", "session", "account", "verification", "workspaces", "user",
 ]) {
   db.exec(`DELETE FROM ${t}`);
 }

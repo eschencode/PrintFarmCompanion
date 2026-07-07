@@ -128,6 +128,9 @@ export const categories = sqliteTable(
   "categories",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     parentId: integer("parent_id").references((): any => categories.id, {
       onDelete: "cascade",
@@ -137,7 +140,10 @@ export const categories = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [index("idx_categories_parent").on(t.parentId)],
+  (t) => [
+    index("idx_categories_parent").on(t.parentId),
+    index("idx_categories_workspace").on(t.workspaceId),
+  ],
 );
 
 export const objects = sqliteTable(
@@ -503,6 +509,9 @@ export const gridPresets = sqliteTable(
   "grid_presets",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     isDefault: integer("is_default", { mode: "boolean" })
       .notNull()
@@ -518,7 +527,10 @@ export const gridPresets = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [index("idx_grid_presets_default").on(t.isDefault)],
+  (t) => [
+    index("idx_grid_presets_default").on(t.isDefault),
+    index("idx_grid_presets_workspace").on(t.workspaceId),
+  ],
 );
 
 // =============================================================================
