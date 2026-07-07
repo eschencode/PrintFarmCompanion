@@ -7,11 +7,14 @@ Manual QA for the auth + tenancy work (Phase 2 + Phase 3). Reseed anytime with
 **How to test isolation:** log in as Alice in one browser, Bob in another (or a
 private window). Each should only ever see their own data for the ✅ areas below.
 
-> ⚠️ **What is NOT isolated yet** (Groups 4–9 pending) — do **not** report these as
-> bugs. Both users currently SHARE: **print modules**, **print history / jobs**,
-> **the print queue + AI recommendations**, **Shopify settings/SKUs/orders**,
-> **printer models (presets)**, **build-plate presets**, **dashboard grid layouts**,
-> **object categories**. These get scoped in later groups.
+> ✅ **Phase 3 tenancy is COMPLETE (groups 1–9).** Everything below is per-workspace:
+> inventory, spools, printers (+credentials), modules, print history/jobs, the print
+> queue + AI recommendations, Shopify (settings/SKUs/orders), grid layouts, categories.
+> **Catalog is hybrid:** printer models & build plates seeded as a shared *system*
+> catalog (visible to all), but a workspace's *custom* models are private to it.
+>
+> Still open (not tenancy): `printer_secrets.access_code` isn't encrypted at rest
+> yet (it IS workspace-scoped, just not encrypted) — tracked in the migration plan.
 
 ---
 
