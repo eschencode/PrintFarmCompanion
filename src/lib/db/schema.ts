@@ -39,6 +39,11 @@ export const printerPresets = sqliteTable(
   "printer_presets",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    // Hybrid scope: NULL = shared system catalog row; set = a workspace's custom
+    // preset. Reads see (NULL OR own); edits/deletes only touch own rows.
+    workspaceId: integer("workspace_id").references(() => workspaces.id, {
+      onDelete: "cascade",
+    }),
     model: text("model").notNull(),
     brand: text("brand").notNull(),
     dimensionX: integer("dimension_x"),
@@ -54,9 +59,14 @@ export const printerPresets = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
-    // Catalog dedup: one row per (brand, model).
-    // Phase 3: becomes UNIQUE(COALESCE(workspaceId, 0), brand, model).
-    uniqueIndex("uniq_printer_presets_brand_model").on(t.brand, t.model),
+    // Catalog dedup: one row per (brand, model) within a scope. COALESCE so all
+    // system rows (NULL) share scope 0 (SQLite treats NULLs as distinct otherwise).
+    uniqueIndex("uniq_printer_presets_brand_model").on(
+      sql`COALESCE(${t.workspaceId}, 0)`,
+      t.brand,
+      t.model,
+    ),
+    index("idx_printer_presets_workspace").on(t.workspaceId),
   ],
 );
 
@@ -68,6 +78,10 @@ export const platePresets = sqliteTable(
   "plate_presets",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    // Hybrid scope (see printerPresets). NULL = system plate.
+    workspaceId: integer("workspace_id").references(() => workspaces.id, {
+      onDelete: "cascade",
+    }),
     name: text("name").notNull(), // e.g., "engineering plate"
     dimensionX: integer("dimension_x"),
     dimensionY: integer("dimension_y"),
@@ -79,8 +93,11 @@ export const platePresets = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
-    // Phase 3: becomes UNIQUE(COALESCE(workspaceId, 0), name).
-    uniqueIndex("uniq_plate_presets_name").on(t.name),
+    uniqueIndex("uniq_plate_presets_name").on(
+      sql`COALESCE(${t.workspaceId}, 0)`,
+      t.name,
+    ),
+    index("idx_plate_presets_workspace").on(t.workspaceId),
   ],
 );
 

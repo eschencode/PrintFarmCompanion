@@ -294,7 +294,19 @@ catalog dedup on presets via `COALESCE(workspace_id,0)`.
 - [x] `modules.ts` category join left as-is (`o.category_id` is workspace-owned + module query already filters `pm.workspace_id`).
 - [x] **Leak test passed:** Alice's category + grid preset are workspace-scoped; Bob doesn't see them.
 
-**Remaining: Group 9** — catalog (`printer_presets` + `plate_presets`, hybrid: `workspace_id` NULLable = system rows) + `printer_secrets` access-code encryption + the production cutover runbook.
+### Group 9 — hybrid catalog + (deferred) secrets encryption ✅ TENANCY DONE 2026-07-08
+
+- [x] Migration `0021`: `printer_presets` + `plate_presets` get **NULLable** `workspace_id` (NULL = shared system catalog, set = a workspace's custom row). Unique dedup uses `COALESCE(workspace_id, 0)` so all system rows share scope 0 (SQLite treats NULLs as distinct otherwise).
+- [x] `printers.ts` preset fns → `ctx` hybrid: reads `WHERE workspace_id IS NULL OR = ctx.workspaceId`; create writes a workspace-owned row; update/delete only match own rows (system catalog is read-only from the app, returns "not found or system preset"). `plate_presets` has no create fn → system-only.
+- [x] Callers: modules, settings/printers (load + 3 model actions). `getPrinterFull` now uses `getPrinterPresetById(ctx)`.
+- [x] Seed catalog inserts default `workspace_id = NULL` (system). **Leak test passed:** system P1S shared across workspaces; Alice's custom "DIY Cube" invisible to Bob.
+
+**🎉 PHASE 3 TENANCY COMPLETE** — every domain table + hybrid catalog is workspace-isolated (groups 1–9). Two users have fully separate data.
+
+### Still open (post-tenancy, tracked here)
+
+- [ ] **Part B — `printer_secrets.access_code` encryption at rest.** DEFERRED: it's security-hardening (the code is already workspace-scoped, so no cross-tenant read), and encrypting it touches the critical print path (decrypt in pi/print, pi/control, pi/status) + the client-exposed direct-MQTT path (dashboard sends `printer_access_code` to the desktop app) + the settings/printers edit prefill. Do as a focused task with the crypto helper (`encryptSecret`/`decryptSecret`), mirroring the Shopify-token "leave blank to keep" pattern. Not required for multi-user isolation.
+- [ ] **Production cutover** — execute the runbook (below) when going live.
 
 ### Step N — per table-group (repeat for each group, in this order)
 

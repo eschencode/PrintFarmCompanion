@@ -12,7 +12,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     getAllPrintModules(ctx),
     getAllPrinters(ctx),
     getAllSpoolPresets(ctx),
-    getAllPrinterPresets(db),
+    getAllPrinterPresets(ctx),
     getAllObjects(ctx),
   ]);
 
