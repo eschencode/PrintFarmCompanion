@@ -6,95 +6,60 @@
 
 <svelte:head><title>Log in · Print Farm Companion</title></svelte:head>
 
-<div class="auth-wrap">
-  <form
-    method="POST"
-    class="auth-card"
-    use:enhance={() => {
-      loading = true;
-      return async ({ update }) => {
-        await update();
-        loading = false;
-      };
-    }}
-  >
-    <h1>Welcome back</h1>
-    <p class="sub">Log in to your print farm.</p>
+<div class="min-h-screen bg-[#0a0a0b] text-zinc-100 flex items-center justify-center p-6">
+  <div class="w-full max-w-sm">
+    <!-- Brand -->
+    <div class="mb-8">
+      <h1 class="text-3xl font-extralight tracking-tight text-zinc-50">Print Farm</h1>
+      <p class="text-sm text-zinc-500 mt-1.5">Sign in to your workspace.</p>
+    </div>
 
-    {#if form?.error}
-      <div class="err">{form.error}</div>
-    {/if}
+    <form
+      method="POST"
+      class="space-y-4"
+      use:enhance={() => {
+        loading = true;
+        return async ({ update }) => {
+          await update();
+          loading = false;
+        };
+      }}
+    >
+      {#if form?.error}
+        <div class="rounded-lg bg-red-500/10 border border-red-500/25 px-3.5 py-2.5 text-sm text-red-300">
+          {form.error}
+        </div>
+      {/if}
 
-    <label>
-      Email
-      <input name="email" type="email" autocomplete="email" required value={form?.email ?? ""} placeholder="you@example.com" />
-    </label>
+      <label class="block">
+        <span class="text-xs font-medium text-zinc-400">Email</span>
+        <input
+          name="email" type="email" autocomplete="email" required
+          value={form?.email ?? ""} placeholder="you@example.com"
+          class="mt-1.5 w-full rounded-lg bg-[#0f0f11] border border-[#232329] px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:border-zinc-500 focus:outline-none focus:ring-0 transition-colors"
+        />
+      </label>
 
-    <label>
-      Password
-      <input name="password" type="password" autocomplete="current-password" required placeholder="Your password" />
-    </label>
+      <label class="block">
+        <span class="text-xs font-medium text-zinc-400">Password</span>
+        <input
+          name="password" type="password" autocomplete="current-password" required
+          placeholder="••••••••"
+          class="mt-1.5 w-full rounded-lg bg-[#0f0f11] border border-[#232329] px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:border-zinc-500 focus:outline-none focus:ring-0 transition-colors"
+        />
+      </label>
 
-    <button type="submit" disabled={loading}>
-      {loading ? "Logging in…" : "Log in"}
-    </button>
+      <button
+        type="submit" disabled={loading}
+        class="w-full rounded-lg bg-zinc-100 text-zinc-900 text-sm font-medium py-2.5 hover:bg-white disabled:opacity-60 disabled:cursor-default transition-colors"
+      >
+        {loading ? "Signing in…" : "Sign in"}
+      </button>
+    </form>
 
-    <p class="alt">No account yet? <a href="/signup">Sign up</a></p>
-  </form>
+    <p class="mt-6 text-sm text-zinc-500 text-center">
+      No account yet?
+      <a href="/signup" class="text-zinc-300 hover:text-zinc-100 transition-colors">Create one</a>
+    </p>
+  </div>
 </div>
-
-<style>
-  .auth-wrap {
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 2rem;
-    background: #0b0f17;
-  }
-  .auth-card {
-    width: 100%;
-    max-width: 26rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-    background: #131a26;
-    border: 1px solid #243044;
-    border-radius: 14px;
-    padding: 2rem;
-    color: #e6edf6;
-  }
-  h1 { margin: 0; font-size: 1.4rem; }
-  .sub { margin: 0 0 0.5rem; color: #8a98ad; font-size: 0.9rem; }
-  label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: #aab6c8; }
-  input {
-    background: #0d131d;
-    border: 1px solid #2a3a52;
-    border-radius: 8px;
-    padding: 0.6rem 0.7rem;
-    color: #e6edf6;
-    font-size: 0.95rem;
-  }
-  input:focus { outline: none; border-color: #4c8dff; }
-  button {
-    margin-top: 0.4rem;
-    background: #3b82f6;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 0.7rem;
-    font-size: 0.95rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  button:disabled { opacity: 0.6; cursor: default; }
-  .err {
-    background: #3a1620;
-    border: 1px solid #6b2435;
-    color: #ffb3c0;
-    border-radius: 8px;
-    padding: 0.6rem 0.7rem;
-    font-size: 0.85rem;
-  }
-  .alt { margin: 0.4rem 0 0; font-size: 0.85rem; color: #8a98ad; text-align: center; }
-  .alt a { color: #6aa3ff; }
-</style>

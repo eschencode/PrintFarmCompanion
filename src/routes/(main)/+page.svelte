@@ -1357,7 +1357,7 @@
                 <h1
                     class="text-4xl font-extralight text-zinc-900 dark:text-zinc-50 tracking-tight"
                 >
-                    Print Farm
+                    {data.workspaceName || "Print Farm"}
                 </h1>
                 {#if allGrids.length > 1}
                     <span

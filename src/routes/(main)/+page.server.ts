@@ -57,7 +57,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     };
   });
 
-  return { printers, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets };
+  return { printers, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets, workspaceName: locals.workspace?.name ?? null };
 };
 
 export const actions: Actions = {
