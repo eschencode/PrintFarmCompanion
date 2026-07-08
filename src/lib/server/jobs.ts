@@ -461,7 +461,7 @@ export async function adoptExternalPrintJob(
   const drizzleDb = ctx.db;
   try {
     const existing = await drizzleDb.get(
-      sql`SELECT id FROM print_jobs WHERE external_task_id = ${params.externalTaskId} LIMIT 1`,
+      sql`SELECT id FROM print_jobs WHERE external_task_id = ${params.externalTaskId} AND workspace_id = ${ctx.workspaceId} LIMIT 1`,
     );
     if (existing) return { success: true };
 

@@ -3,7 +3,10 @@ import { json, redirect } from "@sveltejs/kit";
 import { building } from "$app/environment";
 import { svelteKitHandler } from "better-auth/svelte-kit";
 import { getAuth } from "$lib/auth";
-import { getWorkspaceForUser } from "$lib/server/workspaces";
+import {
+  createWorkspaceForUser,
+  getWorkspaceForUser,
+} from "$lib/server/workspaces";
 import { getDb } from "$lib/db";
 
 // Pages reachable without a session.
@@ -32,20 +35,32 @@ export const handle: Handle = async ({ event, resolve }) => {
 
   const session = await auth.api.getSession({ headers: event.request.headers });
   if (session) {
-    const workspace = await getWorkspaceForUser(
-      event.platform!.env!.DB,
-      session.user.id,
-    );
+    const DB = event.platform!.env!.DB;
+    let workspace = await getWorkspaceForUser(DB, session.user.id);
+    // Self-heal: a signed-in user must always own a workspace. Signup creates one,
+    // but if that step failed (non-atomic) or the account was created out-of-band,
+    // requireCtx would otherwise 401 every route and brick the user permanently.
+    // Lazily provision a default workspace so they're never locked out.
+    if (!workspace) {
+      try {
+        workspace = await createWorkspaceForUser(DB, {
+          userId: session.user.id,
+          userName: session.user.name,
+          userEmail: session.user.email,
+        });
+      } catch (e) {
+        console.error("Lazy workspace provisioning failed:", e);
+      }
+    }
     event.locals.user = session.user;
     event.locals.session = session.session;
     event.locals.workspace = workspace;
-    // Tenant context for Phase 3 domain queries. Non-null whenever the user has
-    // a workspace (signup guarantees one).
     event.locals.ctx = workspace
       ? {
-          db: getDb(event.platform!.env!.DB),
-          d1: event.platform!.env!.DB,
+          db: getDb(DB),
+          d1: DB,
           workspaceId: workspace.id,
+          encryptionKey: event.platform!.env!.ENCRYPTION_KEY ?? "",
         }
       : null;
   } else {

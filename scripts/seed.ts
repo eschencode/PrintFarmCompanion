@@ -9,9 +9,10 @@
  * ⚠️  Wipes ALL domain + auth data in the LOCAL D1 first, so it's re-runnable.
  *     Local only — never point this at a remote DB.
  *
- * Isolation status (Phase 3): objects + inventory_log are per-workspace TODAY.
- * printers / spools / modules / print_jobs are still SHARED across all users
- * until Groups 2–5 add workspace_id — this seed will grow to split them then.
+ * Isolation status (Phase 3 complete): every domain table is workspace-scoped.
+ * Each user gets a fully independent farm — catalog, hardware, inventory, queues,
+ * Shopify data and print history — so cross-tenant isolation is testable and every
+ * feature surface (dashboard live states, AMS, categories, queue, Shopify) is populated.
  */
 import { Database } from "bun:sqlite";
 import { hashPassword } from "better-auth/crypto";
@@ -60,16 +61,19 @@ const printerPresetId = run(
    VALUES (?,?,?,?,?,?,?,?)`,
   ["P1S", "Bambu Lab", 256, 256, 256, "/cache", now, now],
 );
+const amsPresetId = run(
+  `INSERT INTO printer_presets (model, brand, dimension_x, dimension_y, dimension_z, device_file_path, created_at, updated_at)
+   VALUES (?,?,?,?,?,?,?,?)`,
+  ["X1C", "Bambu Lab", 256, 256, 256, "/cache", now, now],
+);
 const plateId = run(
   `INSERT INTO plate_presets (name, dimension_x, dimension_y, created_at, updated_at) VALUES (?,?,?,?,?)`,
   ["Textured PEI Plate", 256, 256, now, now],
 );
 
-// NOTE: printers/spools/modules are per-workspace (Groups 2–4). Only the catalog
-// (printer_presets, plate_presets) is shared here. print_jobs stay un-scoped
-// (Group 5) but are seeded per-workspace below with coherent FKs so they're
-// realistic — they're just globally visible until scoped.
-console.log("Seeded shared catalog (1 printer preset, 1 plate).");
+// printer_presets + plate_presets are the shared hardware catalog. Everything
+// else below is seeded per-workspace with coherent FKs.
+console.log("Seeded shared catalog (2 printer presets, 1 plate).");
 
 // ── PER-USER (isolated) ──────────────────────────────────────────────────────
 const passwordHash = await hashPassword(PASSWORD);
@@ -81,11 +85,12 @@ const users = [
 ];
 
 // Same product names in every workspace — proves per-workspace uniqueness + isolation.
+// stock vs min gives one healthy, one low, one out, one healthy product.
 const products = [
-  { name: "Wall Hook",     stock: 42, min: 20 },
-  { name: "Phone Stand",   stock: 8,  min: 15 }, // low
-  { name: "Cable Clip",    stock: 0,  min: 10 }, // out
-  { name: "Desk Organizer",stock: 27, min: 5 },
+  { name: "Wall Hook",      stock: 42, min: 20, cat: "hooks" },   // healthy
+  { name: "Phone Stand",    stock: 8,  min: 15, cat: "stands" },  // low
+  { name: "Cable Clip",     stock: 0,  min: 10, cat: "cables" },  // out
+  { name: "Desk Organizer", stock: 27, min: 5,  cat: "office" },  // healthy
 ];
 
 for (const u of users) {
@@ -97,102 +102,189 @@ for (const u of users) {
   const wsId = run(`INSERT INTO workspaces (name, slug, owner_user_id, created_at, updated_at) VALUES (?,?,?,?,?)`,
     [u.workspace, `${slug(u.workspace)}-${rand()}`, uid, now, now]);
 
-  // Per-workspace filament library + a couple of open spools
+  // ── Category tree (nested: Office > Cable Management) ──────────────────────
+  const cat = (name: string, parent: number | null, sort: number) =>
+    run(`INSERT INTO categories (workspace_id, name, parent_id, sort_order, created_at) VALUES (?,?,?,?,?)`,
+      [wsId, name, parent, sort, now]);
+  const catHooks  = cat("Hooks & Mounts", null, 0);
+  const catStands = cat("Stands", null, 1);
+  const catOffice = cat("Office", null, 2);
+  const catCables = cat("Cable Management", catOffice, 0); // child of Office
+  const catByKey: Record<string, number> = {
+    hooks: catHooks, stands: catStands, office: catOffice, cables: catCables,
+  };
+
+  // ── Filament library (5 presets) + physical spools at varied fill levels ──
   const presets = [
-    { color: "Black", hex: "#1a1a1a", brand: "Bambu", material: "PLA", w: 1000, cost: 2500 },
-    { color: "White", hex: "#f5f5f5", brand: "Bambu", material: "PLA", w: 1000, cost: 2500 },
-    { color: "Ocean Blue", hex: "#1e6fd9", brand: "Bambu", material: "PETG", w: 1000, cost: 2900 },
+    { color: "Black",      hex: "#1a1a1a", brand: "Bambu",   material: "PLA",  w: 1000, cost: 2500, storage: 3 },
+    { color: "White",      hex: "#f5f5f5", brand: "Bambu",   material: "PLA",  w: 1000, cost: 2500, storage: 2 },
+    { color: "Ocean Blue", hex: "#1e6fd9", brand: "Bambu",   material: "PETG", w: 1000, cost: 2900, storage: 1 },
+    { color: "Signal Red", hex: "#d92828", brand: "Polymaker", material: "PLA", w: 1000, cost: 2700, storage: 0 },
+    { color: "Slate Grey", hex: "#6b7280", brand: "Bambu",   material: "PLA",  w: 1000, cost: 2500, storage: 4 },
   ].map((p) =>
     run(
       `INSERT INTO spool_presets (workspace_id, color, color_hex, brand, material, default_weight, cost, in_storage, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [wsId, p.color, p.hex, p.brand, p.material, p.w, p.cost, 3, now, now],
+      [wsId, p.color, p.hex, p.brand, p.material, p.w, p.cost, p.storage, now, now],
     ),
   );
-  const spoolA = run(`INSERT INTO spools (workspace_id, preset_id, initial_weight, remaining_weight, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
-    [wsId, presets[0], 1000, 640, now, now]);
-  run(`INSERT INTO spools (workspace_id, preset_id, initial_weight, remaining_weight, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
-    [wsId, presets[1], 1000, 815, now, now]);
+  // Open spools — remaining weight spans full → nearly-empty for low-filament UI.
+  const mkSpool = (presetIdx: number, remaining: number) =>
+    run(`INSERT INTO spools (workspace_id, preset_id, initial_weight, remaining_weight, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+      [wsId, presets[presetIdx], 1000, remaining, now, now]);
+  const spoolBlack = mkSpool(0, 640);
+  const spoolWhite = mkSpool(1, 815);
+  const spoolBlue  = mkSpool(2, 300);
+  const spoolRed   = mkSpool(3, 45);  // nearly empty
+  mkSpool(4, 1000);                    // fresh grey, unloaded
 
-  // Two printers per workspace, each with a secret row + one loaded slot.
+  // ── Objects (products) + Shopify SKU mapping ───────────────────────────────
+  const objectIds: number[] = [];
+  for (const p of products) {
+    const oid = run(
+      `INSERT INTO objects (workspace_id, name, in_stock, min_threshold, category_id, last_count_date, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [wsId, p.name, p.stock, p.min, catByKey[p.cat], sAgo(3), now, now],
+    );
+    objectIds.push(oid);
+    run(`INSERT INTO shopify_sku_mapping (workspace_id, shopify_sku, object_id, quantity, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+      [wsId, `SKU-${p.name.replace(/\s+/g, "").toUpperCase()}`, oid, 1, now, now]);
+    // Catalog cache row so the SKU picker in the mapping UI has entries.
+    run(`INSERT INTO shopify_skus (workspace_id, sku, product_title, variant_title, product_id, variant_id, synced_at) VALUES (?,?,?,?,?,?,?)`,
+      [wsId, `SKU-${p.name.replace(/\s+/g, "").toUpperCase()}`, p.name, "Default", `gid://p/${oid}`, `gid://v/${oid}`, now]);
+  }
+
+  // ── Shopify orders (b2c sales) — some inventory_log rows link back to these ──
+  const orderIds: string[] = [];
+  [[1001, 2, 6], [1002, 1, 12], [1003, 3, 24]].forEach(([n, items, d]) => {
+    const oid = `ORD-${wsId}-${n}`;
+    run(`INSERT INTO shopify_orders (workspace_id, order_id, order_number, processed_at, total_items, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`,
+      [wsId, oid, `#${n}`, sAgo(d), items, now, now]);
+    orderIds.push(oid);
+  });
+
+  // Rich per-object history over the last 30 days. b2c entries link to an order.
+  objectIds.forEach((oid, idx) => {
+    const history: [string, number, number, string | null][] = [
+      ["+ printed", 20, 28, null], ["- sold b2c", 6, 24, orderIds[2]],
+      ["+ printed", 15, 18, null], ["- sold b2c", 9, 12, orderIds[1]],
+      ["- sold b2b", 12, 9, null], ["- sold b2c", 4, 5, orderIds[0]],
+      ["+ stock count", 3, 2, null],
+    ];
+    for (const [type, qty, d, orderRef] of history) {
+      run(
+        `INSERT INTO inventory_log (workspace_id, object_id, change_type, quantity, print_job_id, shopify_order_id, created_at)
+         VALUES (?,?,?,?,?,?,?)`,
+        [wsId, oid, type, qty, null, orderRef, sAgo(d)],
+      );
+    }
+  });
+
+  // ── Printers: pi (single), direct (single), AMS (4-slot), manual (no serial) ─
+  // Manual mode = a secret row with null serial/ip/access — no live transport.
   const printerIds: number[] = [];
-  ["Printer A", "Printer B"].forEach((pname, i) => {
+  const loadSlot = (pid: number, slot: number, spool: number | null) =>
+    run(`INSERT INTO printer_loaded_spools (workspace_id, printer_id, slot_index, spool_id, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+      [wsId, pid, slot, spool, now, now]);
+  const mkPrinter = (
+    name: string, presetId: number, slots: number, transport: string,
+    serial: string | null, ip: string | null,
+  ) => {
     const pid = run(
       `INSERT INTO printers (workspace_id, name, printer_preset_id, loaded_plate_id, loaded_nozzle_diameter, slot_count, active, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?)`,
-      [wsId, `${u.name.split(" ")[0]} ${pname}`, printerPresetId, plateId, 0.4, 1, 1, now, now],
+      [wsId, name, presetId, plateId, 0.4, slots, 1, now, now],
     );
     printerIds.push(pid);
     run(
       `INSERT INTO printer_secrets (workspace_id, printer_id, printer_ip, serial, access_code, transport, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?)`,
-      [wsId, pid, `192.168.${wsId}.${20 + i}`, `SER${wsId}${1000 + i}`, "12345678", "pi", now, now],
+      [wsId, pid, ip, serial, serial ? "12345678" : null, transport, now, now],
     );
-    // Slot 0 loads the first printer with the workspace's black spool.
-    run(
-      `INSERT INTO printer_loaded_spools (workspace_id, printer_id, slot_index, spool_id, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
-      [wsId, pid, 0, i === 0 ? spoolA : null, now, now],
-    );
-  });
+    return pid;
+  };
+  const first = u.name.split(" ")[0];
+  const printerPi     = mkPrinter(`${first} Printer A`, printerPresetId, 1, "pi",     `SER${wsId}1000`, `192.168.${wsId}.20`);
+  const printerDirect = mkPrinter(`${first} Printer B`, printerPresetId, 1, "direct", `SER${wsId}1001`, `192.168.${wsId}.21`);
+  const printerAms    = mkPrinter(`${first} Printer C (AMS)`, amsPresetId, 4, "pi",   `SER${wsId}1002`, `192.168.${wsId}.22`);
+  const printerManual = mkPrinter(`${first} Printer D (Manual)`, printerPresetId, 1, "pi", null, null);
+  loadSlot(printerPi, 0, spoolBlack);
+  loadSlot(printerDirect, 0, spoolWhite);
+  loadSlot(printerAms, 0, spoolBlack); // AMS: 4 slots, one empty
+  loadSlot(printerAms, 1, spoolWhite);
+  loadSlot(printerAms, 2, spoolBlue);
+  loadSlot(printerAms, 3, null);
+  loadSlot(printerManual, 0, spoolRed);
 
-  const objectIds: number[] = [];
-  for (const p of products) {
-    const oid = run(
-      `INSERT INTO objects (workspace_id, name, in_stock, min_threshold, category, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?)`,
-      [wsId, p.name, p.stock, p.min, null, now, now],
-    );
-    objectIds.push(oid);
-    // A Shopify SKU mapping per product (testable isolation without real creds).
-    run(`INSERT INTO shopify_sku_mapping (workspace_id, shopify_sku, object_id, quantity, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
-      [wsId, `SKU-${p.name.replace(/\s+/g, "").toUpperCase()}`, oid, 1, now, now]);
-    // Rich history spread over the last 30 days: printed + sold (b2c/b2b) + a count.
-    const history: [string, number, number][] = [
-      ["+ printed", 20, 28], ["- sold b2c", 6, 24], ["+ printed", 15, 18],
-      ["- sold b2c", 9, 12], ["- sold b2b", 12, 9], ["- sold b2c", 4, 5],
-      ["+ stock count", 3, 2],
-    ];
-    for (const [type, qty, d] of history) {
-      run(
-        `INSERT INTO inventory_log (workspace_id, object_id, change_type, quantity, print_job_id, shopify_order_id, created_at)
-         VALUES (?,?,?,?,?,?,?)`,
-        [wsId, oid, type, qty, null, null, sAgo(d)],
-      );
-    }
-  }
-
-  // Two modules per workspace, each producing one of the workspace's objects,
-  // slot 0 requiring the workspace's black PLA.
+  // ── Modules: 2 single-colour + 1 multi-colour (2 slots) ────────────────────
   const modules = [
-    { name: "Wall Hook v3", weight: 24, mins: 95, per: 5, file: "wall_hook_v3.gcode.3mf", oid: objectIds[0] },
-    { name: "Desk Organizer", weight: 180, mins: 410, per: 1, file: "desk_organizer.gcode.3mf", oid: objectIds[3] },
+    { name: "Wall Hook v3",    weight: 24,  mins: 95,  per: 5, file: "wall_hook_v3.gcode.3mf",   oid: objectIds[0], slots: [[0, 24]] },
+    { name: "Desk Organizer",  weight: 180, mins: 410, per: 1, file: "desk_organizer.gcode.3mf", oid: objectIds[3], slots: [[0, 180]] },
+    { name: "Phone Stand Duo", weight: 60,  mins: 150, per: 2, file: "phone_stand_duo.gcode.3mf", oid: objectIds[1], slots: [[0, 40], [2, 20]] }, // black + blue
   ].map((m) => {
     const mid = run(
       `INSERT INTO print_modules (workspace_id, name, weight, expected_time_minutes, objects_per_print, plate_preset_id, printer_preset_id, object_id, nozzle_diameter, filename, active, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [wsId, m.name, m.weight, m.mins, m.per, plateId, printerPresetId, m.oid, 0.4, m.file, 1, now, now],
     );
-    run(`INSERT INTO module_filament_slots (workspace_id, module_id, slot_index, spool_preset_id, weight) VALUES (?,?,?,?,?)`,
-      [wsId, mid, 0, presets[0], m.weight]);
+    for (const [slotIdx, w] of m.slots)
+      run(`INSERT INTO module_filament_slots (workspace_id, module_id, slot_index, spool_preset_id, weight) VALUES (?,?,?,?,?)`,
+        [wsId, mid, slotIdx, presets[slotIdx], w]);
     return mid;
   });
+  const [modHook, modOrg, modDuo] = modules;
 
-  // A few coherent print jobs (module + printer + spool all in this workspace).
-  ["successful", "successful", "failed", "successful"].forEach((status, i) => {
+  // ── Print jobs across every status the dashboard can render ────────────────
+  // [status, moduleId, printerId, startMinAgo | null, durationMin, failReason, spoolSlots]
+  type Job = [string, number, number, number | null, number, string | null, [number, number, number | null][]];
+  const jobs: Job[] = [
+    ["successful",     modHook, printerPi,     60 * 24 * 5, 90,  null,                  [[0, spoolBlack, 24]]],
+    ["successful",     modOrg,  printerDirect, 60 * 24 * 3, 410, null,                  [[0, spoolWhite, 180]]],
+    ["failed_confirmed", modHook, printerAms,  60 * 24 * 2, 90,  "Spaghetti / detach",  [[0, spoolBlack, 6]]],
+    ["printing",       modDuo,  printerAms,    40,          150, null,                  [[0, spoolBlack, null], [2, spoolBlue, null]]], // live, multi-colour
+    ["print_finished", modHook, printerPi,     100,         90,  null,                  [[0, spoolBlack, null]]], // awaiting confirm
+    ["paused",         modOrg,  printerDirect, 30,          410, null,                  [[0, spoolWhite, null]]],
+    ["queued",         modHook, printerManual, null,        90,  null,                  [[0, spoolRed, null]]],
+  ];
+  for (const [status, mid, pid, startMinAgo, durMin, fail, spools] of jobs) {
+    const start = startMinAgo == null ? null : Date.now() - startMinAgo * 60_000;
     const jid = run(
       `INSERT INTO print_jobs (workspace_id, module_id, printer_id, external_task_id, start_time, expected_end_time, status, failure_reason, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [
-        wsId, modules[i % modules.length], printerIds[i % printerIds.length],
-        crypto.randomUUID(), msAgo(i + 1), msAgo(i + 1) + 90 * 60_000,
-        status, status === "failed" ? "Spaghetti / detach" : null, now, now,
-      ],
+      [wsId, mid, pid, crypto.randomUUID(), start, start == null ? null : start + durMin * 60_000, status, fail, now, now],
     );
-    run(`INSERT INTO print_job_spools (workspace_id, print_job_id, slot_index, spool_id, used_weight) VALUES (?,?,?,?,?)`,
-      [wsId, jid, 0, spoolA, status === "successful" ? 24 : 5]);
-  });
+    for (const [slot, spool, used] of spools)
+      run(`INSERT INTO print_job_spools (workspace_id, print_job_id, slot_index, spool_id, used_weight) VALUES (?,?,?,?,?)`,
+        [wsId, jid, slot, spool, used]);
+  }
 
-  console.log(`  ${u.email}  (workspace #${wsId} "${u.workspace}") — 4 products, 2 modules, 4 jobs`);
+  // ── Print queue (backlog): auto rows for low/out stock + one manual pin ─────
+  run(`INSERT INTO print_queue (workspace_id, object_id, module_id, quantity, priority, reason, source, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [wsId, objectIds[2], modHook, 10, "CRITICAL", "Out of stock", "auto", "pending", now, now]);
+  run(`INSERT INTO print_queue (workspace_id, object_id, module_id, quantity, priority, reason, source, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [wsId, objectIds[1], modDuo, 7, "HIGH", "Below minimum threshold", "auto", "pending", now, now]);
+  run(`INSERT INTO print_queue (workspace_id, object_id, module_id, quantity, priority, reason, source, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [wsId, objectIds[0], modHook, 5, "MEDIUM", "Manual pin", "manual", "pending", now, now]);
+
+  // ── Per-printer recommendation queue on the pi printer ─────────────────────
+  run(`INSERT INTO printer_queued_jobs (workspace_id, printer_id, module_id, reason, sort_order, is_completed, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`,
+    [wsId, printerPi, modHook, "Restock Cable Clip", 1, 0, now, now]);
+  run(`INSERT INTO printer_queued_jobs (workspace_id, printer_id, module_id, reason, sort_order, is_completed, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`,
+    [wsId, printerPi, modOrg, "Top up Desk Organizer", 2, 0, now, now]);
+
+  // ── Default dashboard grid: 4 printers + widgets in a 3×3 layout ───────────
+  const grid = [
+    { type: "printer", printerId: printerPi },
+    { type: "printer", printerId: printerDirect },
+    { type: "printer", printerId: printerAms },
+    { type: "printer", printerId: printerManual },
+    { type: "stats" }, { type: "inventory" },
+    { type: "products" }, { type: "spools" }, { type: "empty" },
+  ];
+  run(`INSERT INTO grid_presets (workspace_id, name, is_default, rows, cols, grid_config, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`,
+    [wsId, "Default", 1, 3, 3, JSON.stringify(grid), now, now]);
+
+  console.log(`  ${u.email}  (workspace #${wsId} "${u.workspace}") — 4 products, 4 categories, 4 printers (incl. AMS + manual), 3 modules, 7 jobs, queue + grid`);
 }
 
 db.close();

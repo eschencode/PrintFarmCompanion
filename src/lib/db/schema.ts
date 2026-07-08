@@ -329,7 +329,10 @@ export const printerSecrets = sqliteTable(
       .references(() => printers.id, { onDelete: "cascade" }),
     printerIp: text("printer_ip"),
     serial: text("serial"),
-    // Phase 3: replace with accessCodeEncrypted + Worker-secret KEK envelope encryption.
+    // Encrypted-at-rest (AES-256-GCM, "v1:" prefix) via src/lib/server/crypto.ts,
+    // keyed by the ENCRYPTION_KEY Worker secret. Written encrypted by
+    // upsertPrinterSecrets; decrypted by getPrinterSecrets + the pi endpoints.
+    // Legacy plaintext rows (e.g. seed data) read through unchanged.
     accessCode: text("access_code"),
     // How to send commands: 'auto' picks direct (desktop) or Pi fallback, 'direct' forces MQTT, 'pi' forces Pi bridge.
     transport: text("transport", { enum: ["auto", "direct", "pi"] }).default("auto").notNull(),

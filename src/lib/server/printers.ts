@@ -13,6 +13,7 @@ import type {
   ServerResponse,
 } from '../types';
 import type { TenantContext } from './context';
+import { encryptSecret, decryptSecret } from './crypto';
 
 // printers / printer_secrets / printer_loaded_spools carry workspace_id NOT NULL
 // (Phase 3, group 3) and are scoped to ctx.workspaceId.
@@ -322,7 +323,12 @@ export async function getPrinterSecrets(ctx: TenantContext, printerId: number): 
   const row = await ctx.db.get<PrinterSecrets>(
     sql`SELECT * FROM printer_secrets WHERE printer_id = ${printerId} AND workspace_id = ${ctx.workspaceId}`,
   );
-  return row ?? null;
+  if (!row) return null;
+  // access_code is stored encrypted-at-rest; decrypt for callers (legacy plaintext
+  // rows pass through unchanged). Single decrypt seam — getPrinterFull /
+  // getAllPrintersFull / dashboard / settings-prefill all read through here.
+  if (row.access_code) row.access_code = await decryptSecret(row.access_code, ctx.encryptionKey);
+  return row;
 }
 
 export async function upsertPrinterSecrets(
@@ -332,9 +338,15 @@ export async function upsertPrinterSecrets(
 ): Promise<ServerResponse> {
   try {
     const now = Math.floor(Date.now() / 1000);
+    // Encrypt access_code at rest so a DB dump doesn't leak printer credentials.
+    // Falls back to plaintext when no ENCRYPTION_KEY is set (decrypt passes it through).
+    const accessCode =
+      secrets.accessCode && ctx.encryptionKey
+        ? await encryptSecret(secrets.accessCode, ctx.encryptionKey)
+        : secrets.accessCode ?? null;
     await ctx.db.run(sql`
       INSERT INTO printer_secrets (workspace_id, printer_id, printer_ip, serial, access_code, created_at, updated_at)
-      VALUES (${ctx.workspaceId}, ${printerId}, ${secrets.printerIp ?? null}, ${secrets.serial ?? null}, ${secrets.accessCode ?? null}, ${now}, ${now})
+      VALUES (${ctx.workspaceId}, ${printerId}, ${secrets.printerIp ?? null}, ${secrets.serial ?? null}, ${accessCode}, ${now}, ${now})
       ON CONFLICT (printer_id) DO UPDATE SET
         printer_ip   = excluded.printer_ip,
         serial       = excluded.serial,

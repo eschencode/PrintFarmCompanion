@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { closeOpenPrintJobsForPrinter, getLoadedSpools } from '$lib/server';
 import { requireCtx } from '$lib/server/context';
+import { decryptSecret } from '$lib/server/crypto';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
@@ -58,6 +59,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
   if (!printerRow.printer_ip || !printerRow.serial || !printerRow.access_code) {
     return json({ success: false, error: 'Printer missing Pi credentials (IP/serial/access code)' }, { status: 400 });
   }
+  const accessCode = await decryptSecret(printerRow.access_code as string, ctx.encryptionKey);
 
   // Create the print_jobs row BEFORE telling the Pi to start. The Pi upload +
   // preheat window is seconds long; if the row were inserted afterwards, a
@@ -82,7 +84,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
         file_path: module.filename,
         printer_ip: printerRow.printer_ip,
         printer_serial: printerRow.serial,
-        printer_access_code: printerRow.access_code,
+        printer_access_code: accessCode,
         printer_name: printerRow.name,
         printer_model: printerRow.model ?? '',
         options: options ?? {},

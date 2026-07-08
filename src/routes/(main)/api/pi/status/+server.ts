@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 import { requireCtx } from '$lib/server/context';
+import { decryptSecret } from '$lib/server/crypto';
 
 /**
  * GET /api/pi/status?serial=SERIALNUMBER
@@ -38,7 +39,7 @@ export const GET: RequestHandler = async ({ url, platform, locals }) => {
           WHERE ps.serial = ${serial} AND ps.workspace_id = ${ctx.workspaceId}`
     );
     printerIp = printer?.printer_ip ?? '';
-    printerCode = printer?.access_code ?? '';
+    printerCode = printer?.access_code ? await decryptSecret(printer.access_code, ctx.encryptionKey) : '';
     printerName = printer?.name ?? '';
   }
 

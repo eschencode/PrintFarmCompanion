@@ -22,6 +22,8 @@
     "db:delete": "rm -rf .wrangler/state/v3/d1",
     "db:seed": "npx wrangler d1 execute DB --local --file=seed.sql",
     "db:seed:test": "bun run scripts/seed.ts",
+    "test:isolation": "bun run scripts/leak-test.ts",
+    "check:scoping": "bun run scripts/check-tenant-scoping.ts",
     "db:pull": "npx wrangler d1 export DB --remote --output=./remote-backup.sql && rm -rf .wrangler/state/v3/d1 && npx wrangler d1 execute DB --local --command \"SELECT 1;\" > /dev/null && DB_FILE=$(ls .wrangler/state/v3/d1/miniflare-D1DatabaseObject/*.sqlite | head -1) && { echo 'PRAGMA foreign_keys=OFF;'; cat remote-backup.sql; } | sqlite3 \"$DB_FILE\" && echo ' Local DB synced from remote!'"
   },
   "devDependencies": {

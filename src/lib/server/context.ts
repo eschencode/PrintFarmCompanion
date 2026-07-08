@@ -17,6 +17,10 @@ export type TenantContext = {
   // are ctx-based.
   d1: D1Database;
   workspaceId: number;
+  // ENCRYPTION_KEY Worker secret, for encrypting/decrypting secrets-at-rest
+  // (printer access codes). Empty string if unset — enc/dec falls back to the
+  // legacy plaintext path so local dev without the key still works.
+  encryptionKey: string;
 };
 
 /**

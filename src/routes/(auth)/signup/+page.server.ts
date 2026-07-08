@@ -38,6 +38,9 @@ export const actions: Actions = {
       return fail(400, { ...values, error: message });
     }
 
+    // Create the workspace eagerly so the user's chosen name is honored. If this
+    // fails, don't dead-end them — hooks.server.ts self-heals with a default
+    // workspace on the next request (the redirect below), so they're never locked out.
     try {
       await createWorkspaceForUser(platform!.env!.DB, {
         userId,
@@ -46,11 +49,7 @@ export const actions: Actions = {
         requestedName: workspaceName || null,
       });
     } catch (e) {
-      console.error("Workspace creation failed after signup:", e);
-      return fail(500, {
-        ...values,
-        error: "Account created but workspace setup failed. Contact support.",
-      });
+      console.error("Eager workspace creation failed after signup (hook will heal):", e);
     }
 
     throw redirect(303, "/");

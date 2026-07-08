@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 import { requireCtx } from '$lib/server/context';
+import { decryptSecret } from '$lib/server/crypto';
 
 /**
  * POST /api/pi/control
@@ -46,6 +47,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
   if (!printer.printer_ip || !printer.serial || !printer.access_code) {
     return json({ success: false, error: 'Printer missing Pi credentials' }, { status: 400 });
   }
+  const accessCode = await decryptSecret(printer.access_code, ctx.encryptionKey);
 
   try {
     const piResp = await fetch(`${piUrl}/${body.action}`, {
@@ -54,7 +56,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
       body: JSON.stringify({
         printer_ip: printer.printer_ip,
         printer_serial: printer.serial,
-        printer_access_code: printer.access_code,
+        printer_access_code: accessCode,
       }),
     });
     const result = await piResp.json() as { success: boolean; error?: string };
