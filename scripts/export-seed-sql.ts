@@ -42,8 +42,40 @@ if (inserts.length === 0) {
   process.exit(1);
 }
 
-// defer_foreign_keys lets rows load regardless of insert order within the txn.
-const out = `PRAGMA defer_foreign_keys = true;\n${inserts.join("\n")}\n`;
+// D1 enforces FKs per-statement and doesn't honor PRAGMA defer_foreign_keys via
+// `d1 execute --file`, so a child inserted before its parent fails even when the
+// full snapshot is consistent. Emit tables in FK-dependency order (parents first);
+// row order within a table is preserved (categories.parent_id is satisfied because
+// a parent is seeded — and thus has a lower id — before its child).
+const ORDER = [
+  "user", "verification", "account", "session",
+  "workspaces",
+  "printer_presets", "plate_presets",
+  "categories", "objects",
+  "spool_presets", "spools",
+  "printers", "printer_secrets", "printer_loaded_spools",
+  "print_modules", "module_filament_slots",
+  "print_jobs", "print_job_spools",
+  "inventory_log",
+  "print_queue", "printer_queued_jobs",
+  "shopify_settings", "shopify_skus", "shopify_sku_mapping", "shopify_orders",
+  "grid_presets",
+];
+const tableOf = (l: string) => l.match(/^INSERT INTO "?([a-z_]+)"?/i)?.[1] ?? "";
+const rank = (t: string) => {
+  const i = ORDER.indexOf(t);
+  return i === -1 ? ORDER.length : i; // unknown tables sort last (and are flagged)
+};
+const unknown = [...new Set(inserts.map(tableOf).filter((t) => !ORDER.includes(t)))];
+if (unknown.length) console.warn(`⚠️  tables not in dependency order (appended last): ${unknown.join(", ")}`);
+
+// Stable sort by table rank — preserves original per-table row order.
+const ordered = inserts
+  .map((l, i) => ({ l, i, r: rank(tableOf(l)) }))
+  .sort((a, b) => a.r - b.r || a.i - b.i)
+  .map((x) => x.l);
+
+const out = `PRAGMA defer_foreign_keys = true;\n${ordered.join("\n")}\n`;
 await Bun.write(".wrangler/seed-remote.sql", out);
 console.log(`✅ Wrote ${inserts.length} INSERT statements → .wrangler/seed-remote.sql`);
 console.log("   Apply to the new staging DB (via preview slot):");

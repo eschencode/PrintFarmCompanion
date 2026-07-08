@@ -10,7 +10,7 @@
       "database_name": "printfarm",
       "database_id": "ccefd784-1193-4936-a093-e1a14eeffcb8",
       // Staging DB — used by preview deployments and `--preview` CLI commands.
-      //"preview_database_id": "ccefd784-1193-4936-a093-e1a14eeffcb8",
+      "preview_database_id": "ccefd784-1193-4936-a093-e1a14eeffcb8",
       "migrations_dir": "./drizzle",
     },
   ],
