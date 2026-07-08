@@ -1,21 +1,23 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
 import { regenerateGlobalQueueIfStale, getSpoolDemandFromQueue } from '$lib/server/printQueue';
+import { requireCtx } from '$lib/server/context';
 
-export const load: PageServerLoad = async ({ platform }) => {
+export const load: PageServerLoad = async ({ platform, locals }) => {
   const database = platform?.env?.DB;
 
   if (!database) {
     console.log('⚠️ Database not available.');
     return { spoolPresets: [], usageStats: [], spoolDemand: [] };
   }
+  const ctx = requireCtx(locals);
 
-  await regenerateGlobalQueueIfStale(database);
+  await regenerateGlobalQueueIfStale(ctx);
 
   const [spoolPresets, usageStats, spoolDemand] = await Promise.all([
-    db.getAllSpoolPresets(database),
-    db.getSpoolUsageStats(database),
-    getSpoolDemandFromQueue(database),
+    db.getAllSpoolPresets(ctx),
+    db.getSpoolUsageStats(ctx),
+    getSpoolDemandFromQueue(ctx),
   ]);
 
   return { spoolPresets, usageStats, spoolDemand };
@@ -23,9 +25,8 @@ export const load: PageServerLoad = async ({ platform }) => {
 
 export const actions: Actions = {
   // Add stock to a preset
-  addStock: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  addStock: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
 
     const formData = await request.formData();
     const presetId = Number(formData.get('presetId'));
@@ -33,13 +34,12 @@ export const actions: Actions = {
 
     if (!presetId) return { success: false, error: 'Preset ID is required' };
 
-    return db.updateStorageCount(database, presetId, quantity);
+    return db.updateStorageCount(ctx, presetId, quantity);
   },
 
   // Remove stock from a preset
-  removeStock: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  removeStock: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
 
     const formData = await request.formData();
     const presetId = Number(formData.get('presetId'));
@@ -47,13 +47,12 @@ export const actions: Actions = {
 
     if (!presetId) return { success: false, error: 'Preset ID is required' };
 
-    return db.updateStorageCount(database, presetId, -quantity);
+    return db.updateStorageCount(ctx, presetId, -quantity);
   },
 
   // Set absolute stock count
-  setStock: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  setStock: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
 
     const formData = await request.formData();
     const presetId = Number(formData.get('presetId'));
@@ -62,13 +61,12 @@ export const actions: Actions = {
     if (!presetId) return { success: false, error: 'Preset ID is required' };
     if (isNaN(count) || count < 0) return { success: false, error: 'Invalid count' };
 
-    return db.setStorageCount(database, presetId, count);
+    return db.setStorageCount(ctx, presetId, count);
   },
 
   // Create new preset with initial stock
-  createPreset: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  createPreset: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
 
     const formData = await request.formData();
     const brand = formData.get('brand') as string;
@@ -83,7 +81,7 @@ export const actions: Actions = {
       return { success: false, error: 'Brand and material are required' };
     }
 
-    const result = await db.createSpoolPreset(database, {
+    const result = await db.createSpoolPreset(ctx, {
       brand,
       material,
       color,
@@ -96,14 +94,13 @@ export const actions: Actions = {
     return result;
   },
 
-  deletePreset: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  deletePreset: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
 
     const formData = await request.formData();
     const presetId = Number(formData.get('presetId'));
     if (!presetId) return { success: false, error: 'Preset ID is required' };
 
-    return db.deleteSpoolPreset(database, presetId);
+    return db.deleteSpoolPreset(ctx, presetId);
   },
 };

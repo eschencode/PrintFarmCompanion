@@ -2,6 +2,8 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
+import { requireCtx } from '$lib/server/context';
+import { decryptSecret } from '$lib/server/crypto';
 
 /**
  * POST /api/pi/control
@@ -13,8 +15,9 @@ import { getDb } from '$lib/db';
 const ACTIONS = ['pause', 'resume', 'cancel'] as const;
 type Action = (typeof ACTIONS)[number];
 
-export const POST: RequestHandler = async ({ request, platform }) => {
+export const POST: RequestHandler = async ({ request, platform, locals }) => {
   const db = platform?.env?.DB;
+  const ctx = requireCtx(locals);
   const piUrl = platform?.env?.PI_TUNNEL_URL;
   const piSecret = platform?.env?.PI_SECRET ?? '';
 
@@ -37,13 +40,14 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     sql`SELECT ps.printer_ip, ps.serial, ps.access_code
         FROM printers p
         JOIN printer_secrets ps ON p.id = ps.printer_id
-        WHERE p.id = ${body.printer_id}`
+        WHERE p.id = ${body.printer_id} AND p.workspace_id = ${ctx.workspaceId}`
   );
 
   if (!printer) return json({ success: false, error: 'Printer not found' }, { status: 404 });
   if (!printer.printer_ip || !printer.serial || !printer.access_code) {
     return json({ success: false, error: 'Printer missing Pi credentials' }, { status: 400 });
   }
+  const accessCode = await decryptSecret(printer.access_code, ctx.encryptionKey);
 
   try {
     const piResp = await fetch(`${piUrl}/${body.action}`, {
@@ -52,7 +56,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       body: JSON.stringify({
         printer_ip: printer.printer_ip,
         printer_serial: printer.serial,
-        printer_access_code: printer.access_code,
+        printer_access_code: accessCode,
       }),
     });
     const result = await piResp.json() as { success: boolean; error?: string };
@@ -62,7 +66,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       await drizzleDb.run(sql`
         UPDATE print_jobs
         SET failure_reason = 'Cancelled by user'
-        WHERE printer_id = ${body.printer_id} AND status = 'printing'
+        WHERE printer_id = ${body.printer_id} AND status = 'printing' AND workspace_id = ${ctx.workspaceId}
       `);
     }
 

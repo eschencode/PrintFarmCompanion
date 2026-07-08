@@ -23,14 +23,15 @@ type ShopifyEnv = {
 
 export async function getShopifyConfig(
   database?: D1Database,
-  env?: ShopifyEnv
+  env?: ShopifyEnv,
+  workspaceId?: number
 ): Promise<ShopifyConfig | null> {
-  // MULTI-USER (Phase 3): scope to the current workspace —
-  // `WHERE workspace_id = ?` and drop the ORDER BY/LIMIT singleton assumption.
-  if (database) {
+  // Per-workspace config (one row per workspace). Falls back to env for a
+  // system/dev default when no DB row exists.
+  if (database && workspaceId) {
     const drizzleDb = getDb(database);
     const row = await drizzleDb.get<{ store_domain: string; access_token: string }>(
-      sql`SELECT store_domain, access_token FROM shopify_settings ORDER BY updated_at DESC LIMIT 1`
+      sql`SELECT store_domain, access_token FROM shopify_settings WHERE workspace_id = ${workspaceId} LIMIT 1`
     );
     if (row?.store_domain && row?.access_token) {
       const accessToken = await decryptSecret(row.access_token, env?.ENCRYPTION_KEY ?? '');
@@ -51,14 +52,14 @@ export async function getShopifyConfig(
 
 export async function getShopifyConfigSummary(
   database?: D1Database,
-  env?: ShopifyEnv
+  env?: ShopifyEnv,
+  workspaceId?: number
 ): Promise<ShopifyConfigSummary> {
-  // MULTI-USER (Phase 3): scope to the current workspace (see getShopifyConfig).
-  // Never returns the token itself — only whether one exists.
-  if (database) {
+  // Per-workspace (see getShopifyConfig). Never returns the token itself.
+  if (database && workspaceId) {
     const drizzleDb = getDb(database);
     const row = await drizzleDb.get<{ store_domain: string; access_token: string }>(
-      sql`SELECT store_domain, access_token FROM shopify_settings ORDER BY updated_at DESC LIMIT 1`
+      sql`SELECT store_domain, access_token FROM shopify_settings WHERE workspace_id = ${workspaceId} LIMIT 1`
     );
     if (row?.store_domain || row?.access_token) {
       return {

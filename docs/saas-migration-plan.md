@@ -156,69 +156,221 @@ Our additions:
 
 ---
 
-## Phase 3 — Tenancy: add `workspace_id` to domain tables
+## Phase 3 — Tenancy: `workspace_id` on every domain table
 
-**Goal:** every domain row belongs to exactly one workspace. Queries automatically scoped.
+**Goal:** every domain row belongs to exactly one workspace; every query is scoped to
+the caller's workspace. Two separately-signed-up users use the app with fully isolated data.
 
-### Schema changes
+> **Rewritten 2026-06-30** to match the current schema and these confirmed decisions.
+> The old "auto-inject `WHERE` proxy" idea is **dropped** — impossible against ~280
+> raw `sql\`…\`` templates. Enforcement is explicit threading instead.
 
-Add `workspace_id INTEGER NOT NULL REFERENCES workspace(id)` to:
-- `inventory`, `inventory_log`
-- `spools`, `spool_presets`
-- `printers`, `printer_credentials`
-- `print_modules`, `module_spool_presets` (via module)
-- `print_jobs`
-- `grid_presets`
-- `shopify_sku_mapping`, `shopify_sync`, `shopify_orders`
-- `ai_recommendations`
+### Confirmed decisions (Linus, 2026-06-30)
 
-Stays **global** (no `workspace_id`):
-- `printer_models` (P1S, H2S, etc. — shared catalog)
-- All better-auth tables
+1. **Denormalize `workspace_id` onto EVERY per-workspace table, including the
+   "inherited" ones** (`printer_loaded_spools`, `printer_secrets`,
+   `module_filament_slots`, `print_job_spools`, `printer_queued_jobs`). With ~280
+   hand-written SQL queries the only safe, checkable rule is "every domain table has
+   the column; every query filters it" — too easy to forget a parent join otherwise.
+2. **Thread a `ctx: { db, workspaceId }` object, built in the hook**, not a bare param.
+   `hooks.server.ts` sets `locals.ctx = { db: getDb(env.DB), workspaceId: workspace.id }`.
+   Every domain server fn takes `ctx`; loaders/actions pass `locals.ctx`. Phase 4
+   extends `ctx` with `userId`/`role` instead of re-refactoring 95 signatures.
+3. **`workspace_id INTEGER NOT NULL` from the start** — no nullable/backfill compromise.
+   Enabled by the fresh-DB dev workflow (below) + shipping schema and code per group.
+4. **Incremental rollout, one table-group at a time, schema + code together.** Because
+   the column is `NOT NULL` with no default, a table breaks all inserts the moment it
+   has the column — so each group's migration only adds the column to tables whose
+   queries the same step fixes. App stays runnable and testable at every step.
 
-Constraint changes:
-- `inventory.slug UNIQUE` → `UNIQUE(workspace_id, slug)`
-- `inventory.sku UNIQUE` → `UNIQUE(workspace_id, sku)`
-- Any other globally-unique business identifier → scope to workspace
+### Dev workflow change: fresh DB, no backfill
 
-Index additions:
-- `idx_<table>_workspace` on every table with `workspace_id`
+Develop Phase 3 against an **empty local D1**. `bun run db:reset` → sign up → everything
+you create is already tagged with your workspace. No data-migration logic in the schema.
+Existing real data is handled once, at production cutover (runbook at the end of this phase).
 
-### Tenancy enforcement strategy
+- [ ] **Pre-req:** fix `seed.sql` (currently stale → `db:reset` gives an empty DB). A
+  minimal seed (catalog presets + one demo object) makes resets usable for dev.
 
-Two layers:
+### Table scope (current schema)
 
-1. **Typed DB helper** — `getDb(platform).forWorkspace(workspaceId)` returns a proxy where queries auto-inject `where workspace_id = ?`. Implementation: thin wrapper around Drizzle that pre-binds the filter. Reduces forget-to-scope bugs.
-2. **Convention + review** — direct Drizzle access available for joins/admin queries that intentionally cross workspaces.
+**Global — no `workspace_id`:** `user`, `session`, `account`, `verification`, `workspaces`.
 
-Hook-level: `hooks.server.ts` reads `locals.workspace.id` and passes it into a request-scoped `event.locals.db`.
+**Hybrid catalog — `workspace_id` NULLable** (NULL = system row, set = user-defined),
+unique constraints become `UNIQUE(COALESCE(workspace_id,0), …)`:
+`printer_presets`, `plate_presets`.
 
-### Secrets encryption
+**Per-workspace — `workspace_id INTEGER NOT NULL REFERENCES workspaces(id)`** (+ index
+`idx_<table>_workspace`):
+`spool_presets`, `categories`, `objects`, `spools`, `printers`, `printer_secrets`,
+`printer_loaded_spools`, `print_modules`, `module_filament_slots`, `print_jobs`,
+`print_job_spools`, `printer_queued_jobs`, `grid_presets`, `inventory_log`,
+`shopify_settings`, `shopify_sku_mapping`, `shopify_orders`, `shopify_skus`, `print_queue`.
 
-- Add `printer_credentials.access_code_encrypted` (replace plaintext column)
-- Add `workspace_integrations(workspace_id, type, config_encrypted, created_at, updated_at)` for Shopify tokens etc.
-- Use a Worker secret (`ENCRYPTION_KEY`) + WebCrypto AES-GCM for envelope encryption
-- Helper: ~~`src/lib/crypto.ts`~~ → **`src/lib/server/crypto.ts`** (server-only path so it
-  can't bundle into the client). `encryptSecret(plaintext, key)` / `decryptSecret(ciphertext, key)`.
+**Unique constraints to re-scope to the workspace:** `objects.name`, `objects.sku`,
+`categories.name`, `shopify_skus` identity, `shopify_sku_mapping (shopify_sku, object_id)`,
+`grid_presets.is_default` → partial unique `UNIQUE(workspace_id) WHERE is_default=1`,
+catalog dedup on presets via `COALESCE(workspace_id,0)`.
 
-> **DONE EARLY (2026-06-03):** the crypto helper and Shopify-token-at-rest
-> encryption were pulled forward ahead of multi-tenancy (token was about to be
-> tested with real credentials). `shopify_settings.access_token` now stores
-> AES-256-GCM ciphertext. Remaining Phase-3 work here: `printer_credentials`
-> encryption, and moving Shopify creds into the per-workspace `workspace_integrations`
-> table (today they live in the single-row `shopify_settings`, `id=1`).
+### Step 0 — wiring (before any table is scoped) ✅ DONE 2026-07-01
 
-### Tasks
+- [x] `TenantContext = { db: AppDB; workspaceId: number }` + `requireCtx(locals)` in `src/lib/server/context.ts` (re-exported from `$lib/server`).
+- [x] `hooks.server.ts` sets `locals.ctx` when a session resolves; typed in `app.d.ts`. Non-null wherever `locals.user` is.
 
-- [ ] Generate migration `0003_tenancy.sql` adding `workspace_id` columns + indexes + unique constraint updates
-- [ ] Build `forWorkspace()` DB helper
-- [ ] Update `hooks.server.ts` to attach scoped db to `event.locals`
-- [ ] Refactor every query site to use `locals.db` instead of `getDb(platform)` directly
-- [ ] Add `src/lib/crypto.ts`; migrate `printer_access_code` and Shopify token to encrypted storage
-- [ ] Add a dev-mode assertion that fails loud if a domain query is missing `workspace_id` (catch regressions)
-- [ ] Smoke test: create two workspaces, verify zero data leak between them
+### Group 1 — objects + inventory_log ✅ DONE 2026-07-01
 
-**Done when:** two separately-signed-up users can use the app simultaneously with fully isolated data.
+- [x] Migration `0013_tenancy_objects.sql`: `workspace_id NOT NULL` on both; `objects.name` unique → `(workspace_id, name)`; workspace indexes.
+- [x] `inventory_handler.ts`: all 16 fns take `ctx`, every query scoped.
+- [x] Callers updated to pass `locals.ctx`: `api/objects`, `inventory/`, `inventory/b2b-sell`, `inventory/stock-count`, `modules`, `products`, `settings/integrations`, `stats`, dashboard `completePrint`.
+- [x] Cross-group object writes scoped via threaded `workspaceId`: `completePrintJob` (jobs.ts), `assignObjectCategory` (categories.ts), `ShopifySyncService` (constructor now takes workspaceId; cron-sync resolves first workspace with a `TODO(group 7)`).
+- [x] In-loader helper queries scoped (getSetDefinitions/getUnitWeights/getSalesWindows + stats velocity/stockflow raw SQL).
+- [x] **Leak test passed:** two workspaces, each sees only its own objects; same object name allowed in both; all inventory/stats/products/modules pages render 200. svelte-check clean.
+- [ ] **DEFERRED to their groups (no visible leak on single-workspace dev; annotate-by-unique-id):** `AIContextBuilder` primary reads of objects/inventory_log (6 call sites) → group 6 (queue) / recommendation; `LEFT JOIN objects` module-name reads in `modules.ts`/`printQueue.ts`/`api/print-modules` → group 4 (modules get workspace_id, join self-scopes); `shopify_sku_mapping` reads → group 7.
+
+### Group 2 — spool_presets + spools ✅ DONE 2026-07-03
+
+- [x] Migration `0014_tenancy_spools.sql`: `workspace_id NOT NULL` + index on both.
+- [x] `server/spools.ts`: all 13 fns take `ctx`, every query scoped.
+- [x] `TenantContext` gained a raw `d1` handle (for calling not-yet-migrated helpers like `setLoadedSpool`); hook sets it.
+- [x] Callers updated: dashboard, spools page, settings/materials, modules, integrations, stats. Cross-group: `completePrintJob` builds a `ctx` for spool calls; stats spool edit/delete + `api/print-modules?presets` scoped.
+- [x] Seed updated — spool_presets + spools are now per-workspace; shared printers/modules/jobs reference NULL spool/preset FKs.
+- [x] **Leak test passed:** Alice presets [1,2,3], Bob [4,5,6]; 3/workspace; pages render.
+- [ ] DEFERRED: `getSpoolDemandFromQueue` spool reads (operate on the still-global print queue) → Group 6.
+
+### Group 3 — printers + printer_secrets + printer_loaded_spools ✅ DONE 2026-07-05
+
+- [x] Migration `0015`: `workspace_id NOT NULL` + index on all three.
+- [x] `printers.ts`: 15 fns → `ctx` (printers/secrets/loaded_spools). Printer *presets* stay catalog (db, Group 9); `printer_queued_jobs` fns stay db (Group 6).
+- [x] Cross-group threading: `startPrintJob`, `adoptExternalPrintJob` (jobs.ts), `assignQueueToPrinter` (printQueue.ts), `AIRecommendationService` + `generateAndSaveSuggestedQueue` (recommendation) all take `ctx` now (they operate on printers). `spools.ts loadSpool` calls `setLoadedSpool(ctx)` directly.
+- [x] Pi-control endpoints scoped by `workspace_id` (were the real leak: control another workspace's printer by id/serial): `api/pi/print`, `api/pi/control`, `api/pi/status` (both queries). Plus dashboard, settings/printers, settings/connections, settings/dashboard, modules, stats (+deleteSpool loaded-check), api/printer/[id], api/stats.
+- [x] Seed: printers/secrets/loaded-spools per-workspace, loaded with each workspace's own spools; shared jobs now `printer_id = NULL`.
+- [x] **Leak test passed:** each workspace sees only its 2 printers; pages render.
+- [ ] DEFERRED: `jobs.ts` print_jobs→printers joins (print_jobs global) → Group 5.
+
+### Group 4 — print_modules + module_filament_slots ✅ DONE 2026-07-05
+
+- [x] Migration `0016`: `workspace_id NOT NULL` + index on both.
+- [x] `modules.ts`: all 7 fns → `ctx`, every query scoped.
+- [x] Cross-group: `distributeWeightAcrossSlots` (jobs.ts) → ctx; `startPrintJob`/`completePrintJob` call `getPrintModuleById(ctx)`.
+- [x] **`api/print-modules`** (raw-SQL module CRUD — POST/GET/PATCH/DELETE + writeSlots/syncModuleWeight helpers) fully scoped by `workspace_id`. Plus `api/pi/print` (module fetch), `api/pi/status` (external-print module match), inventory `getProductionStats`, products module read, spools preset-delete check.
+- [x] Seed: modules per-workspace (produce the workspace's objects, slots require its presets); jobs per-workspace with coherent module/printer/spool FKs (still globally visible until Group 5).
+- [x] **Leak test passed:** Alice modules [1,2], Bob [3,4]; pages render.
+- [ ] DEFERRED to Group 6 (queue/recommendation module reads): `printQueue.ts` (assignQueueToPrinter, demand, regen), `context-builder`, `recommendation-service`, `getPrinterQueuedJobs` join. DEFERRED to Group 5: `jobs.ts` print_jobs→modules joins.
+
+### Group 5 — print_jobs + print_job_spools ✅ DONE 2026-07-06
+
+- [x] Migration `0017`: `workspace_id NOT NULL` + index on both.
+- [x] `jobs.ts`: all 14 fns → `ctx`, every query scoped. `completePrintJob` signature simplified from `(db, workspaceId, …)` → `(ctx, …)`.
+- [x] Resolves the deferred `print_jobs → printers/modules` joins from Groups 3/4 (now filtered by `pj.workspace_id` directly).
+- [x] Raw job SQL in endpoints scoped: `api/pi/print` (insert/delete/update job + job_spools), `api/pi/control` (cancel stamp), `api/pi/status` (open-job lookup), `api/printer/[id]/finished`, `api/print-modules` DELETE (null module refs), `printers.ts` delete-check.
+- [x] **`api/pi/webhook`** (external, no session): left as-is — matches by globally-unique `external_task_id` (UNIQUE), returns no tenant data, so workspace-safe by construction.
+- [x] Seed: jobs + job_spools per-workspace.
+- [x] **Verified:** DB 4 jobs/workspace scoped; all queries `WHERE workspace_id`; pages render; typecheck clean.
+
+### Group 6 — print_queue + printer_queued_jobs ✅ DONE 2026-07-06
+
+- [x] Migration `0018`: `workspace_id NOT NULL` + index on both.
+- [x] `printQueue.ts`: all 7 fns → `ctx`, scoped (regenerate/getGlobalQueue/addManual/remove/assign/spoolDemand). `printers.ts` 4 queue fns → `ctx`.
+- [x] **`AIContextBuilder` (context-builder.ts) → `ctx`** — this closes ALL the deferred queue/recommendation leaks flagged in Groups 1–4 (objects/inventory_log/modules primary reads). `AIRecommendationService` + `generateAndSaveSuggestedQueue` fully ctx.
+- [x] Callers: dashboard, inventory (+regenerateQueue action), spools, `api/ai-recommendations` (all 3 types).
+- [x] Seed wipe list extended (queue tables are runtime-generated, not seeded).
+- [x] **Leak test passed:** Alice queue object_ids [1-4], Bob [5-8]; spool-demand presets differ per workspace; print_queue 4 rows/workspace.
+
+### Group 7 — Shopify (settings, sku_mapping, orders, skus) ✅ DONE 2026-07-06
+
+- [x] Migration `0019`: `workspace_id NOT NULL` on all 4; unique constraints re-scoped to `(workspace_id, …)`. `shopify_settings` singleton → one row per workspace (UNIQUE(workspace_id)).
+- [x] `shopifyConfig.ts`: `getShopifyConfig`/`Summary` take `workspaceId`, scope the DB read (env fallback kept). `saveShopifyConfig` upsert now keys on `workspace_id` (was `id=1`).
+- [x] `sync.ts` (ShopifySyncService): all ~11 order/sku/mapping queries scoped by `this.workspaceId` (already had it from Group 1).
+- [x] **`cron-sync` (external): now loops over EVERY workspace's `shopify_settings`** and syncs each with its own config/workspaceId (was: first workspace only).
+- [x] Scoped: integrations page (load + all actions), stats order charts, products/inventory/b2b raw `sku_mapping WHERE shopify_sku` reads, `inventory_handler` delete + recent-logs order join.
+- [x] All `MULTI-USER (Phase 3)` code markers removed.
+- [x] Seed: one SKU mapping per product per workspace. **Leak test passed:** 4 mappings/workspace, integrations page scoped, pages render.
+
+### Group 8 — grid_presets + categories ✅ DONE 2026-07-06
+
+- [x] Migration `0020`: `workspace_id NOT NULL` + index on both.
+- [x] `grid.ts` (7 fns) + `categories.ts` (5 fns) → `ctx`, every query scoped — including the `is_default` "unset all" writes (per-workspace) and the sort-order/parent lookups. `assignObjectCategory` dropped its explicit `workspaceId` param (now on `ctx`).
+- [x] Callers: dashboard load, `settings/dashboard` (load + 4 grid actions), inventory (categories load + 4 category actions).
+- [x] `modules.ts` category join left as-is (`o.category_id` is workspace-owned + module query already filters `pm.workspace_id`).
+- [x] **Leak test passed:** Alice's category + grid preset are workspace-scoped; Bob doesn't see them.
+
+### Group 9 — hybrid catalog + (deferred) secrets encryption ✅ TENANCY DONE 2026-07-08
+
+- [x] Migration `0021`: `printer_presets` + `plate_presets` get **NULLable** `workspace_id` (NULL = shared system catalog, set = a workspace's custom row). Unique dedup uses `COALESCE(workspace_id, 0)` so all system rows share scope 0 (SQLite treats NULLs as distinct otherwise).
+- [x] `printers.ts` preset fns → `ctx` hybrid: reads `WHERE workspace_id IS NULL OR = ctx.workspaceId`; create writes a workspace-owned row; update/delete only match own rows (system catalog is read-only from the app, returns "not found or system preset"). `plate_presets` has no create fn → system-only.
+- [x] Callers: modules, settings/printers (load + 3 model actions). `getPrinterFull` now uses `getPrinterPresetById(ctx)`.
+- [x] Seed catalog inserts default `workspace_id = NULL` (system). **Leak test passed:** system P1S shared across workspaces; Alice's custom "DIY Cube" invisible to Bob.
+
+**🎉 PHASE 3 TENANCY COMPLETE** — every domain table + hybrid catalog is workspace-isolated (groups 1–9). Two users have fully separate data.
+
+### Still open (post-tenancy, tracked here)
+
+- [ ] **Part B — `printer_secrets.access_code` encryption at rest.** DEFERRED: it's security-hardening (the code is already workspace-scoped, so no cross-tenant read), and encrypting it touches the critical print path (decrypt in pi/print, pi/control, pi/status) + the client-exposed direct-MQTT path (dashboard sends `printer_access_code` to the desktop app) + the settings/printers edit prefill. Do as a focused task with the crypto helper (`encryptSecret`/`decryptSecret`), mirroring the Shopify-token "leave blank to keep" pattern. Not required for multi-user isolation.
+- [ ] **Production cutover** — execute the runbook (below) when going live.
+
+### Step N — per table-group (repeat for each group, in this order)
+
+Order = low→high blast radius:
+1. `objects` + `inventory_log`
+2. `spool_presets` + `spools`
+3. `printers` + `printer_secrets` + `printer_loaded_spools`
+4. `print_modules` + `module_filament_slots`
+5. `print_jobs` + `print_job_spools`
+6. `print_queue` + `printer_queued_jobs`
+7. `shopify_settings` + `shopify_sku_mapping` + `shopify_orders` + `shopify_skus`
+8. `grid_presets` + `categories`
+9. catalog (`printer_presets`, `plate_presets`) — nullable workspace_id + COALESCE unique
+
+For each group:
+- [ ] Hand-write migration `00NN_tenancy_<group>.sql`: add `workspace_id` (+ index, +
+  re-scoped unique constraints for that group's tables). NOT NULL for per-workspace tables.
+- [ ] Update that group's server fns to take `ctx` and add `AND workspace_id = ?` to every
+  SELECT/UPDATE/DELETE and set `workspace_id` on every INSERT.
+- [ ] Update call sites (loaders, actions, API routes) to pass `locals.ctx`.
+- [ ] `bun run db:reset` + smoke-test the affected pages.
+- [ ] **Leak test** for the group: two workspaces seeded, assert each list/detail query
+  returns only its own rows (see "Leak test" below).
+
+### External paths (no session → resolve workspace from data)
+
+- [ ] **`/api/pi/webhook`** — no user. Resolve workspace from the printer: look up
+  `printers.workspace_id` by serial, build `ctx` from that, then scope writes.
+- [ ] **`/api/cron-sync`** — iterate **all** workspaces' `shopify_settings` and sync each
+  (today a single `id=1` row). Per-workspace `ctx` inside the loop.
+
+### Secrets encryption (finish what was started early)
+
+The crypto helper (`src/lib/server/crypto.ts`, AES-256-GCM) and Shopify-token-at-rest
+encryption already shipped (2026-06-03). Remaining:
+- [ ] Encrypt `printer_secrets.access_code` (store ciphertext, decrypt on use).
+- [ ] Move Shopify creds from the single shared `shopify_settings` row (`id=1`) to
+  per-workspace rows (`shopify_settings.workspace_id`, upsert keyed on workspace).
+  Code sites tagged `MULTI-USER (Phase 3)`: `schema.ts`, `server/shopifyConfig.ts`,
+  `settings/integrations/+page.server.ts`.
+
+### Leak test (the real safety net, replaces the dropped dev-assertion)
+
+- [ ] Integration test (or scripted curl run): sign up workspace A and B, create
+  overlapping data in each, then assert every list endpoint/loader returns only the
+  caller's rows and no detail route resolves another workspace's id. Run after each group.
+
+### Production cutover runbook (one-time, at the end of Phase 3)
+
+Existing real remote data has no `workspace_id`. Don't backfill in-schema — copy it in
+after the fact:
+
+1. **Back up** current prod: `wrangler d1 export DB --remote --output prod-backup.sql`.
+2. **Rebuild prod fresh** on the Phase 3 schema (apply all migrations to an empty remote DB).
+3. **Sign up in prod** → your workspace gets id `1` (fresh DB, predictable).
+4. **Transform** `prod-backup.sql` → keep only your domain `INSERT`s, drop old schema/auth
+   rows, inject `workspace_id = 1` into each. (Write a small sed/python script then.)
+   Keep original integer PKs so FKs line up; order inserts by FK dependency (D1 does NOT
+   persist `PRAGMA foreign_keys=OFF` across statements — see migration 0003 lesson).
+5. **Import**: `wrangler d1 execute DB --remote --file prod-data-tenanted.sql`.
+6. Spot-check: counts match the backup, dashboard renders your printers/objects/jobs.
+
+**Done when:** two separately-signed-up users use the app simultaneously with fully
+isolated data, all groups pass the leak test, secrets encrypted, prod data copied in.
 
 ---
 
@@ -240,6 +392,46 @@ Backlog for later:
 ## Working notes & log
 
 Append entries as we go. Most recent on top.
+
+### 2026-06-30 — Phase 2 kicked off (multi-user work resumes)
+
+State check on `main`: Phases 0–1 done, migrations through `0011`. No `hooks.server.ts`,
+no `src/lib/auth.ts`, no auth dep — Phase 2 fully unstarted.
+
+**Decisions confirmed (Linus):**
+- D2 stands — **better-auth** (`better-auth@1.6.23` installed via bun).
+- Signup model — **open email+password signup → auto-create one workspace per user**. OAuth later.
+- Existing data — **backfill all current rows into a default workspace** in Phase 3 (NOT wipe; supersedes D5). He has real Shopify data to keep.
+
+**Verified wiring for our stack (Workers + D1 + Drizzle):**
+- **Per-request auth instance, no module-level singleton.** D1 binding only exists per-request
+  via `platform.env.DB`, so `src/lib/auth.ts` is a `createAuth(d1)` factory, not an exported `auth`.
+- Pass `ctx.waitUntil` so better-auth's post-response background tasks (session writes, token
+  cleanup) complete before the Worker exits — otherwise "Network connection lost".
+- Use the **Drizzle adapter** (`drizzleAdapter(getDb(d1), { provider: 'sqlite', schema })`) so
+  `schema.ts` stays the single source of truth; auth tables generated into our schema + a drizzle migration.
+- Import paths (1.6.23): `better-auth/adapters/drizzle` → `drizzleAdapter`;
+  `better-auth/svelte-kit` → `sveltekitCookies(getRequestEvent)`, `svelteKitHandler`;
+  `better-auth/svelte` → `createAuthClient`.
+- `svelteKitHandler({ event, resolve, auth, building })` mounts the API catch-all automatically — no manual `/api/auth/[...all]` route needed.
+
+**Phase 2 checklist (one step at a time):**
+1. [x] Install better-auth + verify current Drizzle/D1/SvelteKit wiring.
+2. [x] Add auth tables (`user`, `session`, `account`, `verification`) + `workspaces` to `schema.ts`; migration `0012_auth.sql` applied locally. NOTE: migrations are **hand-written** here (drizzle-kit `_journal.json` stale at 0001; `generate` prompts interactively and is unused) — write SQL by hand, apply via `db:migrate:local`.
+3. [x] `src/lib/auth.ts` — `createAuth(d1, {secret, baseURL})` factory, email+password, drizzle adapter, sveltekitCookies plugin. `auth-client.ts` (browser). `BETTER_AUTH_SECRET` in `.dev.vars` + `Platform.env`. Runtime-untested until signup exists (step 5/6).
+4. [x] `createWorkspaceForUser()` helper (`server/workspaces.ts`). Name = optional form `requestedName` else "<name> Printfarm" (fallback email local-part); slug = slugify+random, retried on collision. Wired into signup action in step 5.
+5. [x] `(auth)/login` + `(auth)/signup` form actions, `POST /logout` endpoint, `getAuth(platform)` helper. Runtime-tested: signup creates user+account+session+workspace, dup-email/wrong-pw error paths, logout clears cookies. Signup uses optional `workspaceName` field → `createWorkspaceForUser`. (Test user `linus@test.dev` left in local D1.)
+6. [x] `src/hooks.server.ts` — per-request `getAuth` → `getSession` → populate `locals.user/session/workspace` (+ `getWorkspaceForUser` helper), then `svelteKitHandler` mounts `/api/auth/*`. `App.Locals` typed via `Auth['$Infer']['Session']`. Runtime-verified: get-session returns user, app still renders, unauthed still 200 (guard is step 7).
+7. [x] **Guard in `hooks.server.ts`** (single choke point, pages + API). Unauth page → `303 /login?redirectTo=`; unauth `/api/*` → `401 json`. Authed user on `/login`/`/signup` → `303 /`. Public allowlist: pages `/login /signup /landing`; API `/api/cron-sync`, `/api/pi/webhook` (own incoming secrets); `/api/auth/*` bypasses via null `route.id`. Login action honors same-site `redirectTo`. **Logout UI:** button in dashboard header + new `/settings/account` page (login/workspace info + logout) + Account card in settings grid. Runtime-verified all paths.
+
+**✅ PHASE 2 COMPLETE (2026-06-30).** App is now gated — no unauthenticated access except the public allowlist. Domain data is still shared across users (single-tenant) — that's Phase 3.
+
+**Before remote deploy:** (a) `wrangler secret put BETTER_AUTH_SECRET` on the remote Worker; (b) `bun run db:migrate:remote` to apply `0012_auth.sql`; (c) optionally set `BETTER_AUTH_URL` to the deploy origin. Local test user `linus@test.dev` / `supersecret123` exists in local D1 only.
+
+### Phase 3 entry notes (next session)
+- Backfill (not wipe): create a default workspace row, set `workspace_id = <that id>` on all existing domain rows in the same migration that adds the column.
+- `getWorkspaceForUser` already resolves `locals.workspace`; Phase 3 builds `forWorkspace(id)` and threads `locals.workspace.id` into queries.
+- Reminder from `MULTI-USER (Phase 3)` code markers: `shopify_settings` single-row (`id=1`) → per-workspace; encrypt `printer_secrets.access_code`.
 
 ### 2026-06-03 — ⚠️ PUBLIC DEPLOY GATE (read before exposing this app)
 

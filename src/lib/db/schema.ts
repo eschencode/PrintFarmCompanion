@@ -39,6 +39,11 @@ export const printerPresets = sqliteTable(
   "printer_presets",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    // Hybrid scope: NULL = shared system catalog row; set = a workspace's custom
+    // preset. Reads see (NULL OR own); edits/deletes only touch own rows.
+    workspaceId: integer("workspace_id").references(() => workspaces.id, {
+      onDelete: "cascade",
+    }),
     model: text("model").notNull(),
     brand: text("brand").notNull(),
     dimensionX: integer("dimension_x"),
@@ -54,9 +59,14 @@ export const printerPresets = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
-    // Catalog dedup: one row per (brand, model).
-    // Phase 3: becomes UNIQUE(COALESCE(workspaceId, 0), brand, model).
-    uniqueIndex("uniq_printer_presets_brand_model").on(t.brand, t.model),
+    // Catalog dedup: one row per (brand, model) within a scope. COALESCE so all
+    // system rows (NULL) share scope 0 (SQLite treats NULLs as distinct otherwise).
+    uniqueIndex("uniq_printer_presets_brand_model").on(
+      sql`COALESCE(${t.workspaceId}, 0)`,
+      t.brand,
+      t.model,
+    ),
+    index("idx_printer_presets_workspace").on(t.workspaceId),
   ],
 );
 
@@ -68,6 +78,10 @@ export const platePresets = sqliteTable(
   "plate_presets",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    // Hybrid scope (see printerPresets). NULL = system plate.
+    workspaceId: integer("workspace_id").references(() => workspaces.id, {
+      onDelete: "cascade",
+    }),
     name: text("name").notNull(), // e.g., "engineering plate"
     dimensionX: integer("dimension_x"),
     dimensionY: integer("dimension_y"),
@@ -79,8 +93,11 @@ export const platePresets = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
-    // Phase 3: becomes UNIQUE(COALESCE(workspaceId, 0), name).
-    uniqueIndex("uniq_plate_presets_name").on(t.name),
+    uniqueIndex("uniq_plate_presets_name").on(
+      sql`COALESCE(${t.workspaceId}, 0)`,
+      t.name,
+    ),
+    index("idx_plate_presets_workspace").on(t.workspaceId),
   ],
 );
 
@@ -88,8 +105,13 @@ export const platePresets = sqliteTable(
 // SPOOL PRESETS
 // SCOPE: per-workspace (each user maintains their own filament library)
 // =============================================================================
-export const spoolPresets = sqliteTable("spool_presets", {
+export const spoolPresets = sqliteTable(
+  "spool_presets",
+  {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  workspaceId: integer("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
   color: text("color").notNull(),
   // Hex value (e.g. "#1a1a1a") used for UI swatches/gauges. `color` stays the
   // human-readable name. Nullable: legacy presets fall back to the name.
@@ -108,7 +130,9 @@ export const spoolPresets = sqliteTable("spool_presets", {
   updatedAt: integer("updated_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
-});
+  },
+  (t) => [index("idx_spool_presets_workspace").on(t.workspaceId)],
+);
 
 // =============================================================================
 // OBJECTS (inventory items the print farm produces)
@@ -121,6 +145,9 @@ export const categories = sqliteTable(
   "categories",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     parentId: integer("parent_id").references((): any => categories.id, {
       onDelete: "cascade",
@@ -130,13 +157,19 @@ export const categories = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [index("idx_categories_parent").on(t.parentId)],
+  (t) => [
+    index("idx_categories_parent").on(t.parentId),
+    index("idx_categories_workspace").on(t.workspaceId),
+  ],
 );
 
 export const objects = sqliteTable(
   "objects",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     // Name is the human display identifier. Must be unique per workspace.
     // "SKU" only lives in shopify_sku_mapping.shopify_sku — that's Shopify's concept.
     name: text("name").notNull(),
@@ -157,8 +190,8 @@ export const objects = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
-    // Phase 3: becomes UNIQUE(workspaceId, name).
-    uniqueIndex("uniq_objects_name").on(t.name),
+    uniqueIndex("uniq_objects_workspace_name").on(t.workspaceId, t.name),
+    index("idx_objects_workspace").on(t.workspaceId),
     index("idx_objects_category").on(t.category),
     index("idx_objects_category_id").on(t.categoryId),
     index("idx_objects_stock").on(t.inStock, t.minThreshold),
@@ -173,6 +206,9 @@ export const spools = sqliteTable(
   "spools",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     // Nullable: ad-hoc spools that don't match any saved preset are allowed.
     presetId: integer("preset_id").references(() => spoolPresets.id, {
       onDelete: "set null",
@@ -190,7 +226,10 @@ export const spools = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [index("idx_spools_preset").on(t.presetId)],
+  (t) => [
+    index("idx_spools_preset").on(t.presetId),
+    index("idx_spools_workspace").on(t.workspaceId),
+  ],
 );
 
 // =============================================================================
@@ -201,6 +240,9 @@ export const printers = sqliteTable(
   "printers",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     // Required: a printer must be tied to a known model.
     // "restrict" so a preset can't be deleted while printers reference it.
@@ -230,6 +272,7 @@ export const printers = sqliteTable(
   (t) => [
     index("idx_printers_preset").on(t.printerPresetId),
     index("idx_printers_active").on(t.active),
+    index("idx_printers_workspace").on(t.workspaceId),
   ],
 );
 
@@ -243,6 +286,9 @@ export const printers = sqliteTable(
 export const printerLoadedSpools = sqliteTable(
   "printer_loaded_spools",
   {
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     printerId: integer("printer_id")
       .notNull()
       .references(() => printers.id, { onDelete: "cascade" }),
@@ -262,6 +308,7 @@ export const printerLoadedSpools = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.printerId, t.slotIndex] }),
     index("idx_printer_loaded_spools_spool").on(t.spoolId),
+    index("idx_printer_loaded_spools_workspace").on(t.workspaceId),
   ],
 );
 
@@ -274,12 +321,18 @@ export const printerSecrets = sqliteTable(
   "printer_secrets",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     printerId: integer("printer_id")
       .notNull()
       .references(() => printers.id, { onDelete: "cascade" }),
     printerIp: text("printer_ip"),
     serial: text("serial"),
-    // Phase 3: replace with accessCodeEncrypted + Worker-secret KEK envelope encryption.
+    // Encrypted-at-rest (AES-256-GCM, "v1:" prefix) via src/lib/server/crypto.ts,
+    // keyed by the ENCRYPTION_KEY Worker secret. Written encrypted by
+    // upsertPrinterSecrets; decrypted by getPrinterSecrets + the pi endpoints.
+    // Legacy plaintext rows (e.g. seed data) read through unchanged.
     accessCode: text("access_code"),
     // How to send commands: 'auto' picks direct (desktop) or Pi fallback, 'direct' forces MQTT, 'pi' forces Pi bridge.
     transport: text("transport", { enum: ["auto", "direct", "pi"] }).default("auto").notNull(),
@@ -290,7 +343,10 @@ export const printerSecrets = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [uniqueIndex("uniq_printer_secrets_printer").on(t.printerId)],
+  (t) => [
+    uniqueIndex("uniq_printer_secrets_printer").on(t.printerId),
+    index("idx_printer_secrets_workspace").on(t.workspaceId),
+  ],
 );
 
 // =============================================================================
@@ -304,6 +360,9 @@ export const printModules = sqliteTable(
   "print_modules",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     // Total expected filament weight across all slots (sum of slot weights).
     weight: integer("weight").notNull().default(0),
@@ -339,6 +398,7 @@ export const printModules = sqliteTable(
     index("idx_print_modules_printer_preset").on(t.printerPresetId),
     index("idx_print_modules_plate_preset").on(t.platePresetId),
     index("idx_print_modules_active").on(t.active),
+    index("idx_print_modules_workspace").on(t.workspaceId),
   ],
 );
 
@@ -352,6 +412,9 @@ export const printModules = sqliteTable(
 export const moduleFilamentSlots = sqliteTable(
   "module_filament_slots",
   {
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     moduleId: integer("module_id")
       .notNull()
       .references(() => printModules.id, { onDelete: "cascade" }),
@@ -367,6 +430,7 @@ export const moduleFilamentSlots = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.moduleId, t.slotIndex] }),
     index("idx_module_filament_slots_preset").on(t.spoolPresetId),
+    index("idx_module_filament_slots_workspace").on(t.workspaceId),
   ],
 );
 
@@ -380,6 +444,9 @@ export const printJobs = sqliteTable(
   "print_jobs",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     moduleId: integer("module_id").references(() => printModules.id, {
       onDelete: "set null",
     }),
@@ -420,6 +487,7 @@ export const printJobs = sqliteTable(
     index("idx_print_jobs_module").on(t.moduleId),
     index("idx_print_jobs_status").on(t.status),
     index("idx_print_jobs_created_at").on(t.createdAt),
+    index("idx_print_jobs_workspace").on(t.workspaceId),
   ],
 );
 
@@ -432,6 +500,9 @@ export const printJobs = sqliteTable(
 export const printJobSpools = sqliteTable(
   "print_job_spools",
   {
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     printJobId: integer("print_job_id")
       .notNull()
       .references(() => printJobs.id, { onDelete: "cascade" }),
@@ -446,6 +517,7 @@ export const printJobSpools = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.printJobId, t.slotIndex] }),
     index("idx_print_job_spools_spool").on(t.spoolId),
+    index("idx_print_job_spools_workspace").on(t.workspaceId),
   ],
 );
 
@@ -457,6 +529,9 @@ export const gridPresets = sqliteTable(
   "grid_presets",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     isDefault: integer("is_default", { mode: "boolean" })
       .notNull()
@@ -472,7 +547,10 @@ export const gridPresets = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [index("idx_grid_presets_default").on(t.isDefault)],
+  (t) => [
+    index("idx_grid_presets_default").on(t.isDefault),
+    index("idx_grid_presets_workspace").on(t.workspaceId),
+  ],
 );
 
 // =============================================================================
@@ -486,6 +564,9 @@ export const inventoryLog = sqliteTable(
   "inventory_log",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     objectId: integer("object_id")
       .notNull()
       .references(() => objects.id, { onDelete: "restrict" }),
@@ -512,6 +593,7 @@ export const inventoryLog = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
+    index("idx_inventory_log_workspace").on(t.workspaceId),
     index("idx_inventory_log_object").on(t.objectId),
     index("idx_inventory_log_change_type").on(t.changeType),
     index("idx_inventory_log_print_job").on(t.printJobId),
@@ -527,9 +609,11 @@ export const inventoryLog = sqliteTable(
 export const shopifySettings = sqliteTable(
   "shopify_settings",
   {
-    // Phase 3 (multi-user): add workspaceId NOT NULL refs workspaces.id; the
-    // saveShopifyConfig id=1 singleton upsert becomes a per-workspace upsert.
     id: integer("id").primaryKey({ autoIncrement: true }),
+    // One settings row per workspace (UNIQUE below); the config upsert keys on it.
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     storeDomain: text("store_domain").notNull(),
     // AES-256-GCM ciphertext (see src/lib/server/crypto.ts), encrypted with the
     // ENCRYPTION_KEY Worker secret. Never store or return the raw token.
@@ -541,6 +625,7 @@ export const shopifySettings = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
+  (t) => [uniqueIndex("uniq_shopify_settings_workspace").on(t.workspaceId)],
 );
 
 // =============================================================================
@@ -553,6 +638,9 @@ export const shopifySkuMapping = sqliteTable(
   "shopify_sku_mapping",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     shopifySku: text("shopify_sku").notNull(),
     objectId: integer("object_id")
       .notNull()
@@ -566,12 +654,13 @@ export const shopifySkuMapping = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
-    // Phase 3: becomes UNIQUE(workspaceId, shopifySku, objectId).
     uniqueIndex("uniq_shopify_sku_mapping_sku_object").on(
+      t.workspaceId,
       t.shopifySku,
       t.objectId,
     ),
     index("idx_shopify_sku_mapping_sku").on(t.shopifySku),
+    index("idx_shopify_sku_mapping_workspace").on(t.workspaceId),
   ],
 );
 
@@ -584,6 +673,9 @@ export const shopifyOrders = sqliteTable(
   "shopify_orders",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     orderId: text("order_id").notNull(),
     orderNumber: text("order_number"),
     processedAt: integer("processed_at", { mode: "timestamp" }),
@@ -596,9 +688,9 @@ export const shopifyOrders = sqliteTable(
       .default(sql`(unixepoch())`),
   },
   (t) => [
-    // Phase 3: becomes UNIQUE(workspaceId, orderId).
-    uniqueIndex("uniq_shopify_orders_order_id").on(t.orderId),
+    uniqueIndex("uniq_shopify_orders_order_id").on(t.workspaceId, t.orderId),
     index("idx_shopify_orders_processed_at").on(t.processedAt),
+    index("idx_shopify_orders_workspace").on(t.workspaceId),
   ],
 );
 
@@ -614,6 +706,9 @@ export const shopifySkus = sqliteTable(
   "shopify_skus",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     sku: text("sku").notNull(),
     productTitle: text("product_title"),
     variantTitle: text("variant_title"),
@@ -623,7 +718,10 @@ export const shopifySkus = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [uniqueIndex("uniq_shopify_skus_sku").on(t.sku)],
+  (t) => [
+    uniqueIndex("uniq_shopify_skus_sku").on(t.workspaceId, t.sku),
+    index("idx_shopify_skus_workspace").on(t.workspaceId),
+  ],
 );
 
 // =============================================================================
@@ -637,6 +735,9 @@ export const printerQueuedJobs = sqliteTable(
   "printer_queued_jobs",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     printerId: integer("printer_id")
       .notNull()
       .references(() => printers.id, { onDelete: "cascade" }),
@@ -664,6 +765,7 @@ export const printerQueuedJobs = sqliteTable(
       t.sortOrder,
     ),
     index("idx_printer_queued_jobs_printer").on(t.printerId),
+    index("idx_printer_queued_jobs_workspace").on(t.workspaceId),
   ],
 );
 
@@ -679,6 +781,9 @@ export const printQueue = sqliteTable(
   "print_queue",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     objectId: integer("object_id")
       .notNull()
       .references(() => objects.id, { onDelete: "cascade" }),
@@ -714,5 +819,109 @@ export const printQueue = sqliteTable(
     uniqueIndex("uniq_print_queue_object_source").on(t.objectId, t.source),
     index("idx_print_queue_status").on(t.status),
     index("idx_print_queue_source").on(t.source),
+    index("idx_print_queue_workspace").on(t.workspaceId),
   ],
 );
+
+// =============================================================================
+// AUTH (better-auth core tables) — Phase 2
+// SCOPE: global. Managed by better-auth's drizzle adapter; field names below
+// match better-auth 1.6.x's canonical schema exactly (camelCase keys = adapter
+// field names, snake_case = SQL columns). Do NOT rename keys — the adapter
+// resolves tables/fields by these names. IDs are text (better-auth generates
+// them), unlike our integer-autoincrement domain PKs.
+// =============================================================================
+export const user = sqliteTable("user", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  emailVerified: integer("email_verified", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  image: text("image"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const session = sqliteTable("session", {
+  id: text("id").primaryKey(),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  token: text("token").notNull().unique(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const account = sqliteTable("account", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").notNull(),
+  providerId: text("provider_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  idToken: text("id_token"),
+  accessTokenExpiresAt: integer("access_token_expires_at", {
+    mode: "timestamp",
+  }),
+  refreshTokenExpiresAt: integer("refresh_token_expires_at", {
+    mode: "timestamp",
+  }),
+  scope: text("scope"),
+  // For email+password: bcrypt/argon hash lives here (not on user).
+  password: text("password"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+export const verification = sqliteTable("verification", {
+  id: text("id").primaryKey(),
+  identifier: text("identifier").notNull(),
+  value: text("value").notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+// =============================================================================
+// WORKSPACES — Phase 2 (tenant container, one per user for now)
+// SCOPE: global (the tenant root). Phase 3 adds workspaceId to domain tables
+// referencing workspaces.id. Integer PK to match the domain-table FK style the
+// design doc specifies (workspaceId integer NOT NULL references workspaces.id).
+// =============================================================================
+export const workspaces = sqliteTable("workspaces", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  // Global URL-namespace slug.
+  slug: text("slug").notNull().unique(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});

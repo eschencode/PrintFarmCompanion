@@ -1,5 +1,7 @@
 import { ShopifyClient, ShopifySyncService } from '$lib/shopify';
 import { getShopifyConfig } from '$lib/server/shopifyConfig';
+import { getDb } from '$lib/db';
+import { sql } from 'drizzle-orm';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
@@ -33,18 +35,30 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     throw error(500, 'Missing database binding');
   }
 
-  const config = await getShopifyConfig(DB, platform.env);
-  if (!config) {
-    throw error(500, 'Shopify not configured');
+  // Every workspace that has Shopify configured gets synced with its own config.
+  const workspaces = await getDb(DB).all<{ workspace_id: number }>(
+    sql`SELECT workspace_id FROM shopify_settings`
+  );
+  if (!workspaces || workspaces.length === 0) {
+    return json({ success: true, synced: 0, results: [] });
   }
 
-  try {
-    const client = new ShopifyClient(config.storeDomain, config.accessToken);
-    const syncService = new ShopifySyncService(DB, client);
-
-    const result = await syncService.sync(false);
-    return json({ success: true, result });
-  } catch (err) {
-    return json({ success: false, error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+  const results: { workspaceId: number; success: boolean; result?: unknown; error?: string }[] = [];
+  for (const { workspace_id } of workspaces) {
+    try {
+      const config = await getShopifyConfig(DB, platform.env, workspace_id);
+      if (!config) {
+        results.push({ workspaceId: workspace_id, success: false, error: 'Config not resolvable' });
+        continue;
+      }
+      const client = new ShopifyClient(config.storeDomain, config.accessToken);
+      const syncService = new ShopifySyncService(DB, workspace_id, client);
+      const result = await syncService.sync(false);
+      results.push({ workspaceId: workspace_id, success: true, result });
+    } catch (err) {
+      results.push({ workspaceId: workspace_id, success: false, error: err instanceof Error ? err.message : String(err) });
+    }
   }
+
+  return json({ success: true, synced: results.filter((r) => r.success).length, results });
 };

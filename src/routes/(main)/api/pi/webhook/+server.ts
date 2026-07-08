@@ -66,6 +66,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         ? `Pi reported: ${gcode_state ?? 'FAILED'} (error ${error_code ?? 'unknown'})`
         : null;
     await drizzleDb.run(sql`
+      -- scoping-ok: public Pi webhook, no user session/ctx; the Pi reconciles by
+      -- globally-UNIQUE external_task_id (which belongs to exactly one workspace's
+      -- printer), so this can only ever touch that one job. Gated by PI_WEBHOOK_SECRET.
       UPDATE print_jobs
       SET status = 'print_finished',
           failure_reason = COALESCE(${failureHint}, failure_reason),

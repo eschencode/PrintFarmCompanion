@@ -1,19 +1,18 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
+import { requireCtx } from '$lib/server/context';
 
-export const load: PageServerLoad = async ({ platform }) => {
-  const database = platform?.env?.DB;
-  if (!database) return { spoolPresets: [] };
-  const spoolPresets = await db.getAllSpoolPresets(database);
+export const load: PageServerLoad = async ({ locals }) => {
+  const ctx = requireCtx(locals);
+  const spoolPresets = await db.getAllSpoolPresets(ctx);
   return { spoolPresets };
 };
 
 export const actions: Actions = {
-  addSpoolPreset: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  addSpoolPreset: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
-    return db.createSpoolPreset(database, {
+    return db.createSpoolPreset(ctx, {
       brand: formData.get('brand') as string,
       material: formData.get('material') as string,
       color: (formData.get('color') as string) || '',
@@ -23,11 +22,10 @@ export const actions: Actions = {
     });
   },
 
-  updateSpoolPreset: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  updateSpoolPreset: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
-    return db.updateSpoolPreset(database, Number(formData.get('presetId')), {
+    return db.updateSpoolPreset(ctx, Number(formData.get('presetId')), {
       brand: formData.get('brand') as string,
       material: formData.get('material') as string,
       color: (formData.get('color') as string) || '',
@@ -37,10 +35,9 @@ export const actions: Actions = {
     });
   },
 
-  deleteSpoolPreset: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  deleteSpoolPreset: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
-    return db.deleteSpoolPreset(database, Number(formData.get('presetId')));
+    return db.deleteSpoolPreset(ctx, Number(formData.get('presetId')));
   },
 };

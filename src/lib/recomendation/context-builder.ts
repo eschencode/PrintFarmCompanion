@@ -1,10 +1,9 @@
-import type { D1Database } from '@cloudflare/workers-types';
 import type {
   ObjectWithVelocity,
   ModuleContext,
 } from '../types';
 import { sql } from 'drizzle-orm';
-import { getDb } from '../db';
+import type { TenantContext } from '../server/context';
 import {
   StockoutForecast,
   FORECAST_LOOKBACK_DAYS,
@@ -22,17 +21,17 @@ function computeStockout(stock: number, velocity: number): number {
 const SEC_PER_DAY = 86_400;
 
 export class AIContextBuilder {
-  private db: D1Database;
+  private ctx: TenantContext;
   private forecast = new StockoutForecast();
 
-  constructor(db: D1Database) {
-    this.db = db;
+  constructor(ctx: TenantContext) {
+    this.ctx = ctx;
   }
 
   async getInventoryWithVelocity(): Promise<ObjectWithVelocity[]> {
-    const drizzleDb = getDb(this.db);
+    const drizzleDb = this.ctx.db;
     const inventoryRows = await drizzleDb.all<{ id: number; name: string; in_stock: number; min_threshold: number }>(sql`
-      SELECT id, name, in_stock, min_threshold FROM objects
+      SELECT id, name, in_stock, min_threshold FROM objects WHERE workspace_id = ${this.ctx.workspaceId}
     `);
 
     const nowSec = Math.floor(Date.now() / 1000);
@@ -45,7 +44,7 @@ export class AIContextBuilder {
     // never zero-demand — they just weren't measured — so they must not dilute.
     const firstSaleRow = await drizzleDb.get<{ first: number | null }>(sql`
       SELECT MIN(created_at) as first FROM inventory_log
-      WHERE change_type IN ('- sold b2c', '- sold b2b')
+      WHERE change_type IN ('- sold b2c', '- sold b2b') AND workspace_id = ${this.ctx.workspaceId}
     `);
     const firstBucket = firstSaleRow?.first ? Math.floor(firstSaleRow.first / SEC_PER_DAY) : todayBucket;
     const windowDays = Math.min(FORECAST_LOOKBACK_DAYS, Math.max(1, todayBucket - firstBucket + 1));
@@ -59,6 +58,7 @@ export class AIContextBuilder {
       FROM inventory_log l
       WHERE l.change_type IN ('- sold b2c', '- sold b2b')
         AND l.created_at > ${cutoffSec}
+        AND l.workspace_id = ${this.ctx.workspaceId}
       GROUP BY l.object_id, day_bucket
     `);
 
@@ -110,7 +110,7 @@ export class AIContextBuilder {
   }
 
   async getModulesContext(): Promise<ModuleContext[]> {
-    const drizzleDb = getDb(this.db);
+    const drizzleDb = this.ctx.db;
     const rows = await drizzleDb.all<ModuleContext>(sql`
       SELECT
         pm.id,
@@ -125,7 +125,7 @@ export class AIContextBuilder {
       FROM print_modules pm
       LEFT JOIN objects o ON pm.object_id = o.id
       LEFT JOIN module_filament_slots mfs ON pm.id = mfs.module_id AND mfs.slot_index = 0
-      WHERE pm.active = 1
+      WHERE pm.active = 1 AND pm.workspace_id = ${this.ctx.workspaceId}
     `);
     return rows ?? [];
   }

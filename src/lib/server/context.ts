@@ -1,0 +1,34 @@
+import { error } from "@sveltejs/kit";
+import type { D1Database } from "@cloudflare/workers-types";
+import type { AppDB } from "../db";
+
+/**
+ * Per-request tenant context. Built in hooks.server.ts from the resolved session
+ * and threaded into every domain server function (Phase 3). Carries the Drizzle
+ * db (wrapped once per request) plus the caller's workspace id, so queries can
+ * scope to `workspace_id = ctx.workspaceId`.
+ *
+ * Phase 4 will extend this with `userId` / `role` without changing call sites.
+ */
+export type TenantContext = {
+  db: AppDB;
+  // Raw D1 binding, for calling server helpers not yet migrated to ctx during
+  // the Phase 3 rollout (e.g. printers.ts before Group 3). Drop once all groups
+  // are ctx-based.
+  d1: D1Database;
+  workspaceId: number;
+  // ENCRYPTION_KEY Worker secret, for encrypting/decrypting secrets-at-rest
+  // (printer access codes). Empty string if unset — enc/dec falls back to the
+  // legacy plaintext path so local dev without the key still works.
+  encryptionKey: string;
+};
+
+/**
+ * Pull the tenant context off `locals`, throwing 401 if absent. The route guard
+ * guarantees a context on protected routes; this is the type-narrowing +
+ * defense-in-depth accessor for loaders/actions/endpoints.
+ */
+export function requireCtx(locals: App.Locals): TenantContext {
+  if (!locals.ctx) throw error(401, "Unauthorized");
+  return locals.ctx;
+}

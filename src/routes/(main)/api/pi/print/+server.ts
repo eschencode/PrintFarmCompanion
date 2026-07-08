@@ -1,6 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { closeOpenPrintJobsForPrinter, getLoadedSpools } from '$lib/server';
+import { requireCtx } from '$lib/server/context';
+import { decryptSecret } from '$lib/server/crypto';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 
@@ -13,8 +15,9 @@ import { getDb } from '$lib/db';
  * 3. Tells Pi to FTPS-upload + MQTT-command the printer
  * 4. Creates a print_jobs record with external_task_id
  */
-export const POST: RequestHandler = async ({ request, platform }) => {
+export const POST: RequestHandler = async ({ request, platform, locals }) => {
   const db = platform?.env?.DB;
+  const ctx = requireCtx(locals);
   const piUrl = platform?.env?.PI_TUNNEL_URL;
   const piSecret = platform?.env?.PI_SECRET ?? '';
 
@@ -35,7 +38,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   }
 
   const module = await drizzleDb.get(
-    sql`SELECT * FROM print_modules WHERE id = ${module_id}`
+    sql`SELECT * FROM print_modules WHERE id = ${module_id} AND workspace_id = ${ctx.workspaceId}`
   ) as Record<string, unknown> | null;
 
   if (!module) return json({ success: false, error: 'Module not found' }, { status: 404 });
@@ -49,25 +52,26 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     FROM printers p
     LEFT JOIN printer_secrets ps ON p.id = ps.printer_id
     LEFT JOIN printer_presets pp ON p.printer_preset_id = pp.id
-    WHERE p.id = ${printer_id}
+    WHERE p.id = ${printer_id} AND p.workspace_id = ${ctx.workspaceId}
   `) as Record<string, unknown> | null;
 
   if (!printerRow) return json({ success: false, error: 'Printer not found' }, { status: 404 });
   if (!printerRow.printer_ip || !printerRow.serial || !printerRow.access_code) {
     return json({ success: false, error: 'Printer missing Pi credentials (IP/serial/access code)' }, { status: 400 });
   }
+  const accessCode = await decryptSecret(printerRow.access_code as string, ctx.encryptionKey);
 
   // Create the print_jobs row BEFORE telling the Pi to start. The Pi upload +
   // preheat window is seconds long; if the row were inserted afterwards, a
   // concurrent /api/pi/status poll would see the printer RUNNING with no open
   // job and misfire `detected_external` for our own print (and the card would
   // sit idle until the row landed). Inserting first closes that race.
-  await closeOpenPrintJobsForPrinter(db, printer_id, module_id);
+  await closeOpenPrintJobsForPrinter(ctx, printer_id, module_id);
 
   const now = Math.floor(Date.now() / 1000);
   const insert = await drizzleDb.run(sql`
-    INSERT INTO print_jobs (module_id, printer_id, start_time, status, created_at, updated_at)
-    VALUES (${module_id}, ${printer_id}, ${now}, 'printing', ${now}, ${now})
+    INSERT INTO print_jobs (workspace_id, module_id, printer_id, start_time, status, created_at, updated_at)
+    VALUES (${ctx.workspaceId}, ${module_id}, ${printer_id}, ${now}, 'printing', ${now}, ${now})
   `);
   const jobId = insert.meta.last_row_id as number;
 
@@ -80,7 +84,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         file_path: module.filename,
         printer_ip: printerRow.printer_ip,
         printer_serial: printerRow.serial,
-        printer_access_code: printerRow.access_code,
+        printer_access_code: accessCode,
         printer_name: printerRow.name,
         printer_model: printerRow.model ?? '',
         options: options ?? {},
@@ -89,12 +93,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     piResult = await piResp.json() as typeof piResult;
   } catch (e) {
     // Pi never started the print — drop the placeholder so it can't be adopted.
-    await drizzleDb.run(sql`DELETE FROM print_jobs WHERE id = ${jobId}`);
+    await drizzleDb.run(sql`DELETE FROM print_jobs WHERE id = ${jobId} AND workspace_id = ${ctx.workspaceId}`);
     return json({ success: false, error: `Pi unreachable: ${e}` }, { status: 502 });
   }
 
   if (!piResult.success) {
-    await drizzleDb.run(sql`DELETE FROM print_jobs WHERE id = ${jobId}`);
+    await drizzleDb.run(sql`DELETE FROM print_jobs WHERE id = ${jobId} AND workspace_id = ${ctx.workspaceId}`);
     return json({ success: false, error: piResult.error ?? 'Pi print failed' }, { status: 502 });
   }
 
@@ -103,15 +107,15 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   await drizzleDb.run(sql`
     UPDATE print_jobs
     SET external_task_id = ${piResult.task_id ?? null}, updated_at = ${Math.floor(Date.now() / 1000)}
-    WHERE id = ${jobId}
+    WHERE id = ${jobId} AND workspace_id = ${ctx.workspaceId}
   `);
 
-  const loadedSlots = await getLoadedSpools(db, printer_id);
+  const loadedSlots = await getLoadedSpools(ctx, printer_id);
   for (const slot of loadedSlots) {
     const s = slot as unknown as { slot_index: number; spool_id: number | null };
     await drizzleDb.run(sql`
-      INSERT INTO print_job_spools (print_job_id, slot_index, spool_id, used_weight)
-      VALUES (${jobId}, ${s.slot_index}, ${s.spool_id ?? null}, NULL)
+      INSERT INTO print_job_spools (workspace_id, print_job_id, slot_index, spool_id, used_weight)
+      VALUES (${ctx.workspaceId}, ${jobId}, ${s.slot_index}, ${s.spool_id ?? null}, NULL)
     `);
   }
 

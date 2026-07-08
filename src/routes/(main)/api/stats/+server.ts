@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import * as db from '$lib/server';
 import { getAllPrintJobsForStats } from '$lib/server/jobs';
+import { requireCtx } from '$lib/server/context';
 import {
   buildModuleBreakdown,
   computeUtilization,
@@ -16,9 +17,10 @@ import {
  * in TimeRangeSelector. Runs the same computations as the page server load
  * but for the requested window only.
  */
-export const GET: RequestHandler = async ({ url, platform }) => {
+export const GET: RequestHandler = async ({ url, platform, locals }) => {
   const database = platform?.env?.DB;
   if (!database) return json({ error: 'Database not available' }, { status: 500 });
+  const ctx = requireCtx(locals);
 
   const fromMs = Number(url.searchParams.get('from'));
   const toMs = Number(url.searchParams.get('to'));
@@ -28,8 +30,8 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
   try {
     const [printers, allJobs] = await Promise.all([
-      db.getAllPrinters(database),
-      getAllPrintJobsForStats(database),
+      db.getAllPrinters(ctx),
+      getAllPrintJobsForStats(ctx),
     ]);
 
     const windowJobs = allJobs.filter(

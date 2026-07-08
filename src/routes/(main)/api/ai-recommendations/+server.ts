@@ -2,13 +2,15 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { AIRecommendationService, generateAndSaveSuggestedQueue } from '$lib/recomendation';
 import { getGlobalQueue, getSpoolDemandFromQueue, regenerateGlobalQueueIfStale } from '$lib/server/printQueue';
+import { requireCtx } from '$lib/server/context';
 
-export const GET: RequestHandler = async ({ url, platform }) => {
+export const GET: RequestHandler = async ({ url, platform, locals }) => {
   const db = platform?.env?.DB;
 
   if (!db) {
     return json({ error: 'Database not available' }, { status: 500 });
   }
+  const ctx = requireCtx(locals);
 
   const type = url.searchParams.get('type') as 'spool' | 'module' | 'test' | 'queue' | 'global' | 'spool-demand';
   const printerId = url.searchParams.get('printerId');
@@ -16,21 +18,21 @@ export const GET: RequestHandler = async ({ url, platform }) => {
   try {
 
   if (type === 'spool') {
-    await regenerateGlobalQueueIfStale(db);
-    const aiService = new AIRecommendationService(db);
+    await regenerateGlobalQueueIfStale(ctx);
+    const aiService = new AIRecommendationService(ctx);
     const suggestion = await aiService.suggestSpoolToLoad(printerId ? Number(printerId) : undefined);
     return json(suggestion);
   }
 
   if (type === 'global') {
-    await regenerateGlobalQueueIfStale(db);
-    const queue = await getGlobalQueue(db);
+    await regenerateGlobalQueueIfStale(ctx);
+    const queue = await getGlobalQueue(ctx);
     return json(queue);
   }
 
   if (type === 'spool-demand') {
-    await regenerateGlobalQueueIfStale(db);
-    const demand = await getSpoolDemandFromQueue(db);
+    await regenerateGlobalQueueIfStale(ctx);
+    const demand = await getSpoolDemandFromQueue(ctx);
     return json(demand);
   }
 
@@ -38,7 +40,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
       if (!printerId) {
         return json({ error: 'Missing printerId' }, { status: 400 });
       }
-      const queue = await generateAndSaveSuggestedQueue(db, Number(printerId));
+      const queue = await generateAndSaveSuggestedQueue(ctx, Number(printerId));
       return json(queue);
     }
     if (!type || !printerId) {

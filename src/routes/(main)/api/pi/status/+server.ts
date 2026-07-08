@@ -2,14 +2,17 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
+import { requireCtx } from '$lib/server/context';
+import { decryptSecret } from '$lib/server/crypto';
 
 /**
  * GET /api/pi/status?serial=SERIALNUMBER
  * Proxies to the Pi's /status/{serial} endpoint.
  * Passes printer credentials as headers so Pi can auto-register after restart.
  */
-export const GET: RequestHandler = async ({ url, platform }) => {
+export const GET: RequestHandler = async ({ url, platform, locals }) => {
   const db = platform?.env?.DB;
+  const ctx = requireCtx(locals);
   const piUrl = platform?.env?.PI_TUNNEL_URL;
   const piSecret = platform?.env?.PI_SECRET ?? '';
 
@@ -33,10 +36,10 @@ export const GET: RequestHandler = async ({ url, platform }) => {
       sql`SELECT ps.printer_ip, ps.access_code, p.name
           FROM printers p
           JOIN printer_secrets ps ON p.id = ps.printer_id
-          WHERE ps.serial = ${serial}`
+          WHERE ps.serial = ${serial} AND ps.workspace_id = ${ctx.workspaceId}`
     );
     printerIp = printer?.printer_ip ?? '';
-    printerCode = printer?.access_code ?? '';
+    printerCode = printer?.access_code ? await decryptSecret(printer.access_code, ctx.encryptionKey) : '';
     printerName = printer?.name ?? '';
   }
 
@@ -63,12 +66,12 @@ export const GET: RequestHandler = async ({ url, platform }) => {
       try {
         const drizzleDb = getDb(db);
         const printer = await drizzleDb.get<{ id: number }>(
-          sql`SELECT p.id FROM printers p JOIN printer_secrets ps ON p.id = ps.printer_id WHERE ps.serial = ${serial}`
+          sql`SELECT p.id FROM printers p JOIN printer_secrets ps ON p.id = ps.printer_id WHERE ps.serial = ${serial} AND ps.workspace_id = ${ctx.workspaceId}`
         );
 
         if (printer) {
           const openJob = await drizzleDb.get(
-            sql`SELECT id FROM print_jobs WHERE printer_id = ${printer.id} AND status = 'printing' LIMIT 1`
+            sql`SELECT id FROM print_jobs WHERE printer_id = ${printer.id} AND status = 'printing' AND workspace_id = ${ctx.workspaceId} LIMIT 1`
           );
 
           if (!openJob) {
@@ -79,8 +82,9 @@ export const GET: RequestHandler = async ({ url, platform }) => {
             if (normalized) {
               matchedModule = await drizzleDb.get(sql`
                 SELECT id, name FROM print_modules
-                WHERE LOWER(filename) LIKE ${`%${normalized}%`}
-                   OR LOWER(name)     LIKE ${`%${normalized}%`}
+                WHERE workspace_id = ${ctx.workspaceId}
+                  AND (LOWER(filename) LIKE ${`%${normalized}%`}
+                   OR LOWER(name)     LIKE ${`%${normalized}%`})
                 LIMIT 1
               `) ?? null;
             }

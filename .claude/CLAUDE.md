@@ -46,6 +46,8 @@ bun run db:migrate:local  # Apply migrations to local D1
 bun run db:migrate:remote # Apply migrations to remote D1
 bun run db:reset          # Wipe local D1 + re-migrate + seed
 bun run db:pull           # Pull remote D1 down to local
+bun run db:seed:test      # Seed 3 test workspaces (alice/bob/carol, pw password123)
+bun run test:isolation    # Tenant-isolation leak test (needs dev server on :5173 + seed)
 ```
 
 ---
@@ -161,6 +163,7 @@ Full catalog with grep commands: see the user's `schema-migration-patterns.md` m
 | Pi HTTP bridge endpoints | `src/routes/(main)/api/pi/*/+server.ts` |
 | Direct MQTT (Rust) | `desktop/src-tauri/src/bambu.rs` |
 | Pi-side Python service | `pi/bambu_client.py` |
+| Auth (config, guard, flows) | `src/lib/auth.ts`, `src/hooks.server.ts`, `src/routes/(auth)/*` — see `docs/authentication.md` |
 
 ---
 
@@ -173,6 +176,8 @@ Real-time context (read these for "where is the project right now?"):
 - `docs/dashboard-migration-plan.md` — dashboard-specific schema fixes inventory
 - `docs/handoff-2026-05-23.md` — latest session handoff (multi-spool, stats rewrite, dashboard fixes)
 - `docs/print-start-flow.md` — full start-print flow (transports, queue, UI states)
+- `docs/authentication.md` — Phase 2 auth (better-auth, per-request factory, route guard, signup→workspace, deploy steps)
+- `docs/multi-tenancy.md` — how tenant isolation works, the rules for adding scoped tables/queries, secrets-at-rest, and verification (`bun run test:isolation`)
 
 ---
 

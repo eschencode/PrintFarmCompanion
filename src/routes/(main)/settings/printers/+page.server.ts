@@ -1,22 +1,23 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
+import { requireCtx } from '$lib/server/context';
 
-export const load: PageServerLoad = async ({ platform }) => {
+export const load: PageServerLoad = async ({ platform, locals }) => {
   const database = platform?.env?.DB;
   if (!database) return { printers: [], printerModels: [] };
+  const ctx = requireCtx(locals);
   const [printers, printerModels] = await Promise.all([
-    db.getAllPrintersFull(database),
-    db.getAllPrinterPresets(database),
+    db.getAllPrintersFull(ctx),
+    db.getAllPrinterPresets(ctx), // hybrid catalog: system rows + this workspace's
   ]);
   return { printers, printerModels };
 };
 
 export const actions: Actions = {
-  addPrinter: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  addPrinter: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
-    return db.createPrinter(database, {
+    return db.createPrinter(ctx, {
       name: formData.get('name') as string,
       printerPresetId: Number(formData.get('printerPresetId')) || Number(formData.get('printerModelId')),
       slotCount: Number(formData.get('slotCount')) || 1,
@@ -27,18 +28,17 @@ export const actions: Actions = {
     });
   },
 
-  updatePrinter: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  updatePrinter: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
     const printerId = Number(formData.get('printerId'));
-    const result = await db.updatePrinter(database, printerId, {
+    const result = await db.updatePrinter(ctx, printerId, {
       name: formData.get('name') as string,
       printerPresetId: Number(formData.get('printerPresetId')) || Number(formData.get('printerModelId')) || undefined,
       slotCount: Number(formData.get('slotCount')) || undefined,
     });
     if (!result.success) return result;
-    await db.upsertPrinterSecrets(database, printerId, {
+    await db.upsertPrinterSecrets(ctx, printerId, {
       printerIp: (formData.get('printerIp') as string) || null,
       serial: (formData.get('printerSerial') as string) || null,
       accessCode: (formData.get('printerAccessCode') as string) || null,
@@ -46,18 +46,16 @@ export const actions: Actions = {
     return { success: true };
   },
 
-  deletePrinter: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  deletePrinter: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
-    return db.deletePrinter(database, Number(formData.get('printerId')));
+    return db.deletePrinter(ctx, Number(formData.get('printerId')));
   },
 
-  addPrinterModel: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  addPrinterModel: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
-    return db.createPrinterPreset(database, {
+    return db.createPrinterPreset(ctx, {
       model: formData.get('name') as string,
       brand: (formData.get('brand') as string) || '',
       dimensionX: Number(formData.get('buildVolumeX')) || null,
@@ -67,11 +65,10 @@ export const actions: Actions = {
     });
   },
 
-  updatePrinterModel: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  updatePrinterModel: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
-    return db.updatePrinterPreset(database, Number(formData.get('modelId')), {
+    return db.updatePrinterPreset(ctx, Number(formData.get('modelId')), {
       model: formData.get('name') as string,
       dimensionX: Number(formData.get('buildVolumeX')) || null,
       dimensionY: Number(formData.get('buildVolumeY')) || null,
@@ -79,10 +76,9 @@ export const actions: Actions = {
     });
   },
 
-  deletePrinterModel: async ({ platform, request }) => {
-    const database = platform?.env?.DB;
-    if (!database) return { success: false, error: 'Database not available' };
+  deletePrinterModel: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
     const formData = await request.formData();
-    return db.deletePrinterPreset(database, Number(formData.get('modelId')));
+    return db.deletePrinterPreset(ctx, Number(formData.get('modelId')));
   },
 };

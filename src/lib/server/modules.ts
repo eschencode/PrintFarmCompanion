@@ -1,22 +1,23 @@
-import type { D1Database } from '@cloudflare/workers-types';
 import { sql } from 'drizzle-orm';
-import { getDb } from '../db';
 import type { PrintModule, PrintModuleFull, ModuleFilamentSlot, ServerResponse } from '../types';
+import type { TenantContext } from './context';
+
+// print_modules + module_filament_slots carry workspace_id NOT NULL (Phase 3,
+// group 4). Every query is scoped to ctx.workspaceId.
 
 // ─── Module Filament Slots ────────────────────────────────────────────────────
 
 export async function getModuleFilamentSlots(
-  db: D1Database,
+  ctx: TenantContext,
   moduleId: number,
 ): Promise<(ModuleFilamentSlot & { preset?: unknown })[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all(sql`
+  const rows = await ctx.db.all(sql`
     SELECT
       mfs.module_id, mfs.slot_index, mfs.spool_preset_id, mfs.weight,
       sp.color, sp.brand, sp.material, sp.default_weight
     FROM module_filament_slots mfs
     LEFT JOIN spool_presets sp ON mfs.spool_preset_id = sp.id
-    WHERE mfs.module_id = ${moduleId}
+    WHERE mfs.module_id = ${moduleId} AND mfs.workspace_id = ${ctx.workspaceId}
     ORDER BY mfs.slot_index
   `);
   return (rows ?? []) as unknown as (ModuleFilamentSlot & { preset?: unknown })[];
@@ -27,25 +28,23 @@ export async function getModuleFilamentSlots(
  * Pass an empty array to clear all slots (no filament requirements).
  */
 export async function setModuleFilamentSlots(
-  db: D1Database,
+  ctx: TenantContext,
   moduleId: number,
   slots: { slotIndex: number; spoolPresetId: number | null; weight?: number | null }[],
 ): Promise<void> {
-  const drizzleDb = getDb(db);
-  await drizzleDb.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${moduleId}`);
+  await ctx.db.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${moduleId} AND workspace_id = ${ctx.workspaceId}`);
   for (const slot of slots) {
-    await drizzleDb.run(sql`
-      INSERT INTO module_filament_slots (module_id, slot_index, spool_preset_id, weight)
-      VALUES (${moduleId}, ${slot.slotIndex}, ${slot.spoolPresetId}, ${slot.weight ?? null})
+    await ctx.db.run(sql`
+      INSERT INTO module_filament_slots (workspace_id, module_id, slot_index, spool_preset_id, weight)
+      VALUES (${ctx.workspaceId}, ${moduleId}, ${slot.slotIndex}, ${slot.spoolPresetId}, ${slot.weight ?? null})
     `);
   }
 }
 
 // ─── Print Modules ────────────────────────────────────────────────────────────
 
-export async function getAllPrintModules(db: D1Database): Promise<PrintModuleFull[]> {
-  const drizzleDb = getDb(db);
-  const rows = await drizzleDb.all<PrintModule>(sql`
+export async function getAllPrintModules(ctx: TenantContext): Promise<PrintModuleFull[]> {
+  const rows = await ctx.db.all<PrintModule>(sql`
     SELECT
       pm.*,
       pp.model  as printer_preset_model,
@@ -60,6 +59,7 @@ export async function getAllPrintModules(db: D1Database): Promise<PrintModuleFul
     LEFT JOIN objects         o   ON pm.object_id         = o.id
     LEFT JOIN categories      c   ON o.category_id         = c.id
     LEFT JOIN module_filament_slots mfs ON pm.id = mfs.module_id AND mfs.slot_index = 0
+    WHERE pm.workspace_id = ${ctx.workspaceId}
     ORDER BY pm.name
   `);
 
@@ -69,18 +69,17 @@ export async function getAllPrintModules(db: D1Database): Promise<PrintModuleFul
   const modules = rows ?? [];
   return Promise.all(
     modules.map(async (m) => {
-      const slots = await getModuleFilamentSlots(db, m.id);
+      const slots = await getModuleFilamentSlots(ctx, m.id);
       return { ...m, filament_slots: slots, slots } as unknown as PrintModuleFull;
     }),
   );
 }
 
 export async function getPrintModuleById(
-  db: D1Database,
+  ctx: TenantContext,
   id: number,
 ): Promise<PrintModuleFull | null> {
-  const drizzleDb = getDb(db);
-  const row = await drizzleDb.get<PrintModule>(sql`
+  const row = await ctx.db.get<PrintModule>(sql`
     SELECT
       pm.*,
       pp.model  as printer_preset_model,
@@ -95,16 +94,16 @@ export async function getPrintModuleById(
     LEFT JOIN objects         o   ON pm.object_id         = o.id
     LEFT JOIN categories      c   ON o.category_id         = c.id
     LEFT JOIN module_filament_slots mfs ON pm.id = mfs.module_id AND mfs.slot_index = 0
-    WHERE pm.id = ${id}
+    WHERE pm.id = ${id} AND pm.workspace_id = ${ctx.workspaceId}
   `);
   if (!row) return null;
 
-  const slots = await getModuleFilamentSlots(db, id);
+  const slots = await getModuleFilamentSlots(ctx, id);
   return { ...row, filament_slots: slots } as unknown as PrintModuleFull;
 }
 
 export async function createPrintModule(
-  db: D1Database,
+  ctx: TenantContext,
   module: {
     name: string;
     weight: number;
@@ -121,17 +120,16 @@ export async function createPrintModule(
     filamentSlots?: { slotIndex: number; spoolPresetId: number | null }[];
   },
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
   try {
     const now = Math.floor(Date.now() / 1000);
-    const result = await drizzleDb.run(sql`
+    const result = await ctx.db.run(sql`
       INSERT INTO print_modules (
-        name, weight, expected_time_minutes, objects_per_print,
+        workspace_id, name, weight, expected_time_minutes, objects_per_print,
         plate_preset_id, printer_preset_id, object_id,
         nozzle_diameter, filename, thumbnail, active,
         created_at, updated_at
       ) VALUES (
-        ${module.name}, ${module.weight}, ${module.expectedTimeMinutes},
+        ${ctx.workspaceId}, ${module.name}, ${module.weight}, ${module.expectedTimeMinutes},
         ${module.objectsPerPrint ?? 1},
         ${module.platePresetId}, ${module.printerPresetId}, ${module.objectId ?? null},
         ${module.nozzleDiameter ?? null}, ${module.filename},
@@ -142,7 +140,7 @@ export async function createPrintModule(
     const moduleId = result.meta.last_row_id as number;
 
     if (module.filamentSlots?.length) {
-      await setModuleFilamentSlots(db, moduleId, module.filamentSlots);
+      await setModuleFilamentSlots(ctx, moduleId, module.filamentSlots);
     }
 
     return { success: true, message: `Module "${module.name}" created`, data: { id: moduleId } };
@@ -153,7 +151,7 @@ export async function createPrintModule(
 }
 
 export async function updatePrintModule(
-  db: D1Database,
+  ctx: TenantContext,
   id: number,
   module: {
     name?: string;
@@ -170,7 +168,6 @@ export async function updatePrintModule(
     filamentSlots?: { slotIndex: number; spoolPresetId: number | null }[];
   },
 ): Promise<ServerResponse> {
-  const drizzleDb = getDb(db);
   try {
     const updates: ReturnType<typeof sql>[] = [];
     if (module.name !== undefined) updates.push(sql`name = ${module.name}`);
@@ -186,13 +183,13 @@ export async function updatePrintModule(
     if (module.active !== undefined) updates.push(sql`active = ${module.active ? 1 : 0}`);
 
     if (updates.length > 0) {
-      await drizzleDb.run(
-        sql`UPDATE print_modules SET ${sql.join(updates, sql`, `)}, updated_at = ${Math.floor(Date.now() / 1000)} WHERE id = ${id}`,
+      await ctx.db.run(
+        sql`UPDATE print_modules SET ${sql.join(updates, sql`, `)}, updated_at = ${Math.floor(Date.now() / 1000)} WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`,
       );
     }
 
     if (module.filamentSlots !== undefined) {
-      await setModuleFilamentSlots(db, id, module.filamentSlots);
+      await setModuleFilamentSlots(ctx, id, module.filamentSlots);
     }
 
     return { success: true, message: 'Print module updated' };
@@ -206,6 +203,6 @@ export async function updatePrintModule(
  * Soft-delete a module by setting active = false.
  * Hard-delete is avoided because historical print_jobs reference modules.
  */
-export async function deletePrintModule(db: D1Database, id: number): Promise<ServerResponse> {
-  return updatePrintModule(db, id, { active: false });
+export async function deletePrintModule(ctx: TenantContext, id: number): Promise<ServerResponse> {
+  return updatePrintModule(ctx, id, { active: false });
 }

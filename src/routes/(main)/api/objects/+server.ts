@@ -1,17 +1,16 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { createObject, getAllObjects } from '$lib/inventory_handler';
+import { requireCtx } from '$lib/server/context';
 
-export const GET: RequestHandler = async ({ platform }) => {
-  const db = platform?.env?.DB;
-  if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
-  const objects = await getAllObjects(db);
+export const GET: RequestHandler = async ({ locals }) => {
+  const ctx = requireCtx(locals);
+  const objects = await getAllObjects(ctx);
   return json({ success: true, data: objects });
 };
 
-export const POST: RequestHandler = async ({ request, platform }) => {
-  const db = platform?.env?.DB;
-  if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
+export const POST: RequestHandler = async ({ request, locals }) => {
+  const ctx = requireCtx(locals);
 
   let body: { name?: string; category?: string; min_threshold?: number };
   try {
@@ -23,7 +22,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   const name = body.name?.trim();
   if (!name) return json({ success: false, error: 'name is required' }, { status: 400 });
 
-  const result = await createObject(db, {
+  const result = await createObject(ctx, {
     name,
     minThreshold: body.min_threshold ?? 0,
     category: body.category?.trim() || null,

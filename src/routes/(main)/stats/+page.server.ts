@@ -10,8 +10,9 @@ import {
 import { getAllPrintJobsForStats, type PrintJobStatsRow } from '$lib/server/jobs';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
+import { requireCtx } from '$lib/server/context';
 
-export const load: PageServerLoad = async ({ platform }) => {
+export const load: PageServerLoad = async ({ platform, locals }) => {
   const database = platform?.env?.DB;
 
   if (!database) {
@@ -26,12 +27,13 @@ export const load: PageServerLoad = async ({ platform }) => {
     };
   }
 
+  const ctx = requireCtx(locals);
   const drizzleDb = getDb(database);
   const [printers, printJobs, modules, spools] = await Promise.all([
-    db.getAllPrintersFull(database), // includes nested loaded_spools[] so the spool table can show "loaded on X"
-    getAllPrintJobsForStats(database),
-    db.getAllPrintModules(database),
-    db.getAllSpools(database),
+    db.getAllPrintersFull(ctx), // includes nested loaded_spools[] so the spool table can show "loaded on X"
+    getAllPrintJobsForStats(ctx),
+    db.getAllPrintModules(ctx),
+    db.getAllSpools(ctx),
   ]);
 
   const sortedJobs = [...printJobs].sort((a, b) => (b.start_time ?? 0) - (a.start_time ?? 0));
@@ -205,7 +207,7 @@ export const load: PageServerLoad = async ({ platform }) => {
   // ── Inventory stats ───────────────────────────────────────────────────────
   let inventoryStats = null;
   try {
-    const inventoryItems = await getAllObjects(database);
+    const inventoryItems = await getAllObjects(ctx);
 
     // inventory_log.created_at is stored as Unix seconds (D1 INTEGER, no /1000 conversion needed)
     const cutoff7d = Math.floor((now - 7 * 86400 * 1000) / 1000);
@@ -221,6 +223,7 @@ export const load: PageServerLoad = async ({ platform }) => {
         COALESCE(SUM(CASE WHEN il.change_type IN ('- sold b2c','- sold b2b') AND il.created_at > ${cutoff30d} THEN il.quantity ELSE 0 END), 0) as sold_30d
       FROM objects o
       LEFT JOIN inventory_log il ON il.object_id = o.id
+      WHERE o.workspace_id = ${ctx.workspaceId}
       GROUP BY o.id
     `);
     const velocityItems = (velocityResult || []).map((r: any) => ({
@@ -239,7 +242,7 @@ export const load: PageServerLoad = async ({ platform }) => {
         SUM(CASE WHEN change_type = '- sold b2b'    THEN quantity ELSE 0 END) as sold_b2b,
         SUM(CASE WHEN change_type = '- stock count' THEN quantity ELSE 0 END) as removed
       FROM inventory_log
-      WHERE created_at > ${cutoff30d}
+      WHERE workspace_id = ${ctx.workspaceId} AND created_at > ${cutoff30d}
       GROUP BY day
       ORDER BY day ASC
     `);
@@ -295,11 +298,13 @@ export const load: PageServerLoad = async ({ platform }) => {
         MIN(processed_at) as first_order,
         MAX(processed_at) as last_order
       FROM shopify_orders
+      WHERE workspace_id = ${ctx.workspaceId}
     `)) as { total_orders: number; total_items: number; first_order: number; last_order: number } | undefined;
 
     const recentOrders = (await drizzleDb.all(sql`
       SELECT order_id, order_number, processed_at, total_items
       FROM shopify_orders
+      WHERE workspace_id = ${ctx.workspaceId}
       ORDER BY processed_at DESC
       LIMIT 15
     `)) as { order_id: string; order_number: string; processed_at: number; total_items: number }[];
@@ -310,7 +315,7 @@ export const load: PageServerLoad = async ({ platform }) => {
         COUNT(*) as order_count,
         SUM(total_items) as items_count
       FROM shopify_orders
-      WHERE processed_at > ${cutoff30s}
+      WHERE workspace_id = ${ctx.workspaceId} AND processed_at > ${cutoff30s}
       GROUP BY day
       ORDER BY day ASC
     `)) as { day: string; order_count: number; items_count: number }[];
@@ -441,11 +446,12 @@ function emptyStats() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const actions: Actions = {
-  updateSpool: async ({ platform, request }) => {
+  updateSpool: async ({ platform, request, locals }) => {
     // Spool brand/material/color/cost live on the preset now — those fields are
     // immutable on the physical spool. Only remaining_weight is editable here.
     const database = platform?.env?.DB;
     if (!database) return { error: 'Database not available' };
+    const ctx = requireCtx(locals);
     const drizzleDb = getDb(database);
     const formData = await request.formData();
     const spoolId = Number(formData.get('spoolId'));
@@ -455,7 +461,7 @@ export const actions: Actions = {
         UPDATE spools
         SET remaining_weight = ${remaining_weight},
             updated_at = ${Math.floor(Date.now() / 1000)}
-        WHERE id = ${spoolId}
+        WHERE id = ${spoolId} AND workspace_id = ${ctx.workspaceId}
       `);
       return { success: true, message: 'Spool updated' };
     } catch (error) {
@@ -464,9 +470,10 @@ export const actions: Actions = {
     }
   },
 
-  deleteSpool: async ({ platform, request }) => {
+  deleteSpool: async ({ platform, request, locals }) => {
     const database = platform?.env?.DB;
     if (!database) return { error: 'Database not available' };
+    const ctx = requireCtx(locals);
     const drizzleDb = getDb(database);
     const formData = await request.formData();
     const spoolId = Number(formData.get('spoolId'));
@@ -476,13 +483,13 @@ export const actions: Actions = {
         SELECT p.id, p.name
         FROM printer_loaded_spools pls
         JOIN printers p ON pls.printer_id = p.id
-        WHERE pls.spool_id = ${spoolId}
+        WHERE pls.spool_id = ${spoolId} AND pls.workspace_id = ${ctx.workspaceId}
         LIMIT 1
       `);
       if (loadedPrinter) {
         return { error: `Cannot delete spool - it's currently loaded on ${loadedPrinter.name}` };
       }
-      await drizzleDb.run(sql`DELETE FROM spools WHERE id = ${spoolId}`);
+      await drizzleDb.run(sql`DELETE FROM spools WHERE id = ${spoolId} AND workspace_id = ${ctx.workspaceId}`);
       return { success: true, message: 'Spool deleted' };
     } catch (error) {
       console.error('Error deleting spool:', error);
