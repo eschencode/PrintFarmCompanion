@@ -1,7 +1,9 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { page } from "$app/stores";
   let { form } = $props();
   let loading = $state(false);
+  const justReset = $derived($page.url.searchParams.get("reset") === "1");
 </script>
 
 <svelte:head><title>Log in · Print Farm Companion</title></svelte:head>
@@ -25,6 +27,12 @@
         };
       }}
     >
+      {#if justReset}
+        <div class="rounded-lg bg-emerald-500/10 border border-emerald-500/25 px-3.5 py-2.5 text-sm text-emerald-300">
+          Password updated. Sign in with your new password.
+        </div>
+      {/if}
+
       {#if form?.error}
         <div class="rounded-lg bg-red-500/10 border border-red-500/25 px-3.5 py-2.5 text-sm text-red-300">
           {form.error}
@@ -41,7 +49,10 @@
       </label>
 
       <label class="block">
-        <span class="text-xs font-medium text-zinc-400">Password</span>
+        <span class="flex items-center justify-between text-xs font-medium text-zinc-400">
+          Password
+          <a href="/forgot-password" class="text-zinc-500 hover:text-zinc-300 font-normal transition-colors">Forgot?</a>
+        </span>
         <input
           name="password" type="password" autocomplete="current-password" required
           placeholder="••••••••"

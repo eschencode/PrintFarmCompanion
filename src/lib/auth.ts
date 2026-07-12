@@ -5,6 +5,12 @@ import { getRequestEvent } from "$app/server";
 import type { D1Database } from "@cloudflare/workers-types";
 import { getDb } from "$lib/db";
 import * as schema from "$lib/db/schema";
+import {
+  sendEmail,
+  resetPasswordEmail,
+  verifyEmail,
+  type EmailEnv,
+} from "$lib/server/email";
 
 /**
  * Per-request better-auth factory.
@@ -14,7 +20,11 @@ import * as schema from "$lib/db/schema";
  * request (hooks.server.ts) with that request's binding. The drizzle adapter
  * keeps `schema.ts` as the single source of truth for the auth tables.
  */
-export function createAuth(d1: D1Database, opts: { secret: string; baseURL?: string }) {
+export function createAuth(
+  d1: D1Database,
+  opts: { secret: string; baseURL?: string; env?: EmailEnv },
+) {
+  const env = opts.env;
   return betterAuth({
     secret: opts.secret,
     // Optional: better-auth infers the origin from the request via the
@@ -30,7 +40,25 @@ export function createAuth(d1: D1Database, opts: { secret: string; baseURL?: str
         verification: schema.verification,
       },
     }),
-    emailAndPassword: { enabled: true },
+    emailAndPassword: {
+      enabled: true,
+      // Not requiring verification to sign in — existing accounts predate email
+      // verification and would be locked out. Flip to true once every user is
+      // verified (or for a fresh install).
+      requireEmailVerification: false,
+      // better-auth builds `url` (→ /api/auth/reset-password/:token) using the
+      // redirectTo passed to requestPasswordReset. We just deliver it.
+      sendResetPassword: async ({ user, url }) => {
+        await sendEmail(env, { to: user.email, ...resetPasswordEmail(url) });
+      },
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: async ({ user, url }) => {
+        await sendEmail(env, { to: user.email, ...verifyEmail(url) });
+      },
+    },
     // Keep this last — it hooks SvelteKit's cookie handling.
     plugins: [sveltekitCookies(getRequestEvent)],
   });
@@ -49,5 +77,6 @@ export function getAuth(platform: App.Platform | undefined): Auth {
   return createAuth(env.DB, {
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
+    env,
   });
 }

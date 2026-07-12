@@ -11,17 +11,17 @@
 		{
 			accent: 'var(--accent-pink)',
 			title: 'Filament & spool tracking',
-			desc: 'Track every spool by material, color, weight, and cost. Always know how much filament is on hand and what each gram really costs you.'
+			desc: 'Every open spool tracked by material, color, and grams remaining — so partial spools get planned into the next job instead of binned. Less waste, lower cost per part.'
 		},
 		{
 			accent: 'var(--accent-orange)',
 			title: 'Inventory & stock counts',
-			desc: 'Append-only logs keep a precise count of finished goods, with quick stock counts and a 30-day order plan so you reorder before you run dry.'
+			desc: 'Precise counts of finished products and consumables, backed by an append-only log. Low-stock thresholds flag what to reorder before you ever run dry.'
 		},
 		{
 			accent: 'var(--accent-blue)',
-			title: 'Demand forecasting',
-			desc: 'Forecasts what to print next from your real sales history, so filament and finished stock are ready before the orders land.'
+			title: 'Smart print suggestions',
+			desc: 'Suggests what to print next from real sales and stock levels — with the reason attached. You review, reorder, and hit start. It advises; you decide.'
 		},
 		{
 			accent: 'var(--accent-purple)',
@@ -58,9 +58,9 @@
 			desc: 'Filament and finished-goods counts keep themselves current as prints finish and orders ship.'
 		},
 		{
-			tag: 'Foresight',
-			label: 'No more guesswork',
-			desc: 'Forecasting tells you what to print and when to reorder, before the backlog ever builds up.'
+			tag: 'Control',
+			label: 'Suggestions, not autopilot',
+			desc: 'The queue suggests what to print next from real stock and sales — but every job starts on your say-so.'
 		}
 	];
 
@@ -105,11 +105,17 @@
 			n: '03',
 			accent: 'var(--accent-pink)',
 			title: 'Monitor & manage',
-			desc: 'Watch every print, track inventory and costs, and let forecasting tell you what to make next — all from one dashboard.'
+			desc: 'Watch every print, track inventory and costs, and review what the queue suggests next — you stay in control of every start.'
 		}
 	];
 
 	onMount(() => {
+		// Progressive enhancement: the hidden .reveal state only applies under
+		// .page.js (see CSS). Without JS (crawlers, headless screenshots, slow
+		// connections) the whole page renders visible; with JS, above-fold
+		// elements re-reveal instantly because IO fires for already-intersecting
+		// targets on observe().
+		document.querySelector('.page')?.classList.add('js');
 		const els = document.querySelectorAll('.reveal');
 		if (!('IntersectionObserver' in window)) {
 			els.forEach((el) => el.classList.add('is-visible'));
@@ -132,10 +138,10 @@
 </script>
 
 <svelte:head>
-	<title>PrintFarmCompanion — Manage your entire 3D print farm</title>
+	<title>PrintFarmCompanion — All-in-one management for 3D print farms</title>
 	<meta
 		name="description"
-		content="Monitor every printer, track filament and inventory, forecast demand, and sync orders — manage your whole 3D print farm from a single dashboard."
+		content="All-in-one management for small and mid-size 3D print farms: live printer monitoring, finished-goods and consumables inventory, gram-level spool tracking, and smart print suggestions — you stay in control."
 	/>
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
@@ -147,16 +153,18 @@
 
 <div class="frame">
 	<div class="page">
-		<!-- ░░ Header ░░ -->
+		<!-- ░░ Header (sticky — auth entry points stay reachable at any scroll depth) ░░ -->
 		<header class="topbar">
-			<div class="brand">
-				<span class="brand-dot" aria-hidden="true"></span>
-				<span class="brand-name">PrintFarmCompanion</span>
+			<div class="topbar-inner">
+				<div class="brand">
+					<span class="brand-dot" aria-hidden="true"></span>
+					<span class="brand-name">PrintFarmCompanion</span>
+				</div>
+				<nav class="topnav">
+					<a class="ghost-link" href="/login">Sign In</a>
+					<a class="btn btn-solid" href="/signup">Create Account</a>
+				</nav>
 			</div>
-			<nav class="topnav">
-				<a class="ghost-link" href="/signin">Sign In</a>
-				<a class="btn btn-solid" href="/signup">Create Account</a>
-			</nav>
 		</header>
 
 		<!-- ░░ 1. Hero ░░ -->
@@ -164,17 +172,23 @@
 			<div class="hero-copy reveal">
 				<div class="eyebrow">
 					<span class="status-dot" aria-hidden="true"></span>
-					Print farm management
+					All-in-one print farm management
 				</div>
-				<h1>Manage your entire 3D print farm from a single dashboard.</h1>
+				<h1>Every printer. Every spool. Every order. One dashboard.</h1>
 				<p class="lede">
-					Monitor every printer in real time, track filament and inventory down to the gram, and let
-					demand forecasting tell you what to make next.
+					Built for small and mid-size print farms: live printer monitoring, finished-goods and
+					consumables inventory, and spool tracking down to the gram — so you never run out of stock,
+					and never bin a half-used spool.
 				</p>
 				<div class="cta-row">
 					<a class="btn btn-solid" href="/signup">Create Account</a>
-					<a class="btn btn-ghost" href="/signin">Sign In</a>
+					<a class="btn btn-ghost" href="/login">Sign In</a>
 				</div>
+				<ul class="hero-proof" aria-label="Compatibility">
+					<li>Bambu Lab printers</li>
+					<li>Shopify sync</li>
+					<li>Web &amp; desktop app</li>
+				</ul>
 			</div>
 
 			<div class="hero-shot reveal">
@@ -201,6 +215,66 @@
 			</div>
 		</section>
 
+		<!-- ░░ Suggestions spotlight — the core idea: it advises, you decide ░░ -->
+		<section class="block">
+			<div class="card suggest-spot reveal">
+				<div class="queue-mock" aria-hidden="true">
+					<div class="qm-head">
+						<span class="qm-dot"></span>
+						Suggested queue — Printer A
+					</div>
+					<div class="qm-context">
+						<span class="qm-swatch"></span>
+						Black PLA loaded · 640 g remaining
+					</div>
+					<div class="qm-item">
+						<div class="qm-text"><strong>Cable Clip ×10</strong><span>Out of stock · 3 sold this week</span></div>
+						<span class="qm-chip critical">Critical</span>
+					</div>
+					<div class="qm-item">
+						<div class="qm-text"><strong>Phone Stand ×7</strong><span>Below minimum · 8 of 15 on hand</span></div>
+						<span class="qm-chip high">Low stock</span>
+					</div>
+					<div class="qm-item">
+						<div class="qm-text"><strong>Wall Hook ×5</strong><span>Pinned by you</span></div>
+						<span class="qm-chip pin">Your pin</span>
+					</div>
+					<div class="qm-item skipped">
+						<div class="qm-text"><strong>Desk Organizer ×2</strong><span>You skipped it — spool saved for Cable Clips</span></div>
+						<span class="qm-chip mute">Skipped</span>
+					</div>
+					<div class="qm-approve">
+						<span class="qm-btn">
+							<svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7V5z"/></svg>
+							Start next print
+						</span>
+						<span class="qm-note">Nothing prints until you press start</span>
+					</div>
+				</div>
+
+				<div class="suggest-copy">
+					<span class="spot-eyebrow">
+						<span class="spot-dot blue" aria-hidden="true"></span>
+						Smart suggestions
+					</span>
+					<h2>The software suggests. You decide.</h2>
+					<p class="spot-lede">
+						PrintFarmCompanion watches your stock and sales and builds a suggested queue for every
+						printer — what to print, how many, and why. But it never fires a job on its own: you see
+						the reasoning, adjust the queue, and press start.
+					</p>
+					<ul class="check-list blue">
+						<li>Every suggestion shows its reason — out of stock, below minimum, or selling fast.</li>
+						<li>Reorder, skip, or pin your own jobs — the queue adapts around your decisions.</li>
+						<li>Suggestions match the filament already loaded, so starting a job is one click.</li>
+					</ul>
+					<div class="cta-row">
+						<a class="btn btn-solid" href="/signup">See your first suggestions</a>
+					</div>
+				</div>
+			</div>
+		</section>
+
 		<!-- ░░ 2. Feature showcase ░░ -->
 		<section class="block">
 			<div class="block-head reveal">
@@ -219,17 +293,19 @@
 							{#if f.title === 'Live farm dashboard'}
 								<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/></svg>
 							{:else if f.title === 'Desktop & web app'}
-								<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="11" rx="1.5"/><path d="M2 20h20M9 16v4M15 16v4"/></svg>
+								<svg viewBox="0 0 24 24"><path d="M3 6a1.5 1.5 0 0 1 1.5-1.5H15A1.5 1.5 0 0 1 16.5 6v6H3V6z"/><path d="M1.5 15h12"/><rect x="16" y="9" width="6.5" height="11" rx="1.5"/><path d="M18.8 17.5h1"/></svg>
 							{:else if f.title === 'Filament & spool tracking'}
 								<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3"/><path d="M12 3.5v3M20.5 12h-3"/></svg>
 							{:else if f.title === 'Inventory & stock counts'}
 								<svg viewBox="0 0 24 24"><path d="M3 8l9-4 9 4-9 4-9-4z"/><path d="M3 8v8l9 4 9-4V8M12 12v8"/></svg>
-							{:else if f.title === 'Demand forecasting'}
+							{:else if f.title === 'Smart print suggestions'}
 								<svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M7 15l4-5 3 3 5-7"/></svg>
 							{:else if f.title === 'Queue & start prints'}
 								<svg viewBox="0 0 24 24"><path d="M4 7h10M4 12h10M4 17h6"/><path d="M16 9l5 3-5 3V9z"/></svg>
 							{:else if f.title === 'Statistics & analytics'}
 								<svg viewBox="0 0 24 24"><path d="M4 20V4"/><path d="M4 20h16"/><rect x="8" y="11" width="3" height="6"/><rect x="14" y="7" width="3" height="10"/></svg>
+							{:else if f.title === 'Modules & products'}
+								<svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/><path d="M3 17.5l9 5 9-5"/></svg>
 							{:else}
 								<svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>
 							{/if}
@@ -362,11 +438,11 @@
 		<!-- ░░ 4. Closing CTA ░░ -->
 		<section class="block">
 			<div class="card cta-card reveal">
-				<h2>Start managing your print farm today.</h2>
-				<p>One dashboard for every printer, spool, and order. No more spreadsheets.</p>
+				<h2>Run the farm. Don't chase it.</h2>
+				<p>One dashboard for every printer, spool, and order — with suggestions from the software and every decision still yours.</p>
 				<div class="cta-row center">
 					<a class="btn btn-solid" href="/signup">Create Account</a>
-					<a class="btn btn-ghost" href="/signin">Sign In</a>
+					<a class="btn btn-ghost" href="/login">Sign In</a>
 				</div>
 			</div>
 		</section>
@@ -378,7 +454,7 @@
 				<span class="brand-name">PrintFarmCompanion</span>
 			</div>
 			<div class="footer-links">
-				<a href="/signin">Sign In</a>
+				<a href="/login">Sign In</a>
 				<a href="/signup">Create Account</a>
 			</div>
 			<span class="footer-copy">© {new Date().getFullYear()} PrintFarmCompanion</span>
@@ -429,18 +505,30 @@
 
 	.page {
 		background: var(--bg);
-		overflow: hidden;
-		padding: clamp(18px, 4vw, 40px) clamp(16px, 4vw, 48px) 0;
+		/* clip (not hidden): contains the glow bleed without breaking position:sticky */
+		overflow-x: clip;
+		padding: 0 clamp(16px, 4vw, 48px);
 	}
 
-	/* ── Header ── */
+	/* ── Header (sticky) ── */
 	.topbar {
+		position: sticky;
+		top: 0;
+		z-index: 50;
+		/* full-bleed across the page's horizontal padding */
+		margin: 0 calc(-1 * clamp(16px, 4vw, 48px)) 16px;
+		padding: 14px clamp(16px, 4vw, 48px);
+		background: color-mix(in srgb, var(--bg) 80%, transparent);
+		-webkit-backdrop-filter: blur(14px);
+		backdrop-filter: blur(14px);
+		border-bottom: 1px solid var(--border-soft);
+	}
+	.topbar-inner {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		max-width: var(--maxw);
 		margin: 0 auto;
-		padding: 6px 0 28px;
 	}
 	.brand {
 		display: flex;
@@ -512,10 +600,36 @@
 		max-width: var(--maxw);
 		margin: 0 auto;
 		display: grid;
-		grid-template-columns: 1.05fr 1fr;
+		/* image slightly dominant — it's the money shot */
+		grid-template-columns: 1fr 1.12fr;
 		gap: clamp(28px, 5vw, 64px);
 		align-items: center;
-		padding: clamp(28px, 6vw, 72px) 0 clamp(40px, 8vw, 96px);
+		padding: clamp(20px, 5vw, 56px) 0 clamp(40px, 8vw, 96px);
+	}
+	.hero-proof {
+		list-style: none;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px 22px;
+		margin: 26px 0 0;
+		padding: 0;
+	}
+	.hero-proof li {
+		position: relative;
+		padding-left: 20px;
+		color: var(--text-dim);
+		font-size: 0.85rem;
+	}
+	.hero-proof li::before {
+		content: '';
+		position: absolute;
+		left: 2px;
+		top: 5px;
+		width: 8px;
+		height: 5px;
+		border-left: 1.6px solid var(--green);
+		border-bottom: 1.6px solid var(--green);
+		transform: rotate(-45deg);
 	}
 	.eyebrow {
 		display: inline-flex;
@@ -590,10 +704,10 @@
 	}
 	.shot-glow {
 		position: absolute;
-		inset: 10% 6% -12% 6%;
+		inset: 8% 2% -14% 2%;
 		z-index: 0;
-		background: radial-gradient(ellipse at center, rgba(59, 130, 246, 0.18), transparent 70%);
-		filter: blur(40px);
+		background: radial-gradient(ellipse at center, rgba(59, 130, 246, 0.32), transparent 70%);
+		filter: blur(44px);
 	}
 
 	/* ── Section blocks ── */
@@ -829,6 +943,166 @@
 		border-left: 1.6px solid var(--accent-purple);
 		border-bottom: 1.6px solid var(--accent-purple);
 		transform: rotate(-45deg);
+	}
+
+	/* ── Suggestions spotlight ── */
+	.suggest-spot {
+		display: grid;
+		grid-template-columns: 0.9fr 1.1fr;
+		gap: clamp(32px, 5vw, 64px);
+		align-items: center;
+		padding: clamp(32px, 5vw, 56px);
+		background:
+			radial-gradient(ellipse at 12% 8%, rgba(59, 130, 246, 0.12), transparent 55%),
+			var(--surface);
+	}
+	.spot-dot.blue {
+		background: var(--accent-blue);
+		box-shadow: 0 0 8px 1px rgba(59, 130, 246, 0.6);
+	}
+	.suggest-copy h2 {
+		font-size: clamp(1.5rem, 2.8vw, 2.2rem);
+		font-weight: 300;
+		letter-spacing: -0.02em;
+		margin: 0 0 16px;
+	}
+	.check-list.blue li::before {
+		background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+		border-color: color-mix(in srgb, var(--accent-blue) 45%, transparent);
+	}
+	.check-list.blue li::after {
+		border-color: var(--accent-blue);
+	}
+
+	/* Suggested-queue mock */
+	.queue-mock {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.qm-head {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		font-size: 0.8rem;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+		padding: 0 2px 6px;
+	}
+	.qm-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--accent-blue);
+		box-shadow: 0 0 8px 1px rgba(59, 130, 246, 0.5);
+	}
+	.qm-context {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		color: var(--text-muted);
+		font-size: 0.84rem;
+		border: 1px dashed var(--border);
+		border-radius: var(--radius);
+		padding: 9px 14px;
+		margin-bottom: 2px;
+	}
+	.qm-swatch {
+		width: 13px;
+		height: 13px;
+		border-radius: 4px;
+		background: #1a1a1a;
+		border: 1px solid #3f3f3f;
+	}
+	.qm-item {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 14px;
+		background: var(--surface-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		padding: 13px 15px;
+	}
+	/* the "user said no" row — proves the queue bends to the operator */
+	.qm-item.skipped {
+		opacity: 0.62;
+		border-style: dashed;
+	}
+	.qm-item.skipped strong {
+		text-decoration: line-through;
+		text-decoration-color: var(--text-dim);
+	}
+	.qm-chip.mute {
+		color: var(--text-muted);
+		border-color: var(--border);
+		background: transparent;
+	}
+	.qm-text {
+		display: flex;
+		flex-direction: column;
+		line-height: 1.35;
+	}
+	.qm-text strong {
+		font-weight: 500;
+		font-size: 0.95rem;
+	}
+	.qm-text span {
+		color: var(--text-muted);
+		font-size: 0.82rem;
+	}
+	.qm-chip {
+		flex-shrink: 0;
+		font-size: 0.72rem;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		border-radius: 6px;
+		padding: 3px 8px;
+		border: 1px solid;
+	}
+	.qm-chip.critical {
+		color: var(--accent-pink);
+		border-color: color-mix(in srgb, var(--accent-pink) 35%, transparent);
+		background: color-mix(in srgb, var(--accent-pink) 10%, transparent);
+	}
+	.qm-chip.high {
+		color: var(--accent-orange);
+		border-color: color-mix(in srgb, var(--accent-orange) 35%, transparent);
+		background: color-mix(in srgb, var(--accent-orange) 10%, transparent);
+	}
+	.qm-chip.pin {
+		color: var(--accent-blue);
+		border-color: color-mix(in srgb, var(--accent-blue) 35%, transparent);
+		background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+	}
+	.qm-approve {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+		flex-wrap: wrap;
+		margin-top: 8px;
+	}
+	.qm-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.9rem;
+		font-weight: 500;
+		color: #0a0a0a;
+		background: var(--text);
+		border-radius: 9px;
+		padding: 0.55rem 1rem;
+	}
+	.qm-btn svg {
+		width: 14px;
+		height: 14px;
+		fill: #0a0a0a;
+		stroke: none;
+	}
+	.qm-note {
+		color: var(--text-dim);
+		font-size: 0.82rem;
 	}
 
 	/* Shopify flow diagram */
@@ -1081,14 +1355,16 @@
 		font-size: 0.85rem;
 	}
 
-	/* ── Scroll reveal ── */
+	/* ── Scroll reveal (JS-gated: no-JS visitors get a fully visible page) ── */
 	.reveal {
-		opacity: 0;
-		transform: translateY(18px);
 		transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 		transition-delay: var(--delay, 0ms);
 	}
-	.reveal:global(.is-visible) {
+	.page:global(.js) .reveal {
+		opacity: 0;
+		transform: translateY(18px);
+	}
+	.page:global(.js) .reveal:global(.is-visible) {
 		opacity: 1;
 		transform: none;
 	}
@@ -1096,6 +1372,9 @@
 		:global(html) {
 			scroll-behavior: auto;
 		}
+		/* Must match the .page.js-gated selector's specificity, or the hidden
+		   state wins and reduced-motion users get an invisible page. */
+		.page:global(.js) .reveal,
 		.reveal {
 			opacity: 1;
 			transform: none;
@@ -1121,8 +1400,13 @@
 		.pillars {
 			gap: 26px;
 		}
-		.shopify-spot {
+		.shopify-spot,
+		.suggest-spot {
 			grid-template-columns: 1fr;
+		}
+		/* Copy reads first on mobile; the queue mock follows as illustration. */
+		.suggest-spot .queue-mock {
+			order: 2;
 		}
 	}
 	@media (max-width: 620px) {

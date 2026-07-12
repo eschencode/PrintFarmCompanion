@@ -35,6 +35,12 @@ declare global {
                 CRON_SECRET?: string;
                 BETTER_AUTH_SECRET?: string;
                 BETTER_AUTH_URL?: string;
+                // Resend transactional email (see src/lib/server/email.ts).
+                // When RESEND_API_KEY/EMAIL_FROM are unset, sendEmail() logs
+                // instead of sending (local dev).
+                RESEND_API_KEY?: string;
+                EMAIL_FROM?: string;
+                EMAIL_FROM_NAME?: string;
             };
         }
     }
