@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { enhance } from "$app/forms";
   import BackToDashboard from "$lib/components/BackToDashboard.svelte";
-  let { data } = $props();
+  let { data, form } = $props();
+  let sending = $state(false);
 </script>
 
 <svelte:head><title>Account · Settings</title></svelte:head>
@@ -24,8 +26,53 @@
           <dt class="text-zinc-400">Name</dt>
           <dd class="text-zinc-900 dark:text-zinc-100">{data.account?.name ?? "—"}</dd>
           <dt class="text-zinc-400">Email</dt>
-          <dd class="text-zinc-900 dark:text-zinc-100">{data.account?.email ?? "—"}</dd>
+          <dd class="text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+            {data.account?.email ?? "—"}
+            {#if data.account?.emailVerified}
+              <span class="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                Verified
+              </span>
+            {/if}
+          </dd>
         </dl>
+
+        {#if data.account && !data.account.emailVerified}
+          <div class="mt-4 rounded-lg bg-amber-500/10 border border-amber-500/25 px-3.5 py-3">
+            {#if form?.sent}
+              <p class="text-sm text-emerald-600 dark:text-emerald-400">
+                Verification email sent to {data.account.email}. Check your inbox.
+              </p>
+            {:else}
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <p class="text-sm font-medium text-amber-700 dark:text-amber-300">Email not verified</p>
+                  <p class="text-xs text-amber-600/80 dark:text-amber-400/70 mt-0.5">
+                    {form?.error ?? "Verify your email to secure your account."}
+                  </p>
+                </div>
+                <form
+                  method="POST"
+                  action="?/resendVerification"
+                  use:enhance={() => {
+                    sending = true;
+                    return async ({ update }) => {
+                      await update();
+                      sending = false;
+                    };
+                  }}
+                >
+                  <button
+                    type="submit" disabled={sending}
+                    class="shrink-0 inline-flex items-center h-9 px-4 rounded-lg text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-60 transition-colors"
+                  >
+                    {sending ? "Sending…" : "Resend email"}
+                  </button>
+                </form>
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
 
       <!-- Workspace -->

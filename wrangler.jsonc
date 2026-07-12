@@ -7,14 +7,26 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "printfarm",
-      "database_id": "ccefd784-1193-4936-a093-e1a14eeffcb8",
-      // Staging DB — used by preview deployments and `--preview` CLI commands.
+      // PRODUCTION DB — bound by production deployments and plain `--remote` CLI
+      // commands. Do NOT point this at a test DB; swap only at a deliberate cutover.
+      "database_name": "printfarmcompanion-db",
+      "database_id": "2c6d79ae-e733-459d-a021-f604d22e59f9",
+      // Staging DB ("printfarm") — used by preview deployments and `--remote
+      // --preview` CLI commands. Migrated + seeded with test data.
       "preview_database_id": "ccefd784-1193-4936-a093-e1a14eeffcb8",
       "migrations_dir": "./drizzle",
     },
   ],
   "ai": {
     "binding": "AI",
+  },
+  // Resend transactional email (password reset + email verification).
+  // EMAIL_FROM must be an address on a domain verified in Resend, whose
+  // SPF/DKIM records live in Cloudflare DNS. RESEND_API_KEY is a SECRET — do
+  // NOT put it here; set it in Pages → Settings → Variables & Secrets, and in
+  // .dev.vars for local. Without it, sendEmail() just logs the link.
+  "vars": {
+    "EMAIL_FROM": "noreply@send.printfarm.tech",
+    "EMAIL_FROM_NAME": "Print Farm Companion",
   },
 }

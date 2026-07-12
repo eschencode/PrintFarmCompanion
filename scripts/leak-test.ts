@@ -18,7 +18,7 @@
  *   BASE_URL   dev server origin (default http://localhost:5173)
  */
 import { Database } from "bun:sqlite";
-import { readdirSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:5173";
 const PASSWORD = "password123";
@@ -27,7 +27,11 @@ const PASSWORD = "password123";
 const d1Dir = ".wrangler/state/v3/d1/miniflare-D1DatabaseObject";
 let file: string;
 try {
-  file = readdirSync(d1Dir).find((f) => f.endsWith(".sqlite"))!;
+  // Config id changes re-key Miniflare storage and leave stale .sqlite files
+  // behind — pick the most recently modified one (the live DB).
+  file = readdirSync(d1Dir)
+    .filter((f) => f.endsWith(".sqlite"))
+    .sort((a, b) => statSync(`${d1Dir}/${b}`).mtimeMs - statSync(`${d1Dir}/${a}`).mtimeMs)[0]!;
 } catch {
   console.error(`No local D1 in ${d1Dir}. Run \`bun run db:migrate:local && bun run db:seed:test\` first.`);
   process.exit(1);

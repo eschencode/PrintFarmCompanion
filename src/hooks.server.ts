@@ -10,7 +10,13 @@ import {
 import { getDb } from "$lib/db";
 
 // Pages reachable without a session.
-const PUBLIC_PAGES = new Set(["/login", "/signup", "/landing"]);
+const PUBLIC_PAGES = new Set([
+  "/login",
+  "/signup",
+  "/landing",
+  "/forgot-password",
+  "/reset-password",
+]);
 // API endpoints that authenticate via their own incoming shared secret
 // (external callers: cron + Pi webhook). better-auth's /api/auth/* is handled
 // by svelteKitHandler and has a null route.id, so it bypasses the guard already.
