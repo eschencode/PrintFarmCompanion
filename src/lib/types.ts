@@ -345,9 +345,13 @@ export interface ShopifyOrder {
 // ============================================================================
 
 export interface GridCell {
-  type: 'printer' | 'stats' | 'settings' | 'spools' | 'empty' | 'inventory' | 'products';
+  type: 'printer' | 'stats' | 'settings' | 'spools' | 'empty' | 'inventory' | 'products' | 'modules' | 'setup';
   printerId?: number;
+  /** For type === 'setup': which onboarding step this cell launches. */
+  step?: 'printers' | 'spools' | 'modules' | 'inventory' | 'stats';
 }
+
+export type SetupStep = NonNullable<GridCell['step']>;
 
 export interface GridPreset {
   id: number;

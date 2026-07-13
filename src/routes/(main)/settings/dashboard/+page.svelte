@@ -34,7 +34,7 @@
   // Printing colour drives the live effect previews below.
   $: printingRgb = hexToRgb($stateColors.printing.color);
 
-  const cellTypes: GridCell['type'][] = ['empty', 'printer', 'stats', 'settings', 'spools', 'inventory', 'products'];
+  const cellTypes: GridCell['type'][] = ['empty', 'printer', 'stats', 'settings', 'spools', 'inventory', 'products', 'modules'];
 
   const cellLabel: Record<string, string> = {
     empty: 'Empty',
@@ -44,6 +44,7 @@
     spools: 'Spools',
     inventory: 'Inventory',
     products: 'Products',
+    modules: 'Modules',
   };
 
   // Full class strings so Tailwind JIT detects them
@@ -55,6 +56,7 @@
     spools: 'bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900/40',
     inventory: 'bg-teal-100 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 border-teal-200 dark:border-teal-900/40',
     products: 'bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/40',
+    modules: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40',
   };
 
   // Mini-preview dot colors (single word bg class for dots)
@@ -66,6 +68,7 @@
     spools: 'bg-amber-400 dark:bg-amber-600',
     inventory: 'bg-teal-400 dark:bg-teal-600',
     products: 'bg-rose-400 dark:bg-rose-600',
+    modules: 'bg-emerald-400 dark:bg-emerald-600',
   };
 
   let showGridEditor = false;

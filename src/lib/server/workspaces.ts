@@ -1,7 +1,8 @@
 import type { D1Database } from "@cloudflare/workers-types";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { workspaces } from "../db/schema";
+import type { GridCell } from "../types";
 
 export type Workspace = {
   id: number;
@@ -81,7 +82,17 @@ export async function createWorkspaceForUser(
       const result = await drizzleDb
         .insert(workspaces)
         .values({ name, slug, ownerUserId: args.userId });
-      return { id: Number(result.meta.last_row_id), name, slug };
+      const workspace = { id: Number(result.meta.last_row_id), name, slug };
+      // Onboarding starter grid: the dashboard *is* the setup flow for a new
+      // workspace. completeSetupStep() (setup.ts) morphs these cells into the
+      // real thing as each step finishes. Failure is non-fatal — the dashboard
+      // falls back to its default layout.
+      try {
+        await createStarterGrid(db, workspace.id);
+      } catch (e) {
+        console.error("Starter grid creation failed (non-fatal):", e);
+      }
+      return workspace;
     } catch (error) {
       lastError = error;
       // Only retry slug collisions; anything else is a real failure.
@@ -90,4 +101,24 @@ export async function createWorkspaceForUser(
   }
   console.error("Failed to create workspace for user", args.userId, lastError);
   throw new Error("Failed to create workspace");
+}
+
+/** The 3×3 grid a brand-new workspace starts with: guided-setup cells + settings. */
+async function createStarterGrid(db: D1Database, workspaceId: number): Promise<void> {
+  const cells: GridCell[] = [
+    { type: "setup", step: "printers" },
+    { type: "setup", step: "spools" },
+    { type: "setup", step: "modules" },
+    { type: "setup", step: "inventory" },
+    { type: "setup", step: "stats" },
+    { type: "empty" },
+    { type: "empty" },
+    { type: "empty" },
+    { type: "settings" },
+  ];
+  const now = Math.floor(Date.now() / 1000);
+  await getDb(db).run(sql`
+    INSERT INTO grid_presets (workspace_id, name, is_default, rows, cols, grid_config, created_at, updated_at)
+    VALUES (${workspaceId}, ${"Default"}, 1, 3, 3, ${JSON.stringify(cells)}, ${now}, ${now})
+  `);
 }
