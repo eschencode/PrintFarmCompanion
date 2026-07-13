@@ -1662,6 +1662,144 @@
                                 Catalog
                             </p>
                         </a>
+                    {:else if cell.type === "modules"}
+                        <!-- Modules Card -->
+                        <a
+                            use:shine
+                            href="/modules"
+                            class="group bg-zinc-50 dark:bg-[#0c0c0f] border border-zinc-200/80 dark:border-[#1a1a22]
+                 rounded-xl p-2 card-lift card-shine
+                 flex flex-col items-center justify-center overflow-hidden"
+                        >
+                            <div
+                                class="group-hover:scale-110 transition-transform duration-500 ease-out"
+                            >
+                                <svg
+                                    class="w-[clamp(1.5rem,4vw,2.5rem)] h-[clamp(1.5rem,4vw,2.5rem)] text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors duration-300"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="1.5"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"
+                                    />
+                                </svg>
+                            </div>
+                            <h3
+                                class="text-[clamp(0.5rem,2vw,0.8rem)] font-medium text-zinc-900 dark:text-zinc-200 mt-2 tracking-tight"
+                            >
+                                Modules
+                            </h3>
+                            <p
+                                class="text-[clamp(0.4rem,1.3vw,0.65rem)] text-zinc-400 dark:text-zinc-600 font-light tracking-wide"
+                            >
+                                Print catalog
+                            </p>
+                        </a>
+                    {:else if cell.type === "setup"}
+                        <!-- Guided Setup Card (onboarding — replaced by the real cell when finished) -->
+                        <a
+                            use:shine
+                            href="/setup/{cell.step}"
+                            class="group bg-zinc-50 dark:bg-[#0c0c0f] border-2 border-dashed border-zinc-300 dark:border-zinc-700
+                 rounded-xl p-2 card-lift card-shine
+                 flex flex-col items-center justify-center overflow-hidden
+                 hover:border-zinc-500 dark:hover:border-zinc-400 transition-colors"
+                        >
+                            <div
+                                class="group-hover:scale-110 transition-transform duration-500 ease-out"
+                            >
+                                {#if cell.step === "printers"}
+                                    <svg
+                                        class="w-[clamp(1.5rem,4vw,2.5rem)] h-[clamp(1.5rem,4vw,2.5rem)] text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors duration-300"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z"
+                                        />
+                                    </svg>
+                                {:else if cell.step === "spools"}
+                                    <svg
+                                        class="w-[clamp(1.5rem,4vw,2.5rem)] h-[clamp(1.5rem,4vw,2.5rem)] text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors duration-300"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                    >
+                                        <circle cx="12" cy="12" r="8.25" />
+                                        <circle cx="12" cy="12" r="2.75" />
+                                    </svg>
+                                {:else if cell.step === "inventory"}
+                                    <svg
+                                        class="w-[clamp(1.5rem,4vw,2.5rem)] h-[clamp(1.5rem,4vw,2.5rem)] text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors duration-300"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M20.25 7.5l-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"
+                                        />
+                                    </svg>
+                                {:else if cell.step === "stats"}
+                                    <svg
+                                        class="w-[clamp(1.5rem,4vw,2.5rem)] h-[clamp(1.5rem,4vw,2.5rem)] text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors duration-300"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"
+                                        />
+                                    </svg>
+                                {:else}
+                                    <svg
+                                        class="w-[clamp(1.5rem,4vw,2.5rem)] h-[clamp(1.5rem,4vw,2.5rem)] text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 transition-colors duration-300"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"
+                                        />
+                                    </svg>
+                                {/if}
+                            </div>
+                            <h3
+                                class="text-[clamp(0.5rem,2vw,0.8rem)] font-medium text-zinc-900 dark:text-zinc-200 mt-2 tracking-tight"
+                            >
+                                {cell.step === "printers"
+                                    ? "Set up printers"
+                                    : cell.step === "spools"
+                                      ? "Set up filament"
+                                      : cell.step === "inventory"
+                                        ? "Set up inventory"
+                                        : cell.step === "stats"
+                                          ? "Discover stats"
+                                          : "Set up modules"}
+                            </h3>
+                            <p
+                                class="text-[clamp(0.4rem,1.3vw,0.65rem)] text-zinc-400 dark:text-zinc-600 font-light tracking-wide"
+                            >
+                                Get started →
+                            </p>
+                        </a>
                     {:else}
                         <!-- Empty/Unknown Slot -->
                         <div

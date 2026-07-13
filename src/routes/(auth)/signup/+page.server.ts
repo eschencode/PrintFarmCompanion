@@ -52,6 +52,7 @@ export const actions: Actions = {
       console.error("Eager workspace creation failed after signup (hook will heal):", e);
     }
 
-    throw redirect(303, "/");
+    // New accounts land on the intro page, then the guided setup flow.
+    throw redirect(303, "/welcome");
   },
 };
