@@ -6,18 +6,18 @@ import { decryptSecret } from '$lib/server/crypto';
 export type ShopifyConfig = {
   storeDomain: string;
   accessToken: string;
-  source: 'db' | 'env';
+  source: 'db';
 };
 
 export type ShopifyConfigSummary = {
   storeDomain: string | null;
   hasToken: boolean;
-  source: 'db' | 'env' | null;
+  source: 'db' | null;
 };
 
+// Only the decryption key is read from env now. Shopify creds are strictly
+// per-workspace (DB) — see the note in getShopifyConfig.
 type ShopifyEnv = {
-  SHOPIFY_STORE_DOMAIN?: string;
-  SHOPIFY_ACCESS_TOKEN?: string;
   ENCRYPTION_KEY?: string;
 };
 
@@ -26,8 +26,10 @@ export async function getShopifyConfig(
   env?: ShopifyEnv,
   workspaceId?: number
 ): Promise<ShopifyConfig | null> {
-  // Per-workspace config (one row per workspace). Falls back to env for a
-  // system/dev default when no DB row exists.
+  // Strictly per-workspace: config comes from the workspace's own row and
+  // nowhere else. There is intentionally NO env fallback — a shared env token
+  // would resolve every unconfigured workspace to one store, leaking that
+  // store's data across tenants. Unconfigured → null.
   if (database && workspaceId) {
     const drizzleDb = getDb(database);
     const row = await drizzleDb.get<{ store_domain: string; access_token: string }>(
@@ -39,14 +41,6 @@ export async function getShopifyConfig(
     }
   }
 
-  if (env?.SHOPIFY_STORE_DOMAIN && env?.SHOPIFY_ACCESS_TOKEN) {
-    return {
-      storeDomain: env.SHOPIFY_STORE_DOMAIN,
-      accessToken: env.SHOPIFY_ACCESS_TOKEN,
-      source: 'env',
-    };
-  }
-
   return null;
 }
 
@@ -55,7 +49,9 @@ export async function getShopifyConfigSummary(
   env?: ShopifyEnv,
   workspaceId?: number
 ): Promise<ShopifyConfigSummary> {
-  // Per-workspace (see getShopifyConfig). Never returns the token itself.
+  // Per-workspace (see getShopifyConfig). Never returns the token itself, and —
+  // like getShopifyConfig — no env fallback, so an unconfigured workspace reads
+  // as unconfigured rather than surfacing another store's domain.
   if (database && workspaceId) {
     const drizzleDb = getDb(database);
     const row = await drizzleDb.get<{ store_domain: string; access_token: string }>(
@@ -68,14 +64,6 @@ export async function getShopifyConfigSummary(
         source: 'db',
       };
     }
-  }
-
-  if (env?.SHOPIFY_STORE_DOMAIN || env?.SHOPIFY_ACCESS_TOKEN) {
-    return {
-      storeDomain: env?.SHOPIFY_STORE_DOMAIN ?? null,
-      hasToken: !!env?.SHOPIFY_ACCESS_TOKEN,
-      source: 'env',
-    };
   }
 
   return { storeDomain: null, hasToken: false, source: null };

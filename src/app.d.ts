@@ -25,8 +25,6 @@ declare global {
         interface Platform {
             env?: {
                 DB: D1Database;
-                SHOPIFY_STORE_DOMAIN?: string;
-                SHOPIFY_ACCESS_TOKEN?: string;
                 AI?: Ai;
                 PI_TUNNEL_URL?: string;
                 PI_SECRET?: string;

@@ -285,9 +285,7 @@
         <div class="border border-zinc-100 dark:border-[#1e1e1e] rounded-lg p-4 space-y-3">
           <div class="flex items-center justify-between">
             <p class="text-xs font-medium text-zinc-600 dark:text-zinc-300">Shopify API credentials</p>
-            {#if data.shopifyConfig?.source === 'env'}
-              <span class="text-[10px] text-zinc-400">Using environment variables</span>
-            {:else if data.shopifyConfig?.source === 'db'}
+            {#if data.shopifyConfig?.source === 'db'}
               <span class="text-[10px] text-zinc-400">Saved in app settings</span>
             {/if}
           </div>
