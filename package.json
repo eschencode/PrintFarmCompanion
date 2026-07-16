@@ -25,7 +25,8 @@
     "test:isolation": "bun run scripts/leak-test.ts",
     "check:scoping": "bun run scripts/check-tenant-scoping.ts",
     "db:export:seed": "bun run scripts/export-seed-sql.ts",
-    "db:pull": "npx wrangler d1 export DB --remote --output=./remote-backup.sql && rm -rf .wrangler/state/v3/d1 && npx wrangler d1 execute DB --local --command \"SELECT 1;\" > /dev/null && DB_FILE=$(ls .wrangler/state/v3/d1/miniflare-D1DatabaseObject/*.sqlite | head -1) && { echo 'PRAGMA foreign_keys=OFF;'; cat remote-backup.sql; } | sqlite3 \"$DB_FILE\" && echo ' Local DB synced from remote!'"
+    "db:pull": "npx wrangler d1 export DB --remote --output=./remote-backup.sql && rm -rf .wrangler/state/v3/d1 && npx wrangler d1 execute DB --local --command \"SELECT 1;\" > /dev/null && DB_FILE=$(ls .wrangler/state/v3/d1/miniflare-D1DatabaseObject/*.sqlite | head -1) && { echo 'PRAGMA foreign_keys=OFF;'; cat remote-backup.sql; } | sqlite3 \"$DB_FILE\" && echo ' Local DB synced from remote!'",
+    "shot": "bun run scripts/screenshot.ts"
   },
   "devDependencies": {
     "@eslint/compat": "^1.4.0",
@@ -43,6 +44,7 @@
     "eslint": "^9.39.1",
     "eslint-plugin-svelte": "^3.13.1",
     "globals": "^16.5.0",
+    "playwright": "^1.61.1",
     "svelte": "^5.49.1",
     "svelte-check": "^4.3.4",
     "tailwindcss": "^4.1.17",
