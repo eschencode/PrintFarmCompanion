@@ -15,3 +15,5 @@ export * from './server/printQueue';
 export * from './server/workspaces';
 export * from './server/context';
 export * from './server/setup';
+export * from './server/admin';
+export * from './server/affiliate';

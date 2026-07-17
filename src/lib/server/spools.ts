@@ -32,15 +32,16 @@ export async function createSpoolPreset(
     defaultWeight: number;
     cost?: number;
     inStorage?: number;
+    catalogItemId?: number | null;
   },
 ): Promise<ServerResponse> {
   try {
     const now = Math.floor(Date.now() / 1000);
     const result = await ctx.db.run(sql`
-      INSERT INTO spool_presets (workspace_id, color, color_hex, brand, material, default_weight, cost, in_storage, created_at, updated_at)
+      INSERT INTO spool_presets (workspace_id, color, color_hex, brand, material, default_weight, cost, in_storage, catalog_item_id, created_at, updated_at)
       VALUES (
         ${ctx.workspaceId}, ${preset.color}, ${preset.colorHex ?? null}, ${preset.brand}, ${preset.material},
-        ${preset.defaultWeight}, ${preset.cost ?? 0}, ${preset.inStorage ?? 0}, ${now}, ${now}
+        ${preset.defaultWeight}, ${preset.cost ?? 0}, ${preset.inStorage ?? 0}, ${preset.catalogItemId ?? null}, ${now}, ${now}
       )
     `);
     return { success: true, message: 'Spool preset created', data: { id: result.meta.last_row_id } };

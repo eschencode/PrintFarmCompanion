@@ -42,6 +42,9 @@ export interface SpoolPreset {
   cost: number; // cents
   /** Count of unopened spools in storage (not yet opened into a `spools` row). */
   in_storage: number;
+  /** Set when created from the affiliate catalog (Phase 2). Null otherwise.
+   *  Optional: column-projected preset literals (joins) may omit it. */
+  catalog_item_id?: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -77,6 +80,11 @@ export interface Printer {
   slot_count: number;
   /** false = decommissioned. Row kept so historical print_jobs still resolve. */
   active: boolean;
+  /** Why the printer was marked broken (cleared on repair). */
+  broken_reason: string | null;
+  /** Canonical HMS code ("XXXX_XXXX_XXXX_XXXX") — drives spare-part suggestions. */
+  broken_hms_code: string | null;
+  broken_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -488,6 +496,14 @@ export interface PrintQueueItem {
   daily_velocity: number;
   days_until_stockout: number;
   stockout_risk: number;
+}
+
+/** Spare-part catalog row for broken-printer buy suggestions (kind='part' catalog_items). */
+export interface CatalogPart {
+  id: number;
+  vendor: string;
+  part_category: string | null;
+  name: string | null;
 }
 
 // Aggregated filament demand for one spool preset across the whole queue.

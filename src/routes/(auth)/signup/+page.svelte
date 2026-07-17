@@ -75,6 +75,13 @@
       >
         {loading ? "Creating…" : "Create account"}
       </button>
+
+      <p class="text-xs text-zinc-600 text-center leading-relaxed">
+        By creating an account you agree to our
+        <a href="/legal/terms" class="text-zinc-400 hover:text-zinc-200 underline transition-colors">Terms of Service</a>
+        and
+        <a href="/legal/privacy" class="text-zinc-400 hover:text-zinc-200 underline transition-colors">Privacy Policy</a>.
+      </p>
     </form>
 
     <p class="mt-6 text-sm text-zinc-500 text-center">

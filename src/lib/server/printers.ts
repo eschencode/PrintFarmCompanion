@@ -127,7 +127,8 @@ export async function getAllPrinters(ctx: TenantContext): Promise<Printer[]> {
   const rows = await ctx.db.all<Printer>(sql`
     SELECT
       p.id, p.name, p.printer_preset_id, p.loaded_plate_id,
-      p.loaded_nozzle_diameter, p.slot_count, p.active, p.created_at, p.updated_at
+      p.loaded_nozzle_diameter, p.slot_count, p.active,
+      p.broken_reason, p.broken_hms_code, p.broken_at, p.created_at, p.updated_at
     FROM printers p
     WHERE p.workspace_id = ${ctx.workspaceId}
     ORDER BY p.name
@@ -139,7 +140,8 @@ export async function getPrinterById(ctx: TenantContext, id: number): Promise<Pr
   const row = await ctx.db.get<Printer>(sql`
     SELECT
       p.id, p.name, p.printer_preset_id, p.loaded_plate_id,
-      p.loaded_nozzle_diameter, p.slot_count, p.active, p.created_at, p.updated_at
+      p.loaded_nozzle_diameter, p.slot_count, p.active,
+      p.broken_reason, p.broken_hms_code, p.broken_at, p.created_at, p.updated_at
     FROM printers p
     WHERE p.id = ${id} AND p.workspace_id = ${ctx.workspaceId}
   `);
@@ -293,6 +295,43 @@ export async function deletePrinter(ctx: TenantContext, id: number): Promise<Ser
 /** Decommission / recommission a printer. Sets active flag. */
 export async function setPrinterActive(ctx: TenantContext, id: number, active: boolean): Promise<ServerResponse> {
   return updatePrinter(ctx, id, { active });
+}
+
+/** Mark broken: deactivate + record why (reason/HMS code drive spare-part suggestions). */
+export async function setPrinterBroken(
+  ctx: TenantContext,
+  id: number,
+  info: { reason?: string | null; hmsCode?: string | null },
+): Promise<ServerResponse> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    await ctx.db.run(sql`
+      UPDATE printers
+      SET active = 0, broken_reason = ${info.reason ?? null}, broken_hms_code = ${info.hmsCode ?? null},
+          broken_at = ${now}, updated_at = ${now}
+      WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}
+    `);
+    return { success: true, message: 'Printer marked broken' };
+  } catch (error) {
+    console.error('Error marking printer broken:', error);
+    return { success: false, error: 'Failed to mark printer broken' };
+  }
+}
+
+/** Mark repaired: reactivate and clear the breakage record. */
+export async function setPrinterRepaired(ctx: TenantContext, id: number): Promise<ServerResponse> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    await ctx.db.run(sql`
+      UPDATE printers
+      SET active = 1, broken_reason = NULL, broken_hms_code = NULL, broken_at = NULL, updated_at = ${now}
+      WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}
+    `);
+    return { success: true, message: 'Printer marked repaired' };
+  } catch (error) {
+    console.error('Error marking printer repaired:', error);
+    return { success: false, error: 'Failed to mark printer repaired' };
+  }
 }
 
 /** Update the transport mode stored in printer_secrets. */

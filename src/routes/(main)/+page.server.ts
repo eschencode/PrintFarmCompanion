@@ -17,7 +17,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   const ctx = requireCtx(locals);
   await regenerateGlobalQueueIfStale(ctx);
 
-  const [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets] = await Promise.all([
+  const [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets, sparePartsCatalog] = await Promise.all([
     db.getAllPrintersFull(ctx),
     db.getAllSpools(ctx),
     db.getAllPrintModules(ctx),
@@ -26,6 +26,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     db.getAllSpoolPresets(ctx),
     db.getSpoolUsageStats(ctx),
     db.getAllGridPresets(ctx),
+    db.getSparePartCatalog(ctx),
   ]);
 
   // Flatten secrets + derive status onto each printer for the UI
@@ -57,7 +58,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     };
   });
 
-  return { printers, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets, workspaceName: locals.workspace?.name ?? null };
+  return { printers, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets, sparePartsCatalog, workspaceName: locals.workspace?.name ?? null };
 };
 
 export const actions: Actions = {

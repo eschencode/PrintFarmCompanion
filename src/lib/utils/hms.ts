@@ -85,3 +85,30 @@ export function decodeHms(entries: HmsEntry[] | null | undefined): DecodedHms[] 
 export function hasActiveAlerts(entries: HmsEntry[] | null | undefined): boolean {
   return decodeHms(entries).some((d) => d.severity !== 'info');
 }
+
+/**
+ * HMS code → spare-part categories (catalog_items.part_category values).
+ * Matched by code prefix, most specific first — the leading groups identify
+ * the failing module (0300_0100 nozzle heater, 0300_0200 heatbed, 07xx AMS…).
+ * Used for buy-link suggestions when a printer is marked broken
+ * (docs/affiliate-monetization.md Phase 3). Extend alongside KNOWN.
+ */
+const PART_CATEGORIES_BY_PREFIX: Array<[prefix: string, categories: string[]]> = [
+  ['0300_0100', ['hotend', 'thermistor']], // nozzle temperature
+  ['0300_0200', ['heatbed', 'thermistor']], // heatbed temperature
+  ['0300_0300', ['fan']], // part-cooling / chamber fan
+  ['0300', ['hotend', 'heatbed']], // other motion-controller temp faults
+  ['0500_0200', ['ams_desiccant']], // AMS humidity
+  ['0500', ['camera']], // application processor / camera
+  ['0700_4000', ['ams', 'ptfe_tube']], // filament tangle / feed jam
+  ['0700', ['ams']], // AMS general
+  ['0C00', ['lidar']], // micro-lidar / first-layer inspection
+  ['1200', ['door_sensor']], // front cover / door
+];
+
+/** Part categories to suggest for a broken printer's HMS code ([] = unknown/manual). */
+export function partCategoriesForHms(code: string | null | undefined): string[] {
+  if (!code) return [];
+  const hit = PART_CATEGORIES_BY_PREFIX.find(([prefix]) => code.startsWith(prefix));
+  return hit ? hit[1] : [];
+}
