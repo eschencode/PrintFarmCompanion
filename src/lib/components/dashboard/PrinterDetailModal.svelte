@@ -10,7 +10,7 @@
     } from "$lib/utils/time";
     import { getLastPrintJob } from "$lib/utils/printerData";
     import { resolveSpoolColor } from "$lib/utils/spoolColor";
-    import { decodeHms } from "$lib/utils/hms";
+    import { decodeHms, partCategoriesForHms } from "$lib/utils/hms";
     import SpoolGauge from "$lib/components/dashboard/SpoolGauge.svelte";
     import type {
         DashboardPrinter,
@@ -18,6 +18,7 @@
         PrintJobWithDetails,
         PiStatus,
         FailurePrefill,
+        CatalogPart,
     } from "$lib/types";
 
     /**
@@ -45,7 +46,11 @@
     export let onToggleBroken: (
         printer: DashboardPrinter,
         broken: boolean,
+        /** Top active HMS alert at mark-broken time — stored as the breakage reason. */
+        alert?: { code: string; text: string },
     ) => void;
+    /** Global spare-part catalog — filtered by the broken HMS code for buy suggestions. */
+    export let spareParts: CatalogPart[] = [];
     export let onEnqueue: (
         module: PrintModuleFull,
         printer: DashboardPrinter,
@@ -114,6 +119,23 @@
     // Actionable alerts (exclude info) — these put the printer into an error state.
     $: activeAlerts = hmsAlerts.filter((a) => a.severity !== "info");
     $: hasError = activeAlerts.length > 0;
+
+    // Spare-part buy suggestions for a broken printer: HMS-mapped categories
+    // first, then the generic parts-store row so the list is never empty.
+    $: brokenPartCategories = [
+        ...partCategoriesForHms(printer.broken_hms_code),
+        "general",
+    ];
+    $: suggestedParts = spareParts
+        .filter((p) => brokenPartCategories.includes(p.part_category ?? ""))
+        .sort(
+            (a, b) =>
+                brokenPartCategories.indexOf(a.part_category ?? "") -
+                brokenPartCategories.indexOf(b.part_category ?? ""),
+        );
+    $: brokenWikiUrl = printer.broken_hms_code
+        ? `https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/${printer.broken_hms_code}`
+        : null;
 
     // Speed profile names + fan gear→percent (Bambu reports fans on a 0–15 scale).
     const SPEED_LEVELS: Record<number, string> = {
@@ -1198,7 +1220,8 @@
                     </div>
                     <button
                         disabled={controlLoading === "marking-broken"}
-                        onclick={() => onToggleBroken(printer, true)}
+                        onclick={() =>
+                            onToggleBroken(printer, true, activeAlerts[0])}
                         class="w-full bg-red-500/5 hover:bg-red-500/10 text-red-500/70 dark:text-red-400/60 hover:text-red-600 dark:hover:text-red-400 px-4 py-2.5 rounded-xl transition-all duration-200 text-sm border border-red-500/8 hover:border-red-500/15 disabled:opacity-50"
                     >
                         {controlLoading === "marking-broken"
@@ -1217,12 +1240,78 @@
                         >
                             Printer is under repair
                         </p>
-                        <p class="text-xs text-zinc-400 dark:text-zinc-600">
+                        {#if printer.broken_reason}
+                            <p
+                                class="text-xs text-zinc-500 dark:text-zinc-400 mb-1"
+                            >
+                                {printer.broken_reason}
+                            </p>
+                        {/if}
+                        {#if printer.broken_hms_code}
+                            <a
+                                href={brokenWikiUrl}
+                                target="_blank"
+                                rel="noopener"
+                                class="text-xs font-mono text-red-500/70 hover:text-red-500 underline decoration-dotted"
+                                >{printer.broken_hms_code} — troubleshooting
+                                guide</a
+                            >
+                        {/if}
+                        <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-1">
                             Downtime is being tracked from when this printer was
                             marked broken. Mark as repaired to stop the downtime
                             clock.
                         </p>
                     </div>
+
+                    {#if suggestedParts.length > 0}
+                        <div
+                            class="bg-zinc-50 dark:bg-[#111114] border border-zinc-100 dark:border-[#1a1a22] rounded-xl p-5"
+                        >
+                            <p
+                                class="text-xs font-medium text-zinc-400 dark:text-zinc-600 tracking-wide uppercase mb-1"
+                            >
+                                Suggested Spare Parts
+                            </p>
+                            <p
+                                class="text-[11px] text-zinc-400 dark:text-zinc-600 mb-3"
+                            >
+                                Based on the reported error · affiliate links
+                            </p>
+                            <div class="space-y-1.5">
+                                {#each suggestedParts as part (part.id)}
+                                    <a
+                                        href="/api/out?itemId={part.id}&placement=broken_printer"
+                                        target="_blank"
+                                        rel="sponsored noopener"
+                                        class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-colors group"
+                                    >
+                                        <span
+                                            class="text-sm text-zinc-700 dark:text-zinc-300 truncate"
+                                            >{part.name}</span
+                                        >
+                                        <span
+                                            class="text-xs text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 shrink-0 flex items-center gap-1"
+                                        >
+                                            Buy
+                                            <svg
+                                                class="w-3 h-3"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                                ><path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    stroke-width="2"
+                                                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                                /></svg
+                                            >
+                                        </span>
+                                    </a>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
                     <button
                         disabled={controlLoading === "marking-repaired"}
                         onclick={() => onToggleBroken(printer, false)}

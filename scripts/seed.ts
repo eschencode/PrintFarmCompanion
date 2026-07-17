@@ -106,6 +106,53 @@ for (const [material, color, hex] of bambuFilaments) {
 }
 console.log(`Seeded affiliate catalog (${bambuFilaments.length} Bambu filaments).`);
 
+// Spare parts for broken-printer suggestions (kind='part', keyed by part_category
+// — see partCategoriesForHms in src/lib/utils/hms.ts). Collection URL for now;
+// swap exact product pages from the Awin feed once approved.
+const BAMBU_PARTS_US = "https://us.store.bambulab.com/collections/spare-parts";
+const BAMBU_PARTS_EU = "https://eu.store.bambulab.com/collections/spare-parts";
+const bambuParts: Array<[category: string, name: string]> = [
+  ["hotend", "Hotend / Nozzle Assembly"],
+  ["thermistor", "Thermistor & Heating Kit"],
+  ["heatbed", "Heatbed"],
+  ["fan", "Cooling Fan"],
+  ["ams", "AMS Spare Parts"],
+  ["ams_desiccant", "Desiccant Packs"],
+  ["ptfe_tube", "PTFE Tube"],
+  ["lidar", "Micro Lidar"],
+  ["camera", "Chamber Camera"],
+  ["door_sensor", "Door & Cover Parts"],
+  ["general", "All Spare Parts"],
+];
+for (const [category, name] of bambuParts) {
+  run(
+    `INSERT INTO catalog_items (vendor, kind, part_category, name, brand, material, url_us, url_eu, active, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    ["bambu", "part", category, name, "Bambu Lab", "", BAMBU_PARTS_US, BAMBU_PARTS_EU, 1, now, now],
+  );
+}
+console.log(`Seeded spare-part catalog (${bambuParts.length} parts).`);
+
+// Consumables (kind='consumable') — recurring non-filament purchases shown in
+// the shop section on /spools. Bambu rows use store collections; amazon rows
+// use search URLs (the affiliate tag is appended at click time per region).
+const consumables: Array<[vendor: string, category: string, name: string, urlUs: string, urlEu: string]> = [
+  ["bambu", "plate", "Build Plates", "https://us.store.bambulab.com/collections/build-plates", "https://eu.store.bambulab.com/collections/build-plates"],
+  ["bambu", "accessory", "Accessories & Tools", "https://us.store.bambulab.com/collections/accessories", "https://eu.store.bambulab.com/collections/accessories"],
+  ["amazon", "ipa", "Isopropyl Alcohol (IPA)", "https://www.amazon.com/s?k=isopropyl+alcohol+99%25", "https://www.amazon.de/s?k=isopropanol+99%25"],
+  ["amazon", "glue", "Glue Stick / Bed Adhesive", "https://www.amazon.com/s?k=3d+printer+glue+stick", "https://www.amazon.de/s?k=3d+drucker+kleber"],
+  ["amazon", "nozzle_cleaning", "Nozzle Cleaning Kit", "https://www.amazon.com/s?k=3d+printer+nozzle+cleaning+kit", "https://www.amazon.de/s?k=3d+drucker+d%C3%BCsen+reinigung"],
+  ["amazon", "lubricant", "Rail & Rod Lubricant", "https://www.amazon.com/s?k=3d+printer+lubricant", "https://www.amazon.de/s?k=3d+drucker+schmiermittel"],
+];
+for (const [vendor, category, name, urlUs, urlEu] of consumables) {
+  run(
+    `INSERT INTO catalog_items (vendor, kind, part_category, name, brand, material, url_us, url_eu, active, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [vendor, "consumable", category, name, vendor === "bambu" ? "Bambu Lab" : "", "", urlUs, urlEu, 1, now, now],
+  );
+}
+console.log(`Seeded consumables catalog (${consumables.length} items).`);
+
 // ── PER-USER (isolated) ──────────────────────────────────────────────────────
 const passwordHash = await hashPassword(PASSWORD);
 

@@ -9,15 +9,36 @@
     } from "$lib/spool-status";
     import BackToDashboard from "$lib/components/BackToDashboard.svelte";
 
+    interface CatalogItem {
+        id: number;
+        vendor: string;
+        kind?: string;
+        part_category?: string | null;
+        name?: string | null;
+        brand: string;
+        material: string;
+        color: string | null;
+        color_hex: string | null;
+        weight: number | null;
+    }
+
     interface PageData {
         spoolPresets: SpoolPreset[];
         usageStats: SpoolUsageStat[];
         spoolDemand: QueueSpoolDemand[];
+        catalogItems: CatalogItem[];
+        /** Spare parts + consumables for the shop section. */
+        shopItems: CatalogItem[];
     }
 
     let { data }: { data: PageData } = $props();
 
     let showAddPresetModal = $state(false);
+    // New-spool modal has two steps: pick from the affiliate catalog, or fall
+    // back to a fully custom preset. A catalog pick stores catalog_item_id so
+    // buy links are exact. See docs/affiliate-monetization.md (Phase 2).
+    let presetStep = $state<"picker" | "form">("picker");
+    let catalogSearch = $state("");
     let editingPresetId = $state<number | null>(null);
     let editCount = $state(0);
     let quickAddPresetId = $state<number | null>(null);
@@ -31,6 +52,7 @@
         defaultWeight: 1000,
         cost: "",
         initialStock: 0,
+        catalogItemId: null as number | null,
     });
 
     function resetNewPreset() {
@@ -42,7 +64,53 @@
             defaultWeight: 1000,
             cost: "",
             initialStock: 0,
+            catalogItemId: null,
         };
+    }
+
+    function openAddPreset() {
+        resetNewPreset();
+        catalogSearch = "";
+        presetStep = "picker";
+        showAddPresetModal = true;
+    }
+
+    function closeAddPreset() {
+        showAddPresetModal = false;
+        resetNewPreset();
+        catalogSearch = "";
+        presetStep = "picker";
+    }
+
+    const filteredCatalog = $derived(
+        (data.catalogItems || []).filter((c) => {
+            const q = catalogSearch.trim().toLowerCase();
+            if (!q) return true;
+            return [c.brand, c.material, c.color]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase()
+                .includes(q);
+        }),
+    );
+
+    function pickCatalogItem(c: CatalogItem) {
+        newPreset = {
+            brand: c.brand,
+            material: c.material,
+            color: c.color ?? "",
+            colorHex: c.color_hex ?? "",
+            defaultWeight: c.weight ?? 1000,
+            cost: "",
+            initialStock: 0,
+            catalogItemId: c.id,
+        };
+        presetStep = "form";
+    }
+
+    function startCustomPreset() {
+        resetNewPreset();
+        presetStep = "form";
     }
 
     function startEdit(presetId: number, currentCount: number) {
@@ -178,10 +246,27 @@
         if (!isFinite(e.daysLeft)) return "no recent usage";
         return `~${Math.round(e.daysLeft)}d left`;
     }
+
+    // Shop section groups: consumables (plates, IPA…) and spare parts.
+    // 'general' is the catch-all parts-store link — shown last in its group.
+    const shopConsumables = $derived(
+        (data.shopItems || []).filter((s) => s.kind === "consumable"),
+    );
+    const shopParts = $derived(
+        (data.shopItems || [])
+            .filter((s) => s.kind === "part")
+            .sort((a, b) =>
+                a.part_category === "general"
+                    ? 1
+                    : b.part_category === "general"
+                      ? -1
+                      : (a.name ?? "").localeCompare(b.name ?? ""),
+            ),
+    );
 </script>
 
 <svelte:head>
-    <title>Spools | Print Farm Companion</title>
+    <title>Spools & Consumables | Print Farm Companion</title>
 </svelte:head>
 
 <div
@@ -190,11 +275,11 @@
     <div class="max-w-6xl mx-auto">
         <!-- Header -->
         <div class="flex items-center justify-between mb-8">
-            <h1 class="text-3xl font-light">Spools</h1>
+            <h1 class="text-3xl font-light">Spools & Consumables</h1>
             <div class="flex items-center gap-4">
                 <BackToDashboard />
                 <button
-                    onclick={() => (showAddPresetModal = true)}
+                    onclick={openAddPreset}
                     class="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 text-white rounded-md transition-colors flex items-center gap-2 text-sm"
                 >
                     <svg
@@ -561,6 +646,28 @@
                                 </form>
                             {:else}
                                 <div class="flex items-center gap-1">
+                                    <!-- Buy more (affiliate) — quiet icon so it doesn't
+                                         compete with the reorder plan's Buy button -->
+                                    <a
+                                        href="/api/out?presetId={preset.id}&placement=inventory"
+                                        target="_blank"
+                                        rel="sponsored noopener"
+                                        title="Buy more (affiliate link)"
+                                        class="w-7 h-7 flex items-center justify-center rounded-sm text-zinc-300 hover:text-zinc-600 dark:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors mr-1"
+                                    >
+                                        <svg
+                                            class="w-3.5 h-3.5"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                            ><path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                stroke-width="2"
+                                                d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
+                                            /></svg
+                                        >
+                                    </a>
                                     <!-- Decrement -->
                                     <form
                                         method="POST"
@@ -698,6 +805,73 @@
                 </button>
             </form>
         </div>
+
+        <!-- Consumables & spare parts shop (affiliate links) -->
+        {#if shopConsumables.length > 0 || shopParts.length > 0}
+            <div
+                class="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-lg p-6 mt-6"
+            >
+                <div class="mb-4">
+                    <p
+                        class="text-xs font-medium text-zinc-400 dark:text-zinc-600 tracking-wide uppercase"
+                    >
+                        Consumables & Spare Parts
+                    </p>
+                    <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-1">
+                        Things every farm reburns through · affiliate links
+                    </p>
+                </div>
+                <div class="grid sm:grid-cols-2 gap-x-8 gap-y-4">
+                    {#each [{ label: "Consumables", items: shopConsumables }, { label: "Spare Parts", items: shopParts }] as group (group.label)}
+                        {#if group.items.length > 0}
+                            <div>
+                                <p
+                                    class="text-[10px] text-zinc-400 dark:text-zinc-600 uppercase tracking-wide mb-1.5"
+                                >
+                                    {group.label}
+                                </p>
+                                <div
+                                    class="divide-y divide-zinc-100 dark:divide-[#1f1f1f]"
+                                >
+                                    {#each group.items as item (item.id)}
+                                        <a
+                                            href="/api/out?itemId={item.id}&placement=shop"
+                                            target="_blank"
+                                            rel="sponsored noopener"
+                                            class="flex items-center justify-between gap-3 py-2 group"
+                                        >
+                                            <span
+                                                class="text-sm text-zinc-700 dark:text-zinc-300 truncate group-hover:text-zinc-900 dark:group-hover:text-zinc-50 transition-colors"
+                                                >{item.name}</span
+                                            >
+                                            <span
+                                                class="text-xs text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300 shrink-0 flex items-center gap-1 transition-colors"
+                                            >
+                                                {item.vendor === "bambu"
+                                                    ? "Bambu Store"
+                                                    : "Amazon"}
+                                                <svg
+                                                    class="w-3 h-3"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    viewBox="0 0 24 24"
+                                                    ><path
+                                                        stroke-linecap="round"
+                                                        stroke-linejoin="round"
+                                                        stroke-width="2"
+                                                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                                    /></svg
+                                                >
+                                            </span>
+                                        </a>
+                                    {/each}
+                                </div>
+                            </div>
+                        {/if}
+                    {/each}
+                </div>
+            </div>
+        {/if}
     </div>
 </div>
 
@@ -719,10 +893,7 @@
                 </h2>
                 <button
                     aria-label="Close"
-                    onclick={() => {
-                        showAddPresetModal = false;
-                        resetNewPreset();
-                    }}
+                    onclick={closeAddPreset}
                     class="p-1 text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 transition-colors"
                 >
                     <svg
@@ -741,164 +912,281 @@
                 </button>
             </div>
 
-            <form
-                method="POST"
-                action="?/createPreset"
-                use:enhance={() => {
-                    return async ({ result, update }) => {
-                        if (result.type === "success") {
-                            showAddPresetModal = false;
-                            resetNewPreset();
-                        }
-                        await update();
-                    };
-                }}
-                class="p-5 space-y-4"
-            >
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label
-                            for="new-preset-brand"
-                            class="block text-sm text-zinc-500 mb-1"
-                            >Brand *</label
-                        >
-                        <input
-                            id="new-preset-brand"
-                            type="text"
-                            name="brand"
-                            bind:value={newPreset.brand}
-                            placeholder="e.g. Bambu Lab"
-                            required
-                            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
-                        />
+            {#if presetStep === "picker"}
+                <!-- Step 1: pick from the catalog (exact buy links) -->
+                <div class="p-5 space-y-3">
+                    <input
+                        type="text"
+                        bind:value={catalogSearch}
+                        placeholder="Search catalog — brand, material, color…"
+                        class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
+                    />
+                    <div
+                        class="max-h-72 overflow-y-auto divide-y divide-zinc-100 dark:divide-[#1f1f1f]"
+                    >
+                        {#each filteredCatalog as c (c.id)}
+                            <button
+                                type="button"
+                                onclick={() => pickCatalogItem(c)}
+                                class="w-full flex items-center gap-3 py-2.5 px-2 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 rounded-md text-left transition-colors"
+                            >
+                                <span
+                                    class="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
+                                    style="background-color: {c.color_hex ||
+                                        '#d4d4d8'}"
+                                ></span>
+                                <span class="flex-1 min-w-0">
+                                    <span
+                                        class="block text-sm font-medium text-zinc-900 dark:text-zinc-50 truncate"
+                                        >{[c.brand, c.color]
+                                            .filter(Boolean)
+                                            .join(" ")}</span
+                                    >
+                                    <span class="block text-xs text-zinc-400">
+                                        {c.material}{c.weight
+                                            ? ` · ${c.weight}g`
+                                            : ""}
+                                    </span>
+                                </span>
+                                <span
+                                    class="text-[10px] uppercase tracking-wide text-zinc-400 shrink-0"
+                                    >{c.vendor}</span
+                                >
+                            </button>
+                        {:else}
+                            <p class="py-6 text-center text-sm text-zinc-400">
+                                No catalog matches. Create a custom spool below.
+                            </p>
+                        {/each}
                     </div>
-                    <div>
-                        <label
-                            for="new-preset-material"
-                            class="block text-sm text-zinc-500 mb-1"
-                            >Material *</label
-                        >
-                        <select
-                            id="new-preset-material"
-                            name="material"
-                            bind:value={newPreset.material}
-                            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
-                        >
-                            <option value="PLA">PLA</option>
-                            <option value="PETG">PETG</option>
-                            <option value="ABS">ABS</option>
-                            <option value="TPU">TPU</option>
-                            <option value="ASA">ASA</option>
-                            <option value="Nylon">Nylon</option>
-                            <option value="PC">PC</option>
-                            <option value="PLA+">PLA+</option>
-                            <option value="PLA Silk">PLA Silk</option>
-                            <option value="Other">Other</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label
-                            for="new-preset-color"
-                            class="block text-sm text-zinc-500 mb-1"
-                            >Color</label
-                        >
-                        <input
-                            id="new-preset-color"
-                            type="text"
-                            name="color"
-                            bind:value={newPreset.color}
-                            placeholder="e.g. Black"
-                            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
-                        />
-                    </div>
-                    <div>
-                        <label
-                            for="new-preset-hex"
-                            class="block text-sm text-zinc-500 mb-1"
-                            >Swatch</label
-                        >
-                        <input
-                            id="new-preset-hex"
-                            type="color"
-                            name="colorHex"
-                            bind:value={newPreset.colorHex}
-                            class="w-full h-[42px] bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-1 py-1 cursor-pointer"
-                        />
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-3 gap-4">
-                    <div>
-                        <label
-                            for="new-preset-weight"
-                            class="block text-sm text-zinc-500 mb-1"
-                            >Weight (g)</label
-                        >
-                        <input
-                            id="new-preset-weight"
-                            type="number"
-                            name="defaultWeight"
-                            bind:value={newPreset.defaultWeight}
-                            min="1"
-                            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
-                        />
-                    </div>
-                    <div>
-                        <label
-                            for="new-preset-cost"
-                            class="block text-sm text-zinc-500 mb-1"
-                            >Cost ($)</label
-                        >
-                        <input
-                            id="new-preset-cost"
-                            type="number"
-                            name="cost"
-                            bind:value={newPreset.cost}
-                            min="0"
-                            step="0.01"
-                            placeholder="Optional"
-                            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
-                        />
-                    </div>
-                    <div>
-                        <label
-                            for="new-preset-stock"
-                            class="block text-sm text-zinc-500 mb-1"
-                            >Stock</label
-                        >
-                        <input
-                            id="new-preset-stock"
-                            type="number"
-                            name="initialStock"
-                            bind:value={newPreset.initialStock}
-                            min="0"
-                            class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
-                        />
-                    </div>
-                </div>
-
-                <div class="flex gap-3 pt-2">
                     <button
                         type="button"
-                        onclick={() => {
-                            showAddPresetModal = false;
-                            resetNewPreset();
-                        }}
-                        class="flex-1 px-4 py-2 bg-transparent border border-zinc-200 dark:border-[#262626] hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-md transition-colors text-sm"
+                        onclick={startCustomPreset}
+                        class="w-full px-4 py-2 border border-dashed border-zinc-300 dark:border-[#333] hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-md transition-colors text-sm"
                     >
-                        Cancel
-                    </button>
-                    <button
-                        type="submit"
-                        class="flex-1 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 text-white rounded-md transition-colors text-sm"
-                    >
-                        Create Spool
+                        Can't find yours? Create a custom spool →
                     </button>
                 </div>
-            </form>
+            {:else}
+                <!-- Step 2: confirm (catalog) or fill in (custom) -->
+                <form
+                    method="POST"
+                    action="?/createPreset"
+                    use:enhance={() => {
+                        return async ({ result, update }) => {
+                            if (result.type === "success") closeAddPreset();
+                            await update();
+                        };
+                    }}
+                    class="p-5 space-y-4"
+                >
+                    {#if newPreset.catalogItemId}
+                        <!-- Catalog-derived: identity is fixed, carried in hidden inputs -->
+                        <div
+                            class="flex items-center gap-3 p-3 rounded-md bg-zinc-50 dark:bg-[#0f0f0f] border border-zinc-200 dark:border-[#262626]"
+                        >
+                            <span
+                                class="w-4 h-4 rounded-full border border-black/10 shrink-0"
+                                style="background-color: {newPreset.colorHex ||
+                                    '#d4d4d8'}"
+                            ></span>
+                            <div class="flex-1 min-w-0">
+                                <p
+                                    class="text-sm font-medium text-zinc-900 dark:text-zinc-50 truncate"
+                                >
+                                    {[newPreset.brand, newPreset.color]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                </p>
+                                <p class="text-xs text-zinc-400">
+                                    {newPreset.material} · {newPreset.defaultWeight}g
+                                    · from catalog
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onclick={() => (presetStep = "picker")}
+                                class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200 shrink-0"
+                            >
+                                Change
+                            </button>
+                        </div>
+                        <input
+                            type="hidden"
+                            name="catalogItemId"
+                            value={newPreset.catalogItemId}
+                        />
+                        <input
+                            type="hidden"
+                            name="brand"
+                            value={newPreset.brand}
+                        />
+                        <input
+                            type="hidden"
+                            name="material"
+                            value={newPreset.material}
+                        />
+                        <input
+                            type="hidden"
+                            name="color"
+                            value={newPreset.color}
+                        />
+                        <input
+                            type="hidden"
+                            name="colorHex"
+                            value={newPreset.colorHex}
+                        />
+                        <input
+                            type="hidden"
+                            name="defaultWeight"
+                            value={newPreset.defaultWeight}
+                        />
+                    {:else}
+                        <!-- Custom: full manual identity fields -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label
+                                    for="new-preset-brand"
+                                    class="block text-sm text-zinc-500 mb-1"
+                                    >Brand *</label
+                                >
+                                <input
+                                    id="new-preset-brand"
+                                    type="text"
+                                    name="brand"
+                                    bind:value={newPreset.brand}
+                                    placeholder="e.g. Bambu Lab"
+                                    required
+                                    class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label
+                                    for="new-preset-material"
+                                    class="block text-sm text-zinc-500 mb-1"
+                                    >Material *</label
+                                >
+                                <select
+                                    id="new-preset-material"
+                                    name="material"
+                                    bind:value={newPreset.material}
+                                    class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
+                                >
+                                    <option value="PLA">PLA</option>
+                                    <option value="PETG">PETG</option>
+                                    <option value="ABS">ABS</option>
+                                    <option value="TPU">TPU</option>
+                                    <option value="ASA">ASA</option>
+                                    <option value="Nylon">Nylon</option>
+                                    <option value="PC">PC</option>
+                                    <option value="PLA+">PLA+</option>
+                                    <option value="PLA Silk">PLA Silk</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label
+                                    for="new-preset-color"
+                                    class="block text-sm text-zinc-500 mb-1"
+                                    >Color</label
+                                >
+                                <input
+                                    id="new-preset-color"
+                                    type="text"
+                                    name="color"
+                                    bind:value={newPreset.color}
+                                    placeholder="e.g. Black"
+                                    class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label
+                                    for="new-preset-hex"
+                                    class="block text-sm text-zinc-500 mb-1"
+                                    >Swatch</label
+                                >
+                                <input
+                                    id="new-preset-hex"
+                                    type="color"
+                                    name="colorHex"
+                                    bind:value={newPreset.colorHex}
+                                    class="w-full h-[42px] bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-1 py-1 cursor-pointer"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label
+                                for="new-preset-weight"
+                                class="block text-sm text-zinc-500 mb-1"
+                                >Weight (g)</label
+                            >
+                            <input
+                                id="new-preset-weight"
+                                type="number"
+                                name="defaultWeight"
+                                bind:value={newPreset.defaultWeight}
+                                min="1"
+                                class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
+                            />
+                        </div>
+                    {/if}
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label
+                                for="new-preset-cost"
+                                class="block text-sm text-zinc-500 mb-1"
+                                >Cost ($)</label
+                            >
+                            <input
+                                id="new-preset-cost"
+                                type="number"
+                                name="cost"
+                                bind:value={newPreset.cost}
+                                min="0"
+                                step="0.01"
+                                placeholder="Optional"
+                                class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label
+                                for="new-preset-stock"
+                                class="block text-sm text-zinc-500 mb-1"
+                                >Stock</label
+                            >
+                            <input
+                                id="new-preset-stock"
+                                type="number"
+                                name="initialStock"
+                                bind:value={newPreset.initialStock}
+                                min="0"
+                                class="w-full bg-white dark:bg-[#111111] border border-zinc-200 dark:border-[#262626] rounded-md px-3 py-2 text-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 text-sm"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 pt-2">
+                        <button
+                            type="button"
+                            onclick={() => (presetStep = "picker")}
+                            class="flex-1 px-4 py-2 bg-transparent border border-zinc-200 dark:border-[#262626] hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-md transition-colors text-sm"
+                        >
+                            ← Back
+                        </button>
+                        <button
+                            type="submit"
+                            class="flex-1 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 text-white rounded-md transition-colors text-sm"
+                        >
+                            Create Spool
+                        </button>
+                    </div>
+                </form>
+            {/if}
         </div>
     </div>
 {/if}

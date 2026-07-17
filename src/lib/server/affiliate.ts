@@ -7,6 +7,12 @@ import type { TenantContext } from './context';
 export interface CatalogItem {
   id: number;
   vendor: string;
+  /** 'filament' (matches spool presets), 'part' (spare parts, keyed by
+   *  part_category), or 'consumable' (plates, IPA, glue — shop section). */
+  kind: string;
+  part_category: string | null;
+  /** Display label for parts; NULL on filament rows. */
+  name: string | null;
   brand: string;
   material: string;
   color: string | null;
@@ -58,7 +64,7 @@ async function matchCatalogItem(
   const brand = preset.brand.toLowerCase();
   const row = await ctx.db.get<CatalogItem>(sql`
     SELECT * FROM catalog_items
-    WHERE active = 1
+    WHERE active = 1 AND kind = 'filament'
       AND LOWER(material) = LOWER(${preset.material})
       AND (LOWER(brand) LIKE '%' || ${brand} || '%' OR ${brand} LIKE '%' || LOWER(brand) || '%')
     ORDER BY (LOWER(brand) = ${brand}) DESC,
@@ -91,11 +97,19 @@ function amazonSearchUrl(
   return url.toString();
 }
 
-/** Wrap a vendor URL with an affiliate deep link when configured; else no-op. */
-function withAffiliate(url: string, vendor: string, config: AffiliateConfig): string {
+/** Wrap a vendor URL with an affiliate deep link/tag when configured; else no-op. */
+function withAffiliate(url: string, vendor: string, region: Region, config: AffiliateConfig): string {
   if (vendor === 'bambu' && config.bambuAwinAffid) {
     // Awin deep link: awinmid 46345 = Bambu Lab.
     return `https://www.awin1.com/cread.php?awinmid=46345&awinaffid=${config.bambuAwinAffid}&ued=${encodeURIComponent(url)}`;
+  }
+  if (vendor === 'amazon') {
+    const tag = region === 'us' ? config.amazonTagUs : config.amazonTagDe;
+    if (tag) {
+      const u = new URL(url);
+      u.searchParams.set('tag', tag);
+      return u.toString();
+    }
   }
   return url;
 }
@@ -126,7 +140,7 @@ export async function resolveBuyLink(
   if (item) {
     const url = catalogUrlForRegion(item, region);
     if (url) {
-      return { url: withAffiliate(url, item.vendor, config), catalogItemId: item.id, vendor: item.vendor };
+      return { url: withAffiliate(url, item.vendor, region, config), catalogItemId: item.id, vendor: item.vendor };
     }
   }
 
@@ -135,6 +149,49 @@ export async function resolveBuyLink(
     catalogItemId: null,
     vendor: 'amazon',
   };
+}
+
+/** Active filament catalog for the preset picker (global catalog, unscoped). */
+export async function getCatalogItems(ctx: TenantContext): Promise<CatalogItem[]> {
+  const rows = await ctx.db.all<CatalogItem>(
+    sql`SELECT * FROM catalog_items WHERE active = 1 AND kind = 'filament' ORDER BY brand, material, color`,
+  );
+  return rows ?? [];
+}
+
+/** Everything shoppable that isn't filament — spare parts + consumables (plates, IPA…). */
+export async function getShopCatalog(ctx: TenantContext): Promise<CatalogItem[]> {
+  const rows = await ctx.db.all<CatalogItem>(
+    sql`SELECT * FROM catalog_items WHERE active = 1 AND kind != 'filament' ORDER BY kind, name`,
+  );
+  return rows ?? [];
+}
+
+/** Full spare-part catalog. Client filters by partCategoriesForHms(broken_hms_code). */
+export async function getSparePartCatalog(ctx: TenantContext): Promise<CatalogItem[]> {
+  const rows = await ctx.db.all<CatalogItem>(
+    sql`SELECT * FROM catalog_items WHERE active = 1 AND kind = 'part' ORDER BY part_category, name`,
+  );
+  return rows ?? [];
+}
+
+export async function getCatalogItemById(ctx: TenantContext, id: number): Promise<CatalogItem | null> {
+  const row = await ctx.db.get<CatalogItem>(
+    sql`SELECT * FROM catalog_items WHERE id = ${id} AND active = 1`,
+  );
+  return row ?? null;
+}
+
+/** Direct link for a known catalog item (spare parts, Phase 3). Null if no URL. */
+export function resolveCatalogItemLink(
+  item: CatalogItem,
+  regionRaw: string | null | undefined,
+  config: AffiliateConfig,
+): BuyLink | null {
+  const region = normalizeRegion(regionRaw);
+  const url = catalogUrlForRegion(item, region);
+  if (!url) return null;
+  return { url: withAffiliate(url, item.vendor, region, config), catalogItemId: item.id, vendor: item.vendor };
 }
 
 export async function getStoreRegion(ctx: TenantContext): Promise<string> {

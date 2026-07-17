@@ -805,16 +805,29 @@
         }
     }
 
-    async function togglePrinterBroken(printer: any, broken: boolean) {
+    async function togglePrinterBroken(
+        printer: any,
+        broken: boolean,
+        alert?: { code: string; text: string },
+    ) {
         controlLoading = broken ? "marking-broken" : "marking-repaired";
         await fetch(`/api/printer/${printer.id}`, {
             method: "PATCH",
             headers: { "content-type": "application/json" },
             body: JSON.stringify(
-                broken ? { action: "broken" } : { action: "repaired" },
+                broken
+                    ? {
+                          action: "broken",
+                          reason: alert?.text ?? null,
+                          hmsCode: alert?.code ?? null,
+                      }
+                    : { action: "repaired" },
             ),
         });
         printer.status = broken ? "inactive" : "idle";
+        // Mirror the server's breakage record so the modal updates immediately.
+        printer.broken_reason = broken ? (alert?.text ?? null) : null;
+        printer.broken_hms_code = broken ? (alert?.code ?? null) : null;
         if (selectedPrinter?.id === printer.id)
             selectedPrinter = { ...printer };
         // Refresh data.printers so the dashboard card re-derives status (and its tint).
@@ -1580,12 +1593,12 @@
                             <h3
                                 class="text-[clamp(0.5rem,2vw,0.8rem)] font-medium text-zinc-900 dark:text-zinc-200 mt-2 tracking-tight"
                             >
-                                Spools
+                                Spools & Consumables
                             </h3>
                             <p
                                 class="text-[clamp(0.4rem,1.3vw,0.65rem)] text-zinc-400 dark:text-zinc-600 font-light tracking-wide tabular-nums"
                             >
-                                {data.spools.length} spools
+                                {data.spools.length} spools · shop
                             </p>
                         </a>
                     {:else if cell.type === "inventory"}
@@ -1876,6 +1889,7 @@
         onSendControl={sendPrinterControl}
         onToggleBroken={togglePrinterBroken}
         onEnqueue={enqueueStart}
+        spareParts={data.sparePartsCatalog ?? []}
         {completePrintSuccessEnhance}
         {adjustWeightEnhance}
     />

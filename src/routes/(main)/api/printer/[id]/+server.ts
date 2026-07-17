@@ -1,14 +1,14 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { updatePrinterTransport, setPrinterActive } from '$lib/server';
+import { updatePrinterTransport, setPrinterBroken, setPrinterRepaired } from '$lib/server';
 import { requireCtx } from '$lib/server/context';
 import type { TransportMode } from '$lib/types';
 
 /** PATCH /api/printer/:id
  *  Handles three action shapes:
- *    { transport: TransportMode }        — update transport preference
- *    { action: 'broken', note?: string } — deactivate printer
- *    { action: 'repaired' }              — reactivate printer
+ *    { transport: TransportMode }                            — update transport preference
+ *    { action: 'broken', reason?: string, hmsCode?: string } — deactivate + record why
+ *    { action: 'repaired' }                                  — reactivate, clear breakage
  */
 export const PATCH: RequestHandler = async ({ params, request, platform, locals }) => {
   const db = platform?.env?.DB;
@@ -26,11 +26,14 @@ export const PATCH: RequestHandler = async ({ params, request, platform, locals 
   }
 
   if (body.action === 'broken') {
-    await setPrinterActive(ctx, id, false);
+    await setPrinterBroken(ctx, id, {
+      reason: typeof body.reason === 'string' ? body.reason : null,
+      hmsCode: typeof body.hmsCode === 'string' ? body.hmsCode : null,
+    });
     return json({ success: true });
   }
   if (body.action === 'repaired') {
-    await setPrinterActive(ctx, id, true);
+    await setPrinterRepaired(ctx, id);
     return json({ success: true });
   }
 

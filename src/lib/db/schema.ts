@@ -150,6 +150,14 @@ export const catalogItems = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     vendor: text("vendor").notNull(), // 'bambu', 'amazon', ...
+    // 'filament' rows match spool presets; 'part' rows are spare parts keyed
+    // by partCategory for HMS-code suggestions (Phase 3); 'consumable' rows
+    // (plates, IPA, glue) fill the shop section on /spools.
+    kind: text("kind").notNull().default("filament"),
+    partCategory: text("part_category"),
+    // Display label for parts. Filament rows leave it NULL (label derives from
+    // brand+color+material).
+    name: text("name"),
     brand: text("brand").notNull(),
     material: text("material").notNull(), // matches spool_presets.material
     color: text("color"),
@@ -323,6 +331,12 @@ export const printers = sqliteTable(
     // Soft-delete: set false when a printer is decommissioned but kept for
     // historical print_jobs references.
     active: integer("active", { mode: "boolean" }).notNull().default(true),
+    // Why the printer was marked broken (cleared on repair). hms_code is the
+    // canonical "XXXX_XXXX_XXXX_XXXX" string and drives spare-part suggestions
+    // (docs/affiliate-monetization.md Phase 3). NULL = manual breakage.
+    brokenReason: text("broken_reason"),
+    brokenHmsCode: text("broken_hms_code"),
+    brokenAt: integer("broken_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),

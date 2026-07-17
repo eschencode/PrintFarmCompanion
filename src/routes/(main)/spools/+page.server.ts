@@ -8,19 +8,21 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
 
   if (!database) {
     console.log('⚠️ Database not available.');
-    return { spoolPresets: [], usageStats: [], spoolDemand: [] };
+    return { spoolPresets: [], usageStats: [], spoolDemand: [], catalogItems: [], shopItems: [] };
   }
   const ctx = requireCtx(locals);
 
   await regenerateGlobalQueueIfStale(ctx);
 
-  const [spoolPresets, usageStats, spoolDemand] = await Promise.all([
+  const [spoolPresets, usageStats, spoolDemand, catalogItems, shopItems] = await Promise.all([
     db.getAllSpoolPresets(ctx),
     db.getSpoolUsageStats(ctx),
     getSpoolDemandFromQueue(ctx),
+    db.getCatalogItems(ctx),
+    db.getShopCatalog(ctx),
   ]);
 
-  return { spoolPresets, usageStats, spoolDemand };
+  return { spoolPresets, usageStats, spoolDemand, catalogItems, shopItems };
 };
 
 export const actions: Actions = {
@@ -76,6 +78,9 @@ export const actions: Actions = {
     const defaultWeight = Number(formData.get('defaultWeight')) || 1000;
     const cost = formData.get('cost') ? Number(formData.get('cost')) : undefined;
     const initialStock = Number(formData.get('initialStock')) || 0;
+    const catalogItemId = formData.get('catalogItemId')
+      ? Number(formData.get('catalogItemId'))
+      : null;
 
     if (!brand || !material) {
       return { success: false, error: 'Brand and material are required' };
@@ -89,6 +94,7 @@ export const actions: Actions = {
       defaultWeight,
       cost,
       inStorage: initialStock,
+      catalogItemId,
     });
 
     return result;
