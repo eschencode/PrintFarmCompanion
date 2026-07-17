@@ -124,6 +124,11 @@ export const spoolPresets = sqliteTable(
   // a `spools` row). Intentionally denormalized: an unopened spool is just
   // a counter, not a row in `spools` yet.
   inStorage: integer("in_storage").default(0).notNull(),
+  // Set when the preset was created from the affiliate catalog (Phase 2) → exact
+  // buy links, no fuzzy matching. NULL for hand-created presets.
+  catalogItemId: integer("catalog_item_id").references(() => catalogItems.id, {
+    onDelete: "set null",
+  }),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
@@ -132,6 +137,62 @@ export const spoolPresets = sqliteTable(
     .default(sql`(unixepoch())`),
   },
   (t) => [index("idx_spool_presets_workspace").on(t.workspaceId)],
+);
+
+// =============================================================================
+// AFFILIATE CATALOG
+// SCOPE: global system catalog (no workspace_id). Your data, hand-seeded from
+// vendor product pages. Buy-links on the reorder plan match presets against it.
+// See docs/affiliate-monetization.md.
+// =============================================================================
+export const catalogItems = sqliteTable(
+  "catalog_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    vendor: text("vendor").notNull(), // 'bambu', 'amazon', ...
+    brand: text("brand").notNull(),
+    material: text("material").notNull(), // matches spool_presets.material
+    color: text("color"),
+    colorHex: text("color_hex"),
+    weight: integer("weight"), // nominal grams
+    sku: text("sku"),
+    urlUs: text("url_us"), // regional product-page URLs
+    urlEu: text("url_eu"),
+    urlUk: text("url_uk"),
+    image: text("image"),
+    active: integer("active").notNull().default(1),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [index("idx_catalog_items_match").on(t.brand, t.material)],
+);
+
+// Append-only buy-link click log (analytics: does anyone click?).
+export const affiliateClicks = sqliteTable(
+  "affiliate_clicks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id").references(() => workspaces.id, {
+      onDelete: "cascade",
+    }),
+    catalogItemId: integer("catalog_item_id").references(
+      () => catalogItems.id,
+      { onDelete: "set null" },
+    ),
+    // No FK: keep the click record even if the preset is later deleted.
+    presetId: integer("preset_id"),
+    placement: text("placement").notNull(), // 'reorder', 'preset_picker', ...
+    region: text("region"),
+    targetUrl: text("target_url").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [index("idx_affiliate_clicks_workspace").on(t.workspaceId)],
 );
 
 // =============================================================================
@@ -839,6 +900,11 @@ export const user = sqliteTable("user", {
     .notNull()
     .default(false),
   image: text("image"),
+  // Admin plugin: 'admin' = platform operator; NULL/'user' = regular user.
+  role: text("role"),
+  banned: integer("banned", { mode: "boolean" }).default(false),
+  banReason: text("ban_reason"),
+  banExpires: integer("ban_expires", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
@@ -856,6 +922,8 @@ export const session = sqliteTable("session", {
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
+  // Admin plugin: set to the admin's user id on impersonation sessions.
+  impersonatedBy: text("impersonated_by"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),
@@ -918,6 +986,9 @@ export const workspaces = sqliteTable("workspaces", {
   ownerUserId: text("owner_user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
+  // Which regional affiliate store buy-links point to ('us' | 'eu' | 'uk' | ...).
+  // Defaulted from Accept-Language at signup. See docs/affiliate-monetization.md.
+  storeRegion: text("store_region").notNull().default("us"),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .default(sql`(unixepoch())`),

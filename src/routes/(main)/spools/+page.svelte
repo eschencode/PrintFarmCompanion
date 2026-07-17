@@ -277,7 +277,10 @@
                         Order Plan · Next 30 Days
                     </p>
                     <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-1">
-                        Spools the print queue will drain within 30 days
+                        Spools the print queue will drain within 30 days ·
+                        <span title="Buy links are affiliate links"
+                            >Buy links are affiliate links</span
+                        >
                     </p>
                 </div>
                 {#if totalToOrder > 0}
@@ -329,6 +332,27 @@
                                     class="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums"
                                     >buy {d.spools_to_buy}</span
                                 >
+                                <a
+                                    href="/api/out?presetId={d.preset_id}&placement=reorder"
+                                    target="_blank"
+                                    rel="sponsored noopener"
+                                    title="Buy this spool (affiliate link)"
+                                    class="px-2.5 h-7 flex items-center gap-1 rounded-md border border-zinc-200 dark:border-[#262626] hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-medium transition-colors"
+                                >
+                                    <svg
+                                        class="w-3.5 h-3.5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        ><path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            stroke-width="2"
+                                            d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
+                                        /></svg
+                                    >
+                                    Buy
+                                </a>
                                 <form
                                     method="POST"
                                     action="?/addStock"

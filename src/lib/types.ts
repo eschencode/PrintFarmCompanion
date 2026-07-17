@@ -42,6 +42,9 @@ export interface SpoolPreset {
   cost: number; // cents
   /** Count of unopened spools in storage (not yet opened into a `spools` row). */
   in_storage: number;
+  /** Set when created from the affiliate catalog (Phase 2). Null otherwise.
+   *  Optional: column-projected preset literals (joins) may omit it. */
+  catalog_item_id?: number | null;
   created_at: number;
   updated_at: number;
 }

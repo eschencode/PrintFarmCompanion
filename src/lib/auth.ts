@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { admin as adminPlugin } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { sveltekitCookies } from "better-auth/svelte-kit";
 import { getRequestEvent } from "$app/server";
@@ -59,8 +60,15 @@ export function createAuth(
         await sendEmail(env, { to: user.email, ...verifyEmail(url) });
       },
     },
-    // Keep this last — it hooks SvelteKit's cookie handling.
-    plugins: [sveltekitCookies(getRequestEvent)],
+    plugins: [
+      adminPlugin({
+        defaultRole: "user",
+        adminRoles: ["admin"],
+        impersonationSessionDuration: 60 * 60,
+      }),
+      // Keep this last — it hooks SvelteKit's cookie handling.
+      sveltekitCookies(getRequestEvent),
+    ],
   });
 }
 

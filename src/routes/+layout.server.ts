@@ -6,6 +6,8 @@ import type { LayoutServerLoad } from "./$types";
 // route groups.
 export const load: LayoutServerLoad = ({ locals }) => {
   return {
-    user: locals.user ? { name: locals.user.name } : null,
+    user: locals.user ? { name: locals.user.name, email: locals.user.email } : null,
+    // Set on impersonation sessions (admin plugin) — drives the (main) banner.
+    impersonating: !!locals.session?.impersonatedBy,
   };
 };

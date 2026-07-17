@@ -1,5 +1,5 @@
 import type { Handle } from "@sveltejs/kit";
-import { json, redirect } from "@sveltejs/kit";
+import { error, json, redirect } from "@sveltejs/kit";
 import { building } from "$app/environment";
 import { svelteKitHandler } from "better-auth/svelte-kit";
 import { getAuth } from "$lib/auth";
@@ -24,6 +24,7 @@ const PUBLIC_API_PREFIXES = ["/api/cron-sync", "/api/pi/webhook"];
 
 function isPublic(path: string): boolean {
   if (PUBLIC_PAGES.has(path)) return true;
+  if (path.startsWith("/legal/")) return true; // imprint / privacy / terms
   return PUBLIC_API_PREFIXES.some((p) => path === p || path.startsWith(p + "/"));
 }
 
@@ -91,6 +92,13 @@ export const handle: Handle = async ({ event, resolve }) => {
       return json({ error: "Unauthorized" }, { status: 401 });
     }
     throw redirect(303, `/login?redirectTo=${encodeURIComponent(path)}`);
+  }
+
+  // Operator-only panel. 404 (not 403) so the panel's existence isn't leaked.
+  // Note: an impersonation session's user is the *target* (role "user"), so
+  // /admin is unreachable mid-impersonation — exit via the banner first.
+  if (path === "/admin" || path.startsWith("/admin/")) {
+    if (event.locals.user?.role !== "admin") throw error(404, "Not found");
   }
 
   // Mounts better-auth's /api/auth/* routes; passes everything else through.

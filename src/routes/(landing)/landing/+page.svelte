@@ -456,6 +456,9 @@
 			<div class="footer-links">
 				<a href="/login">Sign In</a>
 				<a href="/signup">Create Account</a>
+				<a href="/legal/imprint">Imprint</a>
+				<a href="/legal/privacy">Privacy</a>
+				<a href="/legal/terms">Terms</a>
 			</div>
 			<span class="footer-copy">© {new Date().getFullYear()} PrintFarmCompanion</span>
 		</footer>
