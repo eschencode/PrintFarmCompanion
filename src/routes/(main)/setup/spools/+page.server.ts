@@ -5,8 +5,11 @@ import { requireCtx } from "$lib/server/context";
 
 export const load: PageServerLoad = async ({ locals }) => {
   const ctx = requireCtx(locals);
-  const spoolPresets = await db.getAllSpoolPresets(ctx);
-  return { spoolPresets };
+  const [spoolPresets, catalogItems] = await Promise.all([
+    db.getAllSpoolPresets(ctx),
+    db.getCatalogItems(ctx),
+  ]);
+  return { spoolPresets, catalogItems };
 };
 
 export const actions: Actions = {
@@ -28,6 +31,10 @@ export const actions: Actions = {
       colorHex: (formData.get("colorHex") as string) || null,
       defaultWeight: Number(formData.get("defaultWeight")) || 1000,
       inStorage: Number(formData.get("initialStock")) || 0,
+      // Set when the preset came from the affiliate catalog — keeps buy links exact.
+      catalogItemId: formData.get("catalogItemId")
+        ? Number(formData.get("catalogItemId"))
+        : null,
     });
   },
 

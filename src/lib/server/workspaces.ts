@@ -43,6 +43,20 @@ export async function getWorkspaceForUser(
   return rows[0] ?? null;
 }
 
+/** Rename the workspace a user owns. No-op-safe: only touches the owned row. */
+export async function renameWorkspace(
+  db: D1Database,
+  workspaceId: number,
+  name: string,
+): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  await getDb(db)
+    .update(workspaces)
+    .set({ name: trimmed })
+    .where(eq(workspaces.id, workspaceId));
+}
+
 /** Short random base36 suffix for slug uniqueness (e.g. "k3f9q"). */
 function randomSuffix(len = 5): string {
   const bytes = new Uint8Array(len);

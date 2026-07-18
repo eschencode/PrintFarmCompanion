@@ -23,7 +23,6 @@
         getCategorizedModules,
     } from "$lib/utils/printerData";
     import { shine } from "$lib/actions/shine";
-    import ConnectionStatusIndicator from "$lib/components/dashboard/ConnectionStatusIndicator.svelte";
     import StartQueueToast from "$lib/components/dashboard/StartQueueToast.svelte";
     import GridNavigation from "$lib/components/dashboard/GridNavigation.svelte";
     import PrinterCard from "$lib/components/dashboard/PrinterCard.svelte";
@@ -1951,13 +1950,6 @@
         prefill={failurePrefill}
     />
 {/if}
-
-<ConnectionStatusIndicator
-    {fileHandlerState}
-    isDesktop={$isDesktop}
-    {directConnected}
-    printers={data.printers as any[]}
-/>
 
 <!-- Success animation overlay -->
 {#if successParticles.length > 0}
