@@ -9,9 +9,8 @@ export const actions: Actions = {
     const email = String(form.get("email") ?? "").trim();
     const password = String(form.get("password") ?? "");
     const name = String(form.get("name") ?? "").trim();
-    const workspaceName = String(form.get("workspaceName") ?? "").trim();
 
-    const values = { email, name, workspaceName };
+    const values = { email, name };
 
     if (!email || !password) {
       return fail(400, { ...values, error: "Email and password are required." });
@@ -35,6 +34,15 @@ export const actions: Actions = {
     } catch (e) {
       const message =
         e instanceof Error ? e.message : "Could not create your account.";
+      // Most common failure: the email already has an account. Surface a
+      // recovery path instead of a bare error.
+      if (/exist|already/i.test(message)) {
+        return fail(400, {
+          ...values,
+          emailTaken: true,
+          error: "An account with this email already exists.",
+        });
+      }
       return fail(400, { ...values, error: message });
     }
 
@@ -46,7 +54,6 @@ export const actions: Actions = {
         userId,
         userName: finalName,
         userEmail: email,
-        requestedName: workspaceName || null,
       });
     } catch (e) {
       console.error("Eager workspace creation failed after signup (hook will heal):", e);
