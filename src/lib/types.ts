@@ -5,6 +5,8 @@
 /** Printer model catalog row (P1S, H2S, custom DIY, ...) */
 export interface PrinterPreset {
   id: number;
+  /** NULL = shared system catalog row (read-only); set = this workspace's custom model. */
+  workspace_id: number | null;
   model: string;
   brand: string;
   dimension_x: number | null;
