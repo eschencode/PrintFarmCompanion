@@ -88,6 +88,27 @@
     let successImageSrc: string | null = null;
     let particleCounter = 0;
 
+    // Float-up "added to inventory" animation. Called directly on a successful
+    // completion (no reload needed) — image is the finished module's thumbnail.
+    function playSuccessAnimation(imagePath: string | null) {
+        successImageSrc = imagePath;
+        successParticles = [
+            {
+                id: particleCounter++,
+                x: window.innerWidth * 0.5,
+                y: window.innerHeight * 0.6,
+                delay: 0,
+                drift: (Math.random() - 0.5) * 20,
+                rotate: (Math.random() - 0.5) * 10,
+                scale: 1,
+            },
+        ];
+        setTimeout(() => {
+            successParticles = [];
+            successImageSrc = null;
+        }, 2200);
+    }
+
     let showSpoolSelector: boolean = false;
     let spoolTargetSlotIndex: number = 0;
     let showModuleSelector: boolean = false;
@@ -904,29 +925,20 @@
 
     // enhance callback for FailureReasonModal — defined here because it closes over selectedPrinter and the close functions
     const completePrintFailureEnhance: SubmitFunction = () => {
-        return async ({ result }) => {
-            if (result.type === "success") {
-                if (!selectedPrinter) {
-                    closeFailureReasonModal();
-                    closePrinterModal();
-                    window.location.reload();
-                    return;
-                }
-                try {
-                    const response = await fetch(
-                        `/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`,
-                    );
-                    const queueResult = await response.json();
-                    if (queueResult && Array.isArray(queueResult)) {
-                        selectedPrinter.suggested_queue = queueResult;
-                    }
-                } catch (e) {
-                    console.error("Failed to refresh suggested queue:", e);
-                }
-                closeFailureReasonModal();
-                closePrinterModal();
-                window.location.reload();
-            }
+        // Optimistic UI (see completePrintSuccessEnhance): close modals and kick
+        // off the queue regen immediately, soft-refresh once the server confirms.
+        const printer = selectedPrinter;
+        if (printer?.id) {
+            fetch(
+                `/api/ai-recommendations?type=queue&printerId=${printer.id}`,
+                { keepalive: true },
+            ).catch(() => {});
+        }
+        closeFailureReasonModal();
+        closePrinterModal();
+
+        return async () => {
+            await invalidateAll();
         };
     };
 
@@ -947,50 +959,40 @@
 
     // enhance callback for PrinterDetailModal "Print Successful" button
     const completePrintSuccessEnhance: SubmitFunction = () => {
-        return async ({ result }) => {
-            if (result.type === "success") {
-                if (!selectedPrinter) {
-                    closePrinterModal();
-                    window.location.reload();
-                    return;
-                }
-                try {
-                    const job = getActivePrintJob(
-                        selectedPrinter.id,
-                        data.activePrintJobs,
-                    );
-                    const finishedModuleId = job?.module_id;
-                    const queue = selectedPrinter?.suggested_queue;
-                    // Only regenerate AI queue if the finished module isn't already tracked in the queue
-                    const inQueue =
-                        Array.isArray(queue) && finishedModuleId != null
-                            ? queue.some(
-                                  (item: any) =>
-                                      item.module_id === finishedModuleId &&
-                                      item.status !== "DONE",
-                              )
-                            : false;
-                    if (!inQueue && selectedPrinter?.id) {
-                        const resp = await fetch(
-                            `/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`,
-                        );
-                        const queueResult = await resp.json();
-                        if (queueResult && Array.isArray(queueResult)) {
-                            selectedPrinter.suggested_queue = queueResult;
-                        }
-                    }
-                    sessionStorage.setItem(
-                        "printSuccessAnim",
-                        JSON.stringify({
-                            imagePath: (job as any)?.module_thumbnail ?? null,
-                        }),
-                    );
-                } catch (e) {
-                    console.error("Failed to refresh suggested queue:", e);
-                }
-                closePrinterModal();
-                window.location.reload();
-            }
+        // Optimistic UI: fire the animation, close the modal, and kick off the
+        // per-printer queue regen immediately — the click feels instant instead
+        // of blocking on the server round-trip. Capture the printer/job first
+        // since we close the modal (which clears selectedPrinter) before awaiting.
+        const printer = selectedPrinter;
+        const job = printer
+            ? getActivePrintJob(printer.id, data.activePrintJobs)
+            : null;
+        playSuccessAnimation((job as any)?.module_thumbnail ?? null);
+
+        // Regenerate the per-printer queue server-side unless the finished module
+        // is already queued. Fire-and-forget (its result is unused here).
+        const finishedModuleId = job?.module_id;
+        const queue = printer?.suggested_queue;
+        const inQueue =
+            Array.isArray(queue) && finishedModuleId != null
+                ? queue.some(
+                      (item: any) =>
+                          item.module_id === finishedModuleId &&
+                          item.status !== "DONE",
+                  )
+                : false;
+        if (!inQueue && printer?.id) {
+            fetch(
+                `/api/ai-recommendations?type=queue&printerId=${printer.id}`,
+                { keepalive: true },
+            ).catch(() => {});
+        }
+        closePrinterModal();
+
+        // Soft-refresh once the server confirms — Svelte diffs the card from
+        // "finished" → "idle" with no reload flash or stale-data flicker.
+        return async () => {
+            await invalidateAll();
         };
     };
 
@@ -1179,29 +1181,6 @@
     onMount(() => {
         window.addEventListener("keydown", handleKeydown);
         document.addEventListener("wheel", handleWheel, { passive: false });
-
-        // Play success animation if triggered before last reload
-        const pending = sessionStorage.getItem("printSuccessAnim");
-        if (pending) {
-            sessionStorage.removeItem("printSuccessAnim");
-            const { imagePath } = JSON.parse(pending);
-            successImageSrc = imagePath;
-            successParticles = [
-                {
-                    id: particleCounter++,
-                    x: window.innerWidth * 0.5,
-                    y: window.innerHeight * 0.6,
-                    delay: 0,
-                    drift: (Math.random() - 0.5) * 20,
-                    rotate: (Math.random() - 0.5) * 10,
-                    scale: 1,
-                },
-            ];
-            setTimeout(() => {
-                successParticles = [];
-                successImageSrc = null;
-            }, 2200);
-        }
 
         return () => {
             window.removeEventListener("keydown", handleKeydown);
