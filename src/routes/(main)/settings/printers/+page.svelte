@@ -37,6 +37,20 @@
     printerSlotCount = 1;
   }
 
+  // Only surface the catalog models actually in use by one of this workspace's
+  // printers (the full catalog stays available in the New Printer dropdown).
+  $: inUsePresetIds = new Set(
+    (data.printers || [])
+      .map((p: any) => Number(p.printer_preset_id ?? p.preset?.id))
+      .filter((n: number) => !isNaN(n)),
+  );
+  // System catalog rows (workspace_id NULL) are read-only presets; custom rows
+  // belong to this workspace and can be edited/deleted.
+  $: systemModels = (data.printerModels || []).filter(
+    (m: any) => m.workspace_id == null && inUsePresetIds.has(Number(m.id)),
+  );
+  $: customModels = (data.printerModels || []).filter((m: any) => m.workspace_id != null);
+
   // ── Printer model editor ────────────────────────────────────────────────────
   let showPrinterModelEditor = false;
   let editingPrinterModel: any = null;
@@ -97,18 +111,47 @@
     <!-- ── Printer Models ──────────────────────────────────────────────── -->
     <div class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-6">
       <div class="px-5 py-4 flex items-center justify-between border-b border-zinc-50 dark:border-[#1a1a1a]">
-        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Printer Models</p>
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">Printer Models</p>
+          <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">Models you're using, plus your custom ones. Pick from the full catalog when adding a printer.</p>
+        </div>
         <button
           onclick={() => { editingPrinterModel = null; pmName = ''; pmDescription = ''; pmBuildX = ''; pmBuildY = ''; pmBuildZ = ''; showPrinterModelEditor = true; }}
-          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors shrink-0"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-          New Model
+          Custom Model
         </button>
       </div>
-      {#if data.printerModels && data.printerModels.length > 0}
+
+      <!-- Catalog (read-only system presets) -->
+      {#if systemModels.length > 0}
+        <div class="px-5 pt-3 pb-1">
+          <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 dark:text-zinc-600">In use</p>
+        </div>
         <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a]">
-          {#each data.printerModels as model}
+          {#each systemModels as model}
+            <div class="px-5 py-3.5 flex items-center gap-4">
+              <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-[#1a1a1a] flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200">{model.brand} {model.model}</p>
+                <p class="text-xs text-zinc-400">{model.dimension_x && model.dimension_y && model.dimension_z ? `${model.dimension_x}×${model.dimension_y}×${model.dimension_z}mm` : 'No dimensions set'}</p>
+              </div>
+              <span class="text-[9px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-[#1a1a1a] text-zinc-400 dark:text-zinc-500 shrink-0">Catalog</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      <!-- Custom (this workspace's editable presets) -->
+      {#if customModels.length > 0}
+        <div class="px-5 pt-3 pb-1 {systemModels.length > 0 ? 'border-t border-zinc-50 dark:border-[#1a1a1a]' : ''}">
+          <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300 dark:text-zinc-600">Your custom models</p>
+        </div>
+        <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a]">
+          {#each customModels as model}
             <div class="px-5 py-3.5 flex items-center gap-4 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors">
               <div class="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-[#1a1a1a] flex items-center justify-center shrink-0">
                 <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
@@ -133,9 +176,11 @@
             </div>
           {/each}
         </div>
-      {:else}
+      {/if}
+
+      {#if systemModels.length === 0 && customModels.length === 0}
         <div class="px-5 py-10 text-center">
-          <p class="text-sm text-zinc-400 mb-3">No printer models defined yet</p>
+          <p class="text-sm text-zinc-400 mb-3">No printer models available yet</p>
           <button onclick={() => { editingPrinterModel = null; pmName = ''; pmDescription = ''; pmBuildX = ''; pmBuildY = ''; pmBuildZ = ''; showPrinterModelEditor = true; }} class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium border border-zinc-200 dark:border-[#262626] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1a1a1a] transition-colors">Add your first model (e.g., P1S, H2S)</button>
         </div>
       {/if}
