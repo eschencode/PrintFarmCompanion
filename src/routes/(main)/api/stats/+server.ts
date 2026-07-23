@@ -4,7 +4,6 @@ import * as db from '$lib/server';
 import { getAllPrintJobsForStats } from '$lib/server/jobs';
 import { requireCtx } from '$lib/server/context';
 import {
-  buildModuleBreakdown,
   computeUtilization,
   buildFailureAnalysis,
   buildSpoolUsage,
@@ -42,7 +41,6 @@ export const GET: RequestHandler = async ({ url, platform, locals }) => {
     );
 
     return json({
-      moduleBreakdown: buildModuleBreakdown(windowJobs),
       utilizationScores: computeUtilization(printers, allJobs, fromMs, toMs),
       failureAnalysis: buildFailureAnalysis(windowJobs, printers),
       spoolUsage: buildSpoolUsage(windowJobs),
