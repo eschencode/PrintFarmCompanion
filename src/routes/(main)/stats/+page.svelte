@@ -4,64 +4,11 @@
   import { goto } from '$app/navigation';
   import { enhance } from '$app/forms';
   import * as echarts from 'echarts';
-  import ModuleBreakdown from '$lib/components/stats/ModuleBreakdown.svelte';
   import TimeRangeSelector from '$lib/components/stats/TimeRangeSelector.svelte';
   import { selectedTimeRange, customFrom, customTo } from '$lib/stores/timeRange';
   import type { TimeRangeKey } from '$lib/stores/timeRange';
 
   export let data: PageData;
-
-  // Type definitions for breakdown data structures
-
-  interface ColorData {
-    count: number;
-    objects: number;
-    weight: number;
-    cost: number;
-    wastedCost: number;
-    wastedWeight: number;
-  }
-
-  interface ModuleData {
-    total: number;
-    totalObjects: number;
-    totalWeight: number;
-    totalCost: number;
-    wastedCost: number;
-    wastedWeight: number;
-    successfulPrints: number;
-    failedPrints: number;
-    avgCostPerPrint: number;
-    avgWeightPerPrint: number;
-    costPerObject: number;
-    colors: Record<string, ColorData>;
-  }
-
-  interface SubcategoryData {
-    total: number;
-    totalObjects: number;
-    totalWeight: number;
-    totalCost: number;
-    wastedCost: number;
-    wastedWeight: number;
-    successfulPrints: number;
-    failedPrints: number;
-    modules: Record<string, ModuleData>;
-  }
-
-  interface CategoryData {
-    total: number;
-    totalObjects: number;
-    totalWeight: number;
-    totalCost: number;
-    wastedCost: number;
-    wastedWeight: number;
-    successfulPrints: number;
-    failedPrints: number;
-    subcategories: Record<string, SubcategoryData>;
-    modules: Record<string, ModuleData>;
-    colors: Record<string, Omit<ColorData, 'weight' | 'wastedWeight'>>;
-  }
 
   // Chart element references
   let printHistoryChart: HTMLDivElement;
@@ -192,15 +139,10 @@
   $: currentFailures = $selectedTimeRange === 'custom'
     ? (activeStats?.failureAnalysis ?? null)
     : (data.stats as any).failureAnalysis?.[$selectedTimeRange] ?? null;
-  $: currentBreakdown = ($selectedTimeRange === 'custom'
-    ? (activeStats?.moduleBreakdown ?? {})
-    : (data.stats.moduleBreakdown?.[$selectedTimeRange] || {})) as Record<string, CategoryData>;
   $: currentSpoolUsage = $selectedTimeRange === 'custom'
     ? (activeStats?.spoolUsage ?? [])
     : (data.stats as any).spoolUsage?.[$selectedTimeRange] ?? [];
   $: currentSets = (data.stats as any).setCosts?.[$selectedTimeRange] || {};
-  $: totalPrintsInRange = Object.values(currentBreakdown).reduce((sum, cat) => sum + (cat?.total || 0), 0);
-  $: totalObjectsInRange = Object.values(currentBreakdown).reduce((sum, cat) => sum + (cat?.totalObjects || 0), 0);
 
   function getTimeRangeLabel(range: TimeRangeKey): string {
     switch(range) {
@@ -1285,11 +1227,6 @@
       </div>
     {/if}
 
-    <ModuleBreakdown
-      breakdown={currentBreakdown}
-      totalPrints={totalPrintsInRange}
-      totalObjects={totalObjectsInRange}
-    />
     <!-- Charts Grid -->
     <div class="grid grid-cols-2 gap-6 mb-6">
       <!-- Print History Line Chart -->
