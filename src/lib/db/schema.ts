@@ -704,6 +704,37 @@ export const shopifySettings = sqliteTable(
 );
 
 // =============================================================================
+// PI SETTINGS
+// SCOPE: per-workspace
+// Each workspace addresses its OWN Pi HTTP bridge — tunnel URL + shared secret.
+// Replaces the old global PI_TUNNEL_URL / PI_SECRET env vars (single-tenant
+// leftover). No env fallback: an unconfigured workspace has Pi transport off.
+// =============================================================================
+export const piSettings = sqliteTable(
+  "pi_settings",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    // One settings row per workspace (UNIQUE below); the config upsert keys on it.
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    // Cloudflare Tunnel base URL to the workspace's Pi. Plaintext (not itself a
+    // secret) — matches printer_secrets.printer_ip.
+    tunnelUrl: text("tunnel_url").notNull(),
+    // AES-256-GCM ciphertext (see src/lib/server/crypto.ts), encrypted with the
+    // ENCRYPTION_KEY Worker secret. Sent as the x-pi-secret header. Never return raw.
+    piSecret: text("pi_secret").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [uniqueIndex("uniq_pi_settings_workspace").on(t.workspaceId)],
+);
+
+// =============================================================================
 // SHOPIFY SKU MAPPING
 // SCOPE: per-workspace
 // One Shopify SKU can map to multiple objects (bundles) — multiple rows share

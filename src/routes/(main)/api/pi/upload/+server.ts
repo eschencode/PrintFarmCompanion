@@ -1,17 +1,19 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { requireCtx } from '$lib/server/context';
+import { getPiConfig } from '$lib/server/pi';
 
 /**
  * POST /api/pi/upload
  * Streams a .gcode.3mf file from the browser to the Pi via Cloudflare Tunnel.
  * On success, the caller should include pi_file_path in the subsequent module save.
  */
-export const POST: RequestHandler = async ({ request, platform }) => {
-  const piUrl = platform?.env?.PI_TUNNEL_URL;
-  const piSecret = platform?.env?.PI_SECRET ?? '';
+export const POST: RequestHandler = async ({ request, locals }) => {
+  const ctx = requireCtx(locals);
+  const piConfig = await getPiConfig(ctx);
 
-  if (!piUrl) {
-    return json({ success: false, pi_available: false, error: 'Pi not configured' }, { status: 200 });
+  if (!piConfig) {
+    return json({ success: false, pi_available: false, error: 'Pi not configured for this workspace' }, { status: 200 });
   }
 
   // Forward the multipart body directly to the Pi
@@ -21,9 +23,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   }
 
   try {
-    const piResponse = await fetch(`${piUrl}/upload`, {
+    const piResponse = await fetch(`${piConfig.tunnelUrl}/upload`, {
       method: 'POST',
-      headers: { 'content-type': contentType, 'x-pi-secret': piSecret },
+      headers: { 'content-type': contentType, 'x-pi-secret': piConfig.piSecret },
       body: request.body,
       // @ts-expect-error - Cloudflare Workers supports duplex streaming
       duplex: 'half',
