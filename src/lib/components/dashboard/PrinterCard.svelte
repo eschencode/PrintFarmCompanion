@@ -16,6 +16,7 @@
         PrintModuleFull,
         PrintJobFull,
         PiStatus,
+        DetectedExternalPrint,
     } from "$lib/types";
 
     /** The printer to display. Must be defined — caller guards against undefined. */
@@ -29,6 +30,10 @@
     export let startQueue: any[]; // complex queue entry shape not yet in types.ts
     export let now: number;
     export let onSelect: () => void;
+    /** An untracked print the Pi detected on this printer, if any. */
+    export let detectedExternal: DetectedExternalPrint | undefined = undefined;
+    export let onAdoptExternal: (d: DetectedExternalPrint) => void = () => {};
+    export let onDismissExternal: (d: DetectedExternalPrint) => void = () => {};
 
     // A live frame that's effectively done (final layer, no time left, ~100%).
     // Some Bambu firmware sticks at RUNNING 99% forever instead of emitting FINISH.
@@ -151,10 +156,14 @@
 </script>
 
 <!-- Active Printer Card -->
+<!-- Wrapper is the grid item; the card button fills it, and the detected-print
+     banner sits as a sibling overlay (kept out of the button to avoid nesting
+     interactive controls). -->
+<div class="relative h-full w-full min-h-0">
 <button
     use:shine
     onclick={onSelect}
-    class="group relative bg-zinc-50 dark:bg-[#0c0c0f] border border-zinc-200/80 dark:border-[#1a1a22]
+    class="group relative h-full w-full bg-zinc-50 dark:bg-[#0c0c0f] border border-zinc-200/80 dark:border-[#1a1a22]
          rounded-xl p-3 card-lift card-shine
          flex flex-col items-center justify-center overflow-hidden min-h-0"
 >
@@ -386,3 +395,42 @@
         </div>
     </div>
 </button>
+
+<!-- Untracked-print banner — a print running on the machine we aren't tracking.
+     Inline (no popup): adopt it as a dashboard job or dismiss it. -->
+{#if detectedExternal}
+    {@const ext = detectedExternal}
+    <div
+        class="absolute inset-x-1.5 bottom-1.5 z-[5] rounded-lg bg-white/95 dark:bg-[#141418]/95 backdrop-blur
+               border border-amber-400/50 shadow-lg shadow-black/10 px-2.5 py-2"
+    >
+        <div class="flex items-center gap-1.5">
+            <span class="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0"></span>
+            <p class="text-[0.65rem] font-medium text-zinc-700 dark:text-zinc-200 truncate">
+                Untracked print
+            </p>
+        </div>
+        {#if ext.suggested_module_name}
+            <p class="text-[0.6rem] text-zinc-500 dark:text-zinc-400 mt-0.5 truncate" title={ext.suggested_module_name}>
+                {ext.suggested_module_name}
+            </p>
+        {/if}
+        <div class="flex gap-1.5 mt-1.5">
+            <button
+                type="button"
+                onclick={() => onDismissExternal(ext)}
+                class="flex-1 rounded-md border border-zinc-200 dark:border-[#26262e] px-2 py-1 text-[0.6rem] text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1c1c22] transition-colors"
+            >
+                Dismiss
+            </button>
+            <button
+                type="button"
+                onclick={() => onAdoptExternal(ext)}
+                class="flex-1 rounded-md bg-zinc-900 dark:bg-zinc-100 px-2 py-1 text-[0.6rem] font-medium text-white dark:text-zinc-900 hover:opacity-90 transition-opacity"
+            >
+                Add
+            </button>
+        </div>
+    </div>
+{/if}
+</div>
