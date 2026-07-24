@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 import { requireCtx } from '$lib/server/context';
+import { getPiConfig } from '$lib/server/pi';
 
 type SlotInput = {
   slot_index: number;
@@ -289,13 +290,12 @@ export const DELETE: RequestHandler = async ({ url, platform, locals }) => {
     );
     if (!module) return json({ success: false, error: 'Module not found' }, { status: 404 });
 
-    const piUrl = platform?.env?.PI_TUNNEL_URL;
-    const piSecret = (platform?.env?.PI_SECRET as string | undefined) ?? '';
-    if (module?.filename && piUrl) {
+    const piConfig = await getPiConfig(ctx);
+    if (module?.filename && piConfig) {
       try {
-        await fetch(`${piUrl}/file`, {
+        await fetch(`${piConfig.tunnelUrl}/file`, {
           method: 'DELETE',
-          headers: { 'content-type': 'application/json', 'x-pi-secret': piSecret },
+          headers: { 'content-type': 'application/json', 'x-pi-secret': piConfig.piSecret },
           body: JSON.stringify({ file_path: module.filename }),
         });
       } catch (e) {

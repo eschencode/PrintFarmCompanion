@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 import { requireCtx } from '$lib/server/context';
 import { decryptSecret } from '$lib/server/crypto';
+import { getPiConfig } from '$lib/server/pi';
 
 /**
  * POST /api/pi/control
@@ -18,11 +19,10 @@ type Action = (typeof ACTIONS)[number];
 export const POST: RequestHandler = async ({ request, platform, locals }) => {
   const db = platform?.env?.DB;
   const ctx = requireCtx(locals);
-  const piUrl = platform?.env?.PI_TUNNEL_URL;
-  const piSecret = platform?.env?.PI_SECRET ?? '';
 
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
-  if (!piUrl) return json({ success: false, error: 'Pi not configured' }, { status: 503 });
+  const piConfig = await getPiConfig(ctx);
+  if (!piConfig) return json({ success: false, error: 'Pi not configured for this workspace' }, { status: 503 });
 
   let body: { printer_id: number; action: Action };
   try {
@@ -50,9 +50,9 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
   const accessCode = await decryptSecret(printer.access_code, ctx.encryptionKey);
 
   try {
-    const piResp = await fetch(`${piUrl}/${body.action}`, {
+    const piResp = await fetch(`${piConfig.tunnelUrl}/${body.action}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-pi-secret': piSecret },
+      headers: { 'content-type': 'application/json', 'x-pi-secret': piConfig.piSecret },
       body: JSON.stringify({
         printer_ip: printer.printer_ip,
         printer_serial: printer.serial,

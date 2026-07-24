@@ -1,11 +1,13 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { requireCtx } from '$lib/server/context';
+import { getPiConfig } from '$lib/server/pi';
 
-export const GET: RequestHandler = async ({ url, platform }) => {
-  const piUrl = platform?.env?.PI_TUNNEL_URL;
-  const piSecret = platform?.env?.PI_SECRET ?? '';
+export const GET: RequestHandler = async ({ url, locals }) => {
+  const ctx = requireCtx(locals);
+  const piConfig = await getPiConfig(ctx);
 
-  if (!piUrl) return json({ entries: [], error: 'Pi not configured' });
+  if (!piConfig) return json({ entries: [], error: 'Pi not configured for this workspace' });
 
   const params = new URLSearchParams();
   for (const [key, val] of url.searchParams.entries()) {
@@ -13,8 +15,8 @@ export const GET: RequestHandler = async ({ url, platform }) => {
   }
 
   try {
-    const resp = await fetch(`${piUrl}/logs?${params}`, {
-      headers: { 'x-pi-secret': piSecret },
+    const resp = await fetch(`${piConfig.tunnelUrl}/logs?${params}`, {
+      headers: { 'x-pi-secret': piConfig.piSecret },
     });
     return json(await resp.json());
   } catch (e) {

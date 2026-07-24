@@ -24,6 +24,7 @@
     } from "$lib/utils/printerData";
     import { shine } from "$lib/actions/shine";
     import StartQueueToast from "$lib/components/dashboard/StartQueueToast.svelte";
+    import StartErrorToast from "$lib/components/dashboard/StartErrorToast.svelte";
     import GridNavigation from "$lib/components/dashboard/GridNavigation.svelte";
     import PrinterCard from "$lib/components/dashboard/PrinterCard.svelte";
     import QuickStartModal from "$lib/components/dashboard/QuickStartModal.svelte";
@@ -595,6 +596,9 @@
     };
     let startQueue: StartQueueEntry[] = [];
     let startQueueTimeout: ReturnType<typeof setTimeout> | null = null;
+    // Set when a print start fails so the operator sees the real cause (Pi
+    // unreachable, FTPS upload failed, bad creds) instead of silent drop.
+    let startError: { printer: string; message: string } | null = null;
     $: startingPrinterIds = new Set(
         startQueue.map((e) => Number(e.printer.id)),
     );
@@ -714,6 +718,10 @@
                     await invalidateAll();
                     // Stays in queue — advances on PREPARE→RUNNING or 30s timeout
                 } else {
+                    startError = {
+                        printer: printer.name,
+                        message: result.error ?? "Unknown error",
+                    };
                     advanceStartQueue();
                 }
             } else if (hasDirect && module.filename) {
@@ -752,7 +760,11 @@
                 await invalidateAll();
                 setTimeout(advanceStartQueue, 3_000);
             }
-        } catch {
+        } catch (e) {
+            startError = {
+                printer: printer.name,
+                message: `Couldn't reach the server: ${e}`,
+            };
             advanceStartQueue();
         }
     }
@@ -1954,4 +1966,12 @@
 
 {#if startQueueTotal > 1}
     <StartQueueToast {startQueueTotal} />
+{/if}
+
+{#if startError}
+    <StartErrorToast
+        printer={startError.printer}
+        message={startError.message}
+        onDismiss={() => (startError = null)}
+    />
 {/if}

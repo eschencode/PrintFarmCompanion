@@ -230,7 +230,7 @@
       </div>
       <div class="px-4 py-3 space-y-3">
         <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-          A Raspberry Pi on your local network acts as a bridge to your printers via a Cloudflare tunnel. Handles file uploads, print commands, and live status polling. Works from any browser — no desktop app needed. Requires PI_TUNNEL_URL to be configured on the server.
+          A Raspberry Pi on your local network acts as a bridge to your printers via a Cloudflare tunnel. Handles file uploads, print commands, and live status polling. Works from any browser — no desktop app needed. Configure the tunnel URL and secret in Settings → Pi Bridge.
         </p>
         {#if piEnabled}
           <div class="flex items-center gap-2.5">

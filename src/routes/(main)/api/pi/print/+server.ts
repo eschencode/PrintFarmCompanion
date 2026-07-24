@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { closeOpenPrintJobsForPrinter, getLoadedSpools } from '$lib/server';
+import { closeOpenPrintJobsForPrinter, getLoadedSpools, getPiConfig } from '$lib/server';
 import { requireCtx } from '$lib/server/context';
 import { decryptSecret } from '$lib/server/crypto';
 import { sql } from 'drizzle-orm';
@@ -18,11 +18,10 @@ import { getDb } from '$lib/db';
 export const POST: RequestHandler = async ({ request, platform, locals }) => {
   const db = platform?.env?.DB;
   const ctx = requireCtx(locals);
-  const piUrl = platform?.env?.PI_TUNNEL_URL;
-  const piSecret = platform?.env?.PI_SECRET ?? '';
 
   if (!db) return json({ success: false, error: 'Database not available' }, { status: 500 });
-  if (!piUrl) return json({ success: false, error: 'Pi not configured (PI_TUNNEL_URL missing)' }, { status: 503 });
+  const piConfig = await getPiConfig(ctx);
+  if (!piConfig) return json({ success: false, error: 'Pi not configured for this workspace' }, { status: 503 });
 
   const drizzleDb = getDb(db);
   let body: { module_id: number; printer_id: number; options?: Record<string, unknown> };
@@ -75,11 +74,12 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
   `);
   const jobId = insert.meta.last_row_id as number;
 
-  let piResult: { success: boolean; task_id?: string; error?: string };
+  let piResult: { success: boolean; task_id?: string; error?: string; detail?: string };
+  let piStatus = 0;
   try {
-    const piResp = await fetch(`${piUrl}/print`, {
+    const piResp = await fetch(`${piConfig.tunnelUrl}/print`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-pi-secret': piSecret },
+      headers: { 'content-type': 'application/json', 'x-pi-secret': piConfig.piSecret },
       body: JSON.stringify({
         file_path: module.filename,
         printer_ip: printerRow.printer_ip,
@@ -90,6 +90,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
         options: options ?? {},
       }),
     });
+    piStatus = piResp.status;
     piResult = await piResp.json() as typeof piResult;
   } catch (e) {
     // Pi never started the print — drop the placeholder so it can't be adopted.
@@ -99,7 +100,10 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
 
   if (!piResult.success) {
     await drizzleDb.run(sql`DELETE FROM print_jobs WHERE id = ${jobId} AND workspace_id = ${ctx.workspaceId}`);
-    return json({ success: false, error: piResult.error ?? 'Pi print failed' }, { status: 502 });
+    // The Pi's FastAPI errors serialize as { detail } (e.g. "FTPS upload failed"),
+    // not { success, error } — surface that real cause instead of a generic string.
+    const detail = piResult.error ?? piResult.detail ?? `Pi print failed (HTTP ${piStatus})`;
+    return json({ success: false, error: detail }, { status: 502 });
   }
 
   // Pi accepted the job — attach its task_id and snapshot loaded spools (one row

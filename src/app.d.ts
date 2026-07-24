@@ -26,8 +26,9 @@ declare global {
             env?: {
                 DB: D1Database;
                 AI?: Ai;
-                PI_TUNNEL_URL?: string;
-                PI_SECRET?: string;
+                // Pi tunnel URL + secret are per-workspace now (pi_settings
+                // table, src/lib/server/pi.ts) — no longer env vars. The inbound
+                // webhook callback still authenticates with a shared env secret.
                 PI_WEBHOOK_SECRET?: string;
                 ENCRYPTION_KEY?: string;
                 CRON_SECRET?: string;

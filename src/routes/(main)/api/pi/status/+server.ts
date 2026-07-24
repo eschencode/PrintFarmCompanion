@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 import { requireCtx } from '$lib/server/context';
 import { decryptSecret } from '$lib/server/crypto';
+import { getPiConfig } from '$lib/server/pi';
 
 /**
  * GET /api/pi/status?serial=SERIALNUMBER
@@ -13,10 +14,9 @@ import { decryptSecret } from '$lib/server/crypto';
 export const GET: RequestHandler = async ({ url, platform, locals }) => {
   const db = platform?.env?.DB;
   const ctx = requireCtx(locals);
-  const piUrl = platform?.env?.PI_TUNNEL_URL;
-  const piSecret = platform?.env?.PI_SECRET ?? '';
+  const piConfig = await getPiConfig(ctx);
 
-  if (!piUrl) {
+  if (!piConfig) {
     return json({ pi_available: false, connected: false, status: null });
   }
 
@@ -44,12 +44,12 @@ export const GET: RequestHandler = async ({ url, platform, locals }) => {
   }
 
   try {
-    const headers: Record<string, string> = { 'x-pi-secret': piSecret };
+    const headers: Record<string, string> = { 'x-pi-secret': piConfig.piSecret };
     if (printerIp) headers['x-printer-ip'] = printerIp;
     if (printerCode) headers['x-printer-code'] = printerCode;
     if (printerName) headers['x-printer-name'] = printerName;
 
-    const piResp = await fetch(`${piUrl}/status/${serial}`, { headers });
+    const piResp = await fetch(`${piConfig.tunnelUrl}/status/${serial}`, { headers });
     const data = await piResp.json() as Record<string, any>;
 
     // ── External-print detection (read-only; never marks anything failed).
