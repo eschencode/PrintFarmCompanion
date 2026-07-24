@@ -32,7 +32,6 @@
     import SpoolSelectorModal from "$lib/components/dashboard/SpoolSelectorModal.svelte";
     import ModuleSelectorModal from "$lib/components/dashboard/ModuleSelectorModal.svelte";
     import PrinterDetailModal from "$lib/components/dashboard/PrinterDetailModal.svelte";
-    import ExternalPrintDetectedModal from "$lib/components/dashboard/ExternalPrintDetectedModal.svelte";
     import type { SubmitFunction } from "@sveltejs/kit";
     import { onMount, onDestroy } from "svelte";
     import { writable, get } from "svelte/store";
@@ -45,7 +44,7 @@
         manualModeEnabled,
     } from "$lib/stores/connectionToggles";
     import { isDesktop } from "$lib/stores/desktop";
-    import type { TransportMode } from "$lib/types";
+    import type { TransportMode, DetectedExternalPrint } from "$lib/types";
     import {
         computeDepletion,
         worstStatus,
@@ -146,6 +145,14 @@
         }
     }
     onMount(async () => {
+        // Restore dismissed/adopted external prints so they don't re-surface.
+        try {
+            const raw = localStorage.getItem(HANDLED_EXTERNAL_KEY);
+            if (raw)
+                for (const t of JSON.parse(raw) as string[])
+                    handledExternalTasks.add(t);
+        } catch {}
+
         // Restore start queue from localStorage
         const restored = loadStartQueue();
         if (restored.length > 0) {
@@ -300,17 +307,22 @@
     let piPollingIntervals: Record<string, ReturnType<typeof setTimeout>> = {};
 
     // ── Externally-started print detection ────────────────────────────────────
-    // Pi reports a print we aren't tracking → prompt the user to add it.
-    type DetectedExternal = {
-        printer_id: number;
-        task_id: string;
-        gcode_file: string | null;
-        suggested_module_id: number | null;
-        suggested_module_name: string | null;
-    };
-    let detectedExternal: DetectedExternal | null = null;
-    // task_ids the user already acted on (added or dismissed) — don't re-prompt this session.
+    // Pi reports a print we aren't tracking → surface it inline on the printer
+    // card (not a blocking modal). Keyed by printer id so each card shows its own.
+    let detectedExternalByPrinter: Record<number, DetectedExternalPrint> = {};
+    // task_ids the user already acted on (added or dismissed). Persisted to
+    // localStorage so a dismissed print stays dismissed across reloads (it used
+    // to re-surface on every reload). Loaded in onMount.
+    const HANDLED_EXTERNAL_KEY = "printfarm_handled_external_tasks";
     const handledExternalTasks = new Set<string>();
+    function persistHandledExternal() {
+        try {
+            localStorage.setItem(
+                HANDLED_EXTERNAL_KEY,
+                JSON.stringify([...handledExternalTasks]),
+            );
+        } catch {}
+    }
     // Guard: only trigger reload/auto-start once per serial per page load
     const reloadTriggered = new Set<string>();
 
@@ -477,15 +489,32 @@
                     wifi_signal?: string | null;
                     updated_at?: number | null;
                 } | null;
-                detected_external?: DetectedExternal;
+                detected_external?: DetectedExternalPrint;
             };
-            // Surface an externally-started print for confirmation (one prompt at a time).
+            // Surface / clear the inline "untracked print" banner for this printer.
+            // Once adopted or finished, the server stops reporting detected_external
+            // → drop the banner. Ignore tasks the user already handled this session.
+            const extPrinterId =
+                d.detected_external?.printer_id ??
+                data.printers.find(
+                    (p) => p.printer_serial === serial,
+                )?.id;
             if (
                 d.detected_external &&
-                !handledExternalTasks.has(d.detected_external.task_id) &&
-                !detectedExternal
+                !handledExternalTasks.has(d.detected_external.task_id)
             ) {
-                detectedExternal = d.detected_external;
+                detectedExternalByPrinter = {
+                    ...detectedExternalByPrinter,
+                    [Number(d.detected_external.printer_id)]:
+                        d.detected_external,
+                };
+            } else if (
+                extPrinterId != null &&
+                detectedExternalByPrinter[Number(extPrinterId)]
+            ) {
+                const { [Number(extPrinterId)]: _cleared, ...rest } =
+                    detectedExternalByPrinter;
+                detectedExternalByPrinter = rest;
             }
             if (!d.status) return;
 
@@ -954,20 +983,38 @@
         };
     };
 
-    function dismissDetectedExternal() {
-        if (detectedExternal)
-            handledExternalTasks.add(detectedExternal.task_id);
-        detectedExternal = null;
+    function clearDetectedExternal(detected: DetectedExternalPrint) {
+        handledExternalTasks.add(detected.task_id);
+        persistHandledExternal();
+        const { [Number(detected.printer_id)]: _cleared, ...rest } =
+            detectedExternalByPrinter;
+        detectedExternalByPrinter = rest;
     }
 
-    const confirmExternalEnhance: SubmitFunction = () => {
-        return async ({ result }) => {
-            if (detectedExternal)
-                handledExternalTasks.add(detectedExternal.task_id);
-            detectedExternal = null;
-            if (result.type === "success") await invalidateAll();
-        };
-    };
+    // Dismiss the inline banner without adopting (won't re-surface this session).
+    function dismissExternal(detected: DetectedExternalPrint) {
+        clearDetectedExternal(detected);
+    }
+
+    // Adopt the untracked print as a dashboard job (optionally with the matched
+    // module), then refresh. Mirrors the old modal's confirmExternalPrint form.
+    async function adoptExternal(detected: DetectedExternalPrint) {
+        clearDetectedExternal(detected);
+        const fd = new FormData();
+        fd.append("printerId", String(detected.printer_id));
+        fd.append("taskId", detected.task_id);
+        if (detected.suggested_module_id != null)
+            fd.append("moduleId", String(detected.suggested_module_id));
+        try {
+            await fetch("?/confirmExternalPrint", {
+                method: "POST",
+                body: fd,
+            });
+            await invalidateAll();
+        } catch (e) {
+            console.error("adoptExternal failed:", e);
+        }
+    }
 
     // enhance callback for PrinterDetailModal "Print Successful" button
     const completePrintSuccessEnhance: SubmitFunction = () => {
@@ -1426,6 +1473,11 @@
                                 printModules={data.printModules}
                                 {startQueue}
                                 {now}
+                                detectedExternal={detectedExternalByPrinter[
+                                    Number(printer.id)
+                                ]}
+                                onAdoptExternal={adoptExternal}
+                                onDismissExternal={dismissExternal}
                                 onSelect={() => selectPrinter(printer)}
                             />
                         {:else}
@@ -1913,19 +1965,6 @@
         {startingPrinterIds}
         onClose={closeModuleSelector}
         onEnqueue={enqueueStart}
-    />
-{/if}
-
-{#if detectedExternal}
-    {@const ext = detectedExternal}
-    {@const detectedPrinter = data.printers.find(
-        (p) => Number(p.id) === Number(ext.printer_id),
-    )}
-    <ExternalPrintDetectedModal
-        detected={ext}
-        printerName={detectedPrinter?.name ?? `Printer ${ext.printer_id}`}
-        onClose={dismissDetectedExternal}
-        confirmEnhance={confirmExternalEnhance}
     />
 {/if}
 

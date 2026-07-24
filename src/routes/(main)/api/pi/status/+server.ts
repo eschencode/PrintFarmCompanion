@@ -75,11 +75,22 @@ export const GET: RequestHandler = async ({ url, platform, locals }) => {
           );
 
           if (!openJob) {
-            const filename = (status.gcode_file ?? status.subtask_name ?? '').toString();
-            const normalized = filename.split('/').pop()?.replace(/\.gcode\.3mf$/i, '').toLowerCase() ?? '';
+            // Prefer subtask_name (the human project name). gcode_file is often
+            // the generic internal plate path (/data/Metadata/plate_1.gcode) that
+            // every 3mf shares — matching on it adopts an unrelated module.
+            const rawName = (status.subtask_name ?? status.gcode_file ?? '').toString();
+            const normalized = (rawName.split('/').pop() ?? '')
+              .replace(/\.gcode\.3mf$/i, '')
+              .replace(/\.3mf$/i, '')
+              .replace(/\.gcode$/i, '')
+              .toLowerCase()
+              .trim();
+            // A bare "plate_N" (or empty) carries no identity — don't suggest a
+            // module off it, or we'd match the wrong print.
+            const isGeneric = normalized === '' || /^plate[\s_-]?\d+$/.test(normalized);
 
             let matchedModule: { id: number; name: string } | null = null;
-            if (normalized) {
+            if (!isGeneric) {
               matchedModule = await drizzleDb.get(sql`
                 SELECT id, name FROM print_modules
                 WHERE workspace_id = ${ctx.workspaceId}
@@ -92,7 +103,7 @@ export const GET: RequestHandler = async ({ url, platform, locals }) => {
             data.detected_external = {
               printer_id: printer.id,
               task_id: status.task_id,
-              gcode_file: filename || null,
+              gcode_file: rawName || null,
               suggested_module_id: matchedModule?.id ?? null,
               suggested_module_name: matchedModule?.name ?? null,
             };

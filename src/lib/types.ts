@@ -391,6 +391,19 @@ export interface NewGridPreset {
 export type TransportMode = 'auto' | 'direct' | 'pi';
 
 /**
+ * A print the Pi reports on a printer we aren't tracking (started on the
+ * machine's touchscreen, SD card, etc.). Surfaced inline on the printer card
+ * for the user to adopt or dismiss. Produced by api/pi/status/+server.ts.
+ */
+export interface DetectedExternalPrint {
+  printer_id: number;
+  task_id: string;
+  gcode_file: string | null;
+  suggested_module_id: number | null;
+  suggested_module_name: string | null;
+}
+
+/**
  * Live status snapshot for one printer, received via Pi polling or Tauri MQTT events.
  * Keyed by printer serial in the dashboard's piStatusBySerial map.
  */
