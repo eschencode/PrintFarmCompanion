@@ -344,11 +344,16 @@ export async function completePrintJob(
 
   const status = success ? 'successful' : 'failed';
 
-  await drizzleDb.run(sql`
+  // Idempotency guard: only complete a job that's still open. A double submit
+  // (e.g. re-confirming from a stale modal) would otherwise re-deduct spool
+  // weight and re-log inventory for an already-completed job.
+  const res = await drizzleDb.run(sql`
     UPDATE print_jobs
     SET status = ${status}, failure_reason = ${failureReason}, updated_at = ${now}
     WHERE id = ${jobId} AND workspace_id = ${ctx.workspaceId}
+      AND status IN ('printing', 'print_finished')
   `);
+  if ((res.meta.changes ?? 0) === 0) return;
 
   // Update used weight per slot and deduct from physical spools
   const spoolRows = await getPrintJobSpools(ctx, jobId);
