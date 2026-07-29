@@ -32,6 +32,7 @@
     import SpoolSelectorModal from "$lib/components/dashboard/SpoolSelectorModal.svelte";
     import ModuleSelectorModal from "$lib/components/dashboard/ModuleSelectorModal.svelte";
     import PrinterDetailModal from "$lib/components/dashboard/PrinterDetailModal.svelte";
+    import PrinterHistoryModal from "$lib/components/dashboard/PrinterHistoryModal.svelte";
     import type { SubmitFunction } from "@sveltejs/kit";
     import { onMount, onDestroy } from "svelte";
     import { writable, get } from "svelte/store";
@@ -113,6 +114,7 @@
     let spoolTargetSlotIndex: number = 0;
     let showModuleSelector: boolean = false;
     let showFailureReasonModal: boolean = false;
+    let showHistoryModal: boolean = false;
     let failurePrefill: FailurePrefill | null = null;
 
     // Quick Start state
@@ -967,6 +969,7 @@
         showModuleSelector = false;
         showFailureReasonModal = false;
         showQuickStart = false;
+        showHistoryModal = false;
     }
 
     function closeFailureReasonModal() {
@@ -1963,6 +1966,7 @@
         printJobs={data.printJobs}
         printModules={data.printModules}
         onClose={closePrinterModal}
+        onShowHistory={() => (showHistoryModal = true)}
         onLoadSpool={handleLoadSpool}
         onStartPrint={handleStartPrint}
         onPrintFailed={handlePrintFailed}
@@ -2004,6 +2008,15 @@
         onClose={closeModuleSelector}
         onEnqueue={enqueueStart}
     />
+{/if}
+
+{#if selectedPrinter && showHistoryModal}
+    {#key selectedPrinter.id}
+        <PrinterHistoryModal
+            printer={selectedPrinter}
+            onClose={() => (showHistoryModal = false)}
+        />
+    {/key}
 {/if}
 
 {#if selectedPrinter && showFailureReasonModal}

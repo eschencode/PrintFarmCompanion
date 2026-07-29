@@ -263,6 +263,28 @@ export interface PrintJobWithDetails extends PrintJob {
   progress?: number | null;
 }
 
+/**
+ * One row from the printer_events audit trail (per-printer history modal).
+ * `detail` is a small JSON string whose shape depends on event_type
+ * ({ slot?, spool?, colorHex?, module?, reason?, from?, to?, totalWeight? }).
+ */
+export interface PrinterEvent {
+  id: number;
+  printer_id: number;
+  print_job_id: number | null;
+  event_type:
+    | 'spool_loaded'
+    | 'spool_unloaded'
+    | 'print_started'
+    | 'print_finished'
+    | 'marked_successful'
+    | 'marked_failed'
+    | 'outcome_changed'
+    | 'print_deleted';
+  detail: string | null;
+  created_at: number;
+}
+
 // ============================================================================
 // QUEUE TYPES
 // ============================================================================
@@ -312,7 +334,9 @@ export type InventoryChangeType =
   | '+ stock count'
   | '- stock count'
   | '- sold b2c'
-  | '- sold b2b';
+  | '- sold b2b'
+  /** Retroactive outcome flip successful→failed reversing an earlier '+ printed'. */
+  | '- printed reversal';
 
 /** One entry in the append-only audit trail of stock changes. */
 export interface InventoryLog {

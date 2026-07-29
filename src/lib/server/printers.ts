@@ -14,6 +14,7 @@ import type {
 } from '../types';
 import type { TenantContext } from './context';
 import { encryptSecret, decryptSecret } from './crypto';
+import { logPrinterEvent } from './events';
 
 // printers / printer_secrets / printer_loaded_spools carry workspace_id NOT NULL
 // (Phase 3, group 3) and are scoped to ctx.workspaceId.
@@ -502,6 +503,23 @@ export async function setLoadedSpool(
     SET spool_id = ${spoolId}, updated_at = ${now}
     WHERE printer_id = ${printerId} AND slot_index = ${slotIndex} AND workspace_id = ${ctx.workspaceId}
   `);
+
+  if (spoolId === null) {
+    await logPrinterEvent(ctx, printerId, 'spool_unloaded', { slot: slotIndex });
+  } else {
+    // Inline preset lookup (spools.ts imports from this file — no cycle allowed).
+    const preset = await ctx.db.get<{ brand: string | null; material: string | null; color: string | null; color_hex: string | null }>(sql`
+      SELECT sp.brand, sp.material, sp.color, sp.color_hex
+      FROM spools s
+      LEFT JOIN spool_presets sp ON s.preset_id = sp.id
+      WHERE s.id = ${spoolId} AND s.workspace_id = ${ctx.workspaceId}
+    `);
+    await logPrinterEvent(ctx, printerId, 'spool_loaded', {
+      slot: slotIndex,
+      spool: preset ? [preset.brand, preset.material, preset.color].filter(Boolean).join(' ') : null,
+      colorHex: preset?.color_hex ?? null,
+    });
+  }
 }
 
 /** Clear the spool from a slot (null out spool_id; the slot row stays). */
