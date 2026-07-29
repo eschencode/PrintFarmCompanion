@@ -36,6 +36,7 @@
     export let printJobs: PrintJobWithDetails[];
     export let printModules: PrintModuleFull[];
     export let onClose: () => void;
+    export let onShowHistory: () => void;
     export let onLoadSpool: () => void;
     export let onStartPrint: () => void;
     export let onPrintFailed: (prefill?: FailurePrefill) => void;
@@ -210,9 +211,30 @@
                         {printer.preset?.model ?? ""}
                     </p>
                 </div>
+                <div class="flex items-center gap-1">
+                <button
+                    onclick={onShowHistory}
+                    class="p-2 text-zinc-400 hover:text-zinc-900 dark:text-zinc-600 dark:hover:text-zinc-50 transition-colors rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/50"
+                    aria-label="Past prints"
+                    title="Past prints"
+                >
+                    <svg
+                        class="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="1.5"
+                            d="M12 8v4l2.5 2.5M4.582 9A8 8 0 1 1 4 12m.582-3H9m-4.418 0V4.5"
+                        />
+                    </svg>
+                </button>
                 <button
                     onclick={onClose}
-                    class="p-2 -m-2 text-zinc-400 hover:text-zinc-900 dark:text-zinc-600 dark:hover:text-zinc-50 transition-colors rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/50"
+                    class="p-2 text-zinc-400 hover:text-zinc-900 dark:text-zinc-600 dark:hover:text-zinc-50 transition-colors rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800/50"
                     aria-label="Close modal"
                 >
                     <svg
@@ -229,6 +251,7 @@
                         />
                     </svg>
                 </button>
+                </div>
             </div>
 
             <!-- Status Badge -->

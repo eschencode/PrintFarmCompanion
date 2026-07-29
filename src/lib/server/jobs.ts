@@ -5,6 +5,7 @@ import type { PrintJob, PrintJobFull, PrintJobWithDetails, PrintJobSpool, StartP
 import { getPrinterById, getLoadedSpools } from './printers';
 import { getSpoolById, updateSpoolWeight } from './spools';
 import { getPrintModuleById, getModuleFilamentSlots } from './modules';
+import { logPrinterEvent } from './events';
 import type { TenantContext } from './context';
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -73,6 +74,70 @@ export async function getAllPrintJobs(ctx: TenantContext): Promise<PrintJobWithD
     ORDER BY pj.created_at DESC
   `);
   return (rows ?? []) as unknown as PrintJobWithDetails[];
+}
+
+/** Spool slot info joined for the history modal (subset of the stats join). */
+export interface PrinterHistorySpool {
+  print_job_id: number;
+  slot_index: number;
+  spool_id: number | null;
+  used_weight: number | null;
+  color: string | null;
+  color_hex: string | null;
+  brand: string | null;
+  material: string | null;
+}
+
+export type PrinterHistoryJob = PrintJobWithDetails & { spools: PrinterHistorySpool[] };
+
+/**
+ * Newest-first jobs for one printer, with module info + per-slot spools for
+ * the history modal. `before` (unix seconds, compared against created_at —
+ * start_time can be null) enables keyset pagination.
+ */
+export async function getPrintJobsForPrinter(
+  ctx: TenantContext,
+  printerId: number,
+  limit = 50,
+  before?: number,
+): Promise<PrinterHistoryJob[]> {
+  const rows = await ctx.db.all<PrintJobWithDetails>(sql`
+    SELECT
+      pj.*,
+      pm.name as module_name,
+      pm.weight as module_weight,
+      pm.thumbnail as module_thumbnail,
+      pm.expected_time_minutes,
+      pm.objects_per_print
+    FROM print_jobs pj
+    LEFT JOIN print_modules pm ON pj.module_id = pm.id
+    WHERE pj.printer_id = ${printerId} AND pj.workspace_id = ${ctx.workspaceId}
+      ${before !== undefined ? sql`AND pj.created_at < ${before}` : sql``}
+    ORDER BY pj.created_at DESC
+    LIMIT ${limit}
+  `);
+
+  const jobs: PrinterHistoryJob[] = (rows ?? []).map((row) => ({ ...row, spools: [] }));
+  if (jobs.length === 0) return jobs;
+
+  // One batched query for all jobs' spools — not per-job round-trips.
+  const ids = sql.join(jobs.map((j) => sql`${j.id}`), sql`, `);
+  const spoolRows = await ctx.db.all<PrinterHistorySpool>(sql`
+    SELECT
+      pjs.print_job_id, pjs.slot_index, pjs.spool_id, pjs.used_weight,
+      sp.color, sp.color_hex, sp.brand, sp.material
+    FROM print_job_spools pjs
+    LEFT JOIN spools        s  ON pjs.spool_id = s.id
+    LEFT JOIN spool_presets sp ON s.preset_id  = sp.id
+    WHERE pjs.workspace_id = ${ctx.workspaceId} AND pjs.print_job_id IN (${ids})
+    ORDER BY pjs.print_job_id, pjs.slot_index
+  `);
+
+  const byJob = new Map(jobs.map((j) => [j.id, j]));
+  for (const row of spoolRows ?? []) {
+    byJob.get(row.print_job_id)?.spools.push(row);
+  }
+  return jobs;
 }
 
 /**
@@ -271,6 +336,8 @@ export async function startPrintJob(
     `);
   }
 
+  await logPrinterEvent(ctx, printerId, 'print_started', { module: module.name }, jobId);
+
   return {
     success: true,
     jobId,
@@ -355,6 +422,8 @@ export async function completePrintJob(
   `);
   if ((res.meta.changes ?? 0) === 0) return;
 
+  const job = await getPrintJobById(ctx, jobId);
+
   // Update used weight per slot and deduct from physical spools
   const spoolRows = await getPrintJobSpools(ctx, jobId);
   for (const row of spoolRows) {
@@ -375,24 +444,154 @@ export async function completePrintJob(
   }
 
   // Add to inventory if module produces an object
-  if (success) {
-    const job = await getPrintJobById(ctx, jobId);
-    if (job?.module_id) {
-      const module = await getPrintModuleById(ctx, job.module_id);
-      if (module?.object_id) {
-        const quantity = module.objects_per_print ?? 1;
-        await drizzleDb.run(sql`
-          UPDATE objects
-          SET in_stock = in_stock + ${quantity}, updated_at = ${now}
-          WHERE id = ${module.object_id} AND workspace_id = ${ctx.workspaceId}
-        `);
-        await drizzleDb.run(sql`
-          INSERT INTO inventory_log (workspace_id, object_id, change_type, quantity, print_job_id, created_at)
-          VALUES (${ctx.workspaceId}, ${module.object_id}, '+ printed', ${quantity}, ${jobId}, ${now})
-        `);
-      }
+  if (success && job?.module_id) {
+    const module = await getPrintModuleById(ctx, job.module_id);
+    if (module?.object_id) {
+      const quantity = module.objects_per_print ?? 1;
+      await drizzleDb.run(sql`
+        UPDATE objects
+        SET in_stock = in_stock + ${quantity}, updated_at = ${now}
+        WHERE id = ${module.object_id} AND workspace_id = ${ctx.workspaceId}
+      `);
+      await drizzleDb.run(sql`
+        INSERT INTO inventory_log (workspace_id, object_id, change_type, quantity, print_job_id, created_at)
+        VALUES (${ctx.workspaceId}, ${module.object_id}, '+ printed', ${quantity}, ${jobId}, ${now})
+      `);
     }
   }
+
+  if (job?.printer_id) {
+    const totalWeight = Object.values(usedWeightBySlot).reduce((sum, w) => sum + w, 0);
+    await logPrinterEvent(ctx, job.printer_id, success ? 'marked_successful' : 'marked_failed', {
+      ...(failureReason ? { reason: failureReason } : {}),
+      ...(totalWeight > 0 ? { totalWeight } : {}),
+    }, jobId);
+  }
+}
+
+/**
+ * Retroactively flip a finished job's outcome (e.g. a batch marked successful
+ * turns out bad). Only terminal→terminal: successful ↔ failed, with
+ * failed_confirmed accepted as a flip source so auto-failed jobs can be
+ * corrected. Reverses the inventory side of completePrintJob when the
+ * success-ness actually changes; spool weights stay untouched (the filament
+ * was consumed either way).
+ */
+export async function changePrintJobOutcome(
+  ctx: TenantContext,
+  jobId: number,
+  newOutcome: 'successful' | 'failed',
+  failureReason: string | null = null,
+): Promise<ServerResponse> {
+  const drizzleDb = ctx.db;
+  const now = Math.floor(Date.now() / 1000);
+
+  const job = await getPrintJobById(ctx, jobId);
+  if (!job) return { success: false, error: 'Print job not found' };
+
+  if (!['successful', 'failed', 'failed_confirmed'].includes(job.status)) {
+    return { success: false, error: 'Job is still open — complete it instead' };
+  }
+  if (job.status === newOutcome) {
+    return { success: false, error: 'Job already has that outcome' };
+  }
+
+  const reason = newOutcome === 'failed' ? failureReason : null;
+
+  // Keyed on the observed status so a concurrent flip can't double-apply the
+  // inventory delta below.
+  const res = await drizzleDb.run(sql`
+    UPDATE print_jobs
+    SET status = ${newOutcome}, failure_reason = ${reason}, updated_at = ${now}
+    WHERE id = ${jobId} AND workspace_id = ${ctx.workspaceId} AND status = ${job.status}
+  `);
+  if ((res.meta.changes ?? 0) === 0) {
+    return { success: false, error: 'Job changed in the meantime — reload and retry' };
+  }
+
+  const wasSuccessful = job.status === 'successful';
+  const isSuccessful = newOutcome === 'successful';
+  if (wasSuccessful !== isSuccessful && job.module_id) {
+    const module = await getPrintModuleById(ctx, job.module_id);
+    if (module?.object_id) {
+      const quantity = module.objects_per_print ?? 1;
+      await drizzleDb.run(sql`
+        UPDATE objects
+        SET in_stock = in_stock + ${isSuccessful ? quantity : -quantity}, updated_at = ${now}
+        WHERE id = ${module.object_id} AND workspace_id = ${ctx.workspaceId}
+      `);
+      await drizzleDb.run(sql`
+        INSERT INTO inventory_log (workspace_id, object_id, change_type, quantity, print_job_id, created_at)
+        VALUES (${ctx.workspaceId}, ${module.object_id}, ${isSuccessful ? '+ printed' : '- printed reversal'}, ${quantity}, ${jobId}, ${now})
+      `);
+    }
+  }
+
+  if (job.printer_id) {
+    await logPrinterEvent(ctx, job.printer_id, 'outcome_changed', {
+      from: job.status,
+      to: newOutcome,
+      ...(reason ? { reason } : {}),
+    }, jobId);
+  }
+
+  return { success: true, message: `Outcome changed to ${newOutcome}` };
+}
+
+/**
+ * Permanently delete a print job (e.g. a stale queued/paused entry). If the
+ * job was successful, its inventory contribution is reversed first so stock
+ * counts stay honest. Spool weight is left alone — filament consumed by a real
+ * print isn't un-consumed by deleting the record. The print_job_spools snapshot
+ * is removed explicitly (not relying on FK cascade); inventory_log and
+ * printer_events keep their rows with the job link nulled.
+ */
+export async function deletePrintJob(
+  ctx: TenantContext,
+  jobId: number,
+): Promise<ServerResponse> {
+  const drizzleDb = ctx.db;
+  const now = Math.floor(Date.now() / 1000);
+
+  const job = await getPrintJobById(ctx, jobId);
+  if (!job) return { success: false, error: 'Print job not found' };
+
+  // Reverse the inventory a successful print added, so deleting the record
+  // doesn't leave the stock count inflated.
+  if (job.status === 'successful' && job.module_id) {
+    const module = await getPrintModuleById(ctx, job.module_id);
+    if (module?.object_id) {
+      const quantity = module.objects_per_print ?? 1;
+      await drizzleDb.run(sql`
+        UPDATE objects
+        SET in_stock = in_stock - ${quantity}, updated_at = ${now}
+        WHERE id = ${module.object_id} AND workspace_id = ${ctx.workspaceId}
+      `);
+      await drizzleDb.run(sql`
+        INSERT INTO inventory_log (workspace_id, object_id, change_type, quantity, print_job_id, created_at)
+        VALUES (${ctx.workspaceId}, ${module.object_id}, '- printed reversal', ${quantity}, ${jobId}, ${now})
+      `);
+    }
+  }
+
+  await drizzleDb.run(sql`
+    DELETE FROM print_job_spools WHERE print_job_id = ${jobId} AND workspace_id = ${ctx.workspaceId}
+  `);
+  const res = await drizzleDb.run(sql`
+    DELETE FROM print_jobs WHERE id = ${jobId} AND workspace_id = ${ctx.workspaceId}
+  `);
+  if ((res.meta.changes ?? 0) === 0) return { success: false, error: 'Nothing deleted' };
+
+  // Standalone printer-level event (the job link would be nulled by delete anyway).
+  if (job.printer_id) {
+    const moduleName = (job as unknown as { module_name?: string | null }).module_name ?? null;
+    await logPrinterEvent(ctx, job.printer_id, 'print_deleted', {
+      module: moduleName,
+      status: job.status,
+    });
+  }
+
+  return { success: true, message: 'Print deleted' };
 }
 
 /**
@@ -420,6 +619,7 @@ export async function closeOpenPrintJobsForPrinter(
       SET status = 'failed', failure_reason = ${reason}, updated_at = ${now}
       WHERE id = ${row.id} AND workspace_id = ${ctx.workspaceId}
     `);
+    await logPrinterEvent(ctx, printerId, 'marked_failed', { reason }, row.id);
   }
 }
 
@@ -431,6 +631,18 @@ export async function updatePrintJobStatus(
   externalTaskId?: string | null,
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
+
+  // Pre-read for the print_finished event: only emit on the actual transition,
+  // not on webhook retries that re-set an unchanged status.
+  let finishedPrinterId: number | null = null;
+  if (status === 'print_finished') {
+    const prev = await ctx.db.get<{ printer_id: number | null; status: string }>(sql`
+      SELECT printer_id, status FROM print_jobs
+      WHERE id = ${jobId} AND workspace_id = ${ctx.workspaceId}
+    `);
+    if (prev && prev.status !== 'print_finished') finishedPrinterId = prev.printer_id;
+  }
+
   if (externalTaskId !== undefined) {
     await ctx.db.run(sql`
       UPDATE print_jobs
@@ -441,6 +653,10 @@ export async function updatePrintJobStatus(
     await ctx.db.run(sql`
       UPDATE print_jobs SET status = ${status}, updated_at = ${now} WHERE id = ${jobId} AND workspace_id = ${ctx.workspaceId}
     `);
+  }
+
+  if (finishedPrinterId !== null) {
+    await logPrinterEvent(ctx, finishedPrinterId, 'print_finished', null, jobId);
   }
 }
 

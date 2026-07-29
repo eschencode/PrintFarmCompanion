@@ -10,6 +10,7 @@ export * from './server/printers';
 export * from './server/spools';
 export * from './server/modules';
 export * from './server/jobs';
+export * from './server/events';
 export * from './server/grid';
 export * from './server/printQueue';
 export * from './server/pi';

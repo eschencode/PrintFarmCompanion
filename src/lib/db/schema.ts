@@ -652,6 +652,8 @@ export const inventoryLog = sqliteTable(
         "- stock count",
         "- sold b2c",
         "- sold b2b",
+        // Retroactive outcome flip successful→failed reversing an earlier "+ printed".
+        "- printed reversal",
       ],
     }).notNull(),
     quantity: integer("quantity").notNull(),
@@ -674,6 +676,40 @@ export const inventoryLog = sqliteTable(
     index("idx_inventory_log_print_job").on(t.printJobId),
     index("idx_inventory_log_shopify_order").on(t.shopifyOrderId),
     index("idx_inventory_log_created_at").on(t.createdAt),
+  ],
+);
+
+// =============================================================================
+// PRINTER EVENTS (append-only audit trail for the per-printer history view)
+// SCOPE: per-workspace
+// event_type: spool_loaded | spool_unloaded | print_started | print_finished
+//             | marked_successful | marked_failed | outcome_changed
+// detail: small JSON blob, shape depends on event_type
+//         ({ slot?, spool?, colorHex?, module?, reason?, from?, to?, totalWeight? })
+// printJobId is set null on job delete so the printer timeline survives.
+// =============================================================================
+export const printerEvents = sqliteTable(
+  "printer_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    workspaceId: integer("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    printerId: integer("printer_id")
+      .notNull()
+      .references(() => printers.id, { onDelete: "cascade" }),
+    printJobId: integer("print_job_id").references(() => printJobs.id, {
+      onDelete: "set null",
+    }),
+    eventType: text("event_type").notNull(),
+    detail: text("detail"),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [
+    index("idx_printer_events_printer").on(t.workspaceId, t.printerId, t.createdAt),
+    index("idx_printer_events_job").on(t.printJobId),
   ],
 );
 

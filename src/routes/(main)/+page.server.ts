@@ -174,4 +174,30 @@ export const actions: Actions = {
       return { error: 'Failed to complete print job' };
     }
   },
+
+  changeJobOutcome: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
+
+    const formData = await request.formData();
+    const jobId = Number(formData.get('jobId'));
+    const outcome = formData.get('outcome');
+    const failureReason = (formData.get('failureReason') as string | null) || null;
+
+    if (!jobId) return { success: false, error: 'Missing job id' };
+    if (outcome !== 'successful' && outcome !== 'failed')
+      return { success: false, error: 'outcome must be successful | failed' };
+
+    return db.changePrintJobOutcome(ctx, jobId, outcome, failureReason);
+  },
+
+  deleteJob: async ({ locals, request }) => {
+    const ctx = requireCtx(locals);
+
+    const formData = await request.formData();
+    const jobId = Number(formData.get('jobId'));
+
+    if (!jobId) return { success: false, error: 'Missing job id' };
+
+    return db.deletePrintJob(ctx, jobId);
+  },
 };
