@@ -628,6 +628,16 @@
     // Set when a print start fails so the operator sees the real cause (Pi
     // unreachable, FTPS upload failed, bad creds) instead of silent drop.
     let startError: { printer: string; message: string } | null = null;
+
+    // Printers whose finished job is being confirmed right now. The completePrint
+    // round trip (multi-query action + full load() re-run) is slow; during it the
+    // card/modal would otherwise keep showing the stale "finished" job — inviting
+    // a second confirm on the same jobId. Suppress the job optimistically until
+    // invalidateAll() lands. Reassigned (not mutated) for legacy-mode reactivity.
+    let completingPrinterIds = new Set<number>();
+    $: visibleActivePrintJobs = (data.activePrintJobs as any[]).filter(
+        (j) => !completingPrinterIds.has(Number(j.printer_id)),
+    );
     $: startingPrinterIds = new Set(
         startQueue.map((e) => Number(e.printer.id)),
     );
@@ -974,12 +984,21 @@
                 `/api/ai-recommendations?type=queue&printerId=${printer.id}`,
                 { keepalive: true },
             ).catch(() => {});
+            // Same optimistic suppression as the success path.
+            completingPrinterIds = new Set(completingPrinterIds).add(
+                Number(printer.id),
+            );
         }
         closeFailureReasonModal();
         closePrinterModal();
 
         return async () => {
             await invalidateAll();
+            if (printer?.id) {
+                const next = new Set(completingPrinterIds);
+                next.delete(Number(printer.id));
+                completingPrinterIds = next;
+            }
         };
     };
 
@@ -1046,12 +1065,24 @@
                 { keepalive: true },
             ).catch(() => {});
         }
+        // Flip the card to idle immediately — suppress the stale finished job
+        // until the server confirms, so a re-click can't re-confirm the same job.
+        if (printer?.id) {
+            completingPrinterIds = new Set(completingPrinterIds).add(
+                Number(printer.id),
+            );
+        }
         closePrinterModal();
 
         // Soft-refresh once the server confirms — Svelte diffs the card from
         // "finished" → "idle" with no reload flash or stale-data flicker.
         return async () => {
             await invalidateAll();
+            if (printer?.id) {
+                const next = new Set(completingPrinterIds);
+                next.delete(Number(printer.id));
+                completingPrinterIds = next;
+            }
         };
     };
 
@@ -1462,14 +1493,18 @@
 
                         {#if printer}
                             <PrinterCard
-                                {printer}
+                                printer={completingPrinterIds.has(
+                                    Number(printer.id),
+                                ) && printer.status === "finished"
+                                    ? { ...printer, status: "idle" }
+                                    : printer}
                                 piLive={piStatusBySerial[
                                     printer.printer_serial as string
                                 ]}
                                 liveIsStarting={startingPrinterIds.has(
                                     Number(printer.id),
                                 )}
-                                activePrintJobs={data.activePrintJobs}
+                                activePrintJobs={visibleActivePrintJobs}
                                 printModules={data.printModules}
                                 {startQueue}
                                 {now}
@@ -1913,10 +1948,13 @@
 {#if selectedPrinter && !showSpoolSelector && !showModuleSelector && !showQuickStart}
     {@const activePrintJob = getActivePrintJob(
         selectedPrinter.id,
-        data.activePrintJobs,
+        visibleActivePrintJobs,
     )}
     <PrinterDetailModal
-        printer={selectedPrinter}
+        printer={completingPrinterIds.has(Number(selectedPrinter.id)) &&
+        selectedPrinter.status === "finished"
+            ? { ...selectedPrinter, status: "idle" }
+            : selectedPrinter}
         {activePrintJob}
         piLive={piStatusBySerial[selectedPrinter.printer_serial as string]}
         {controlLoading}
@@ -1972,7 +2010,7 @@
     <FailureReasonModal
         activePrintJob={getActivePrintJob(
             selectedPrinter.id,
-            data.activePrintJobs,
+            visibleActivePrintJobs,
         )}
         loadedSpool={selectedPrinter.loaded_spool}
         onClose={closeFailureReasonModal}
