@@ -11,6 +11,11 @@
     import { getLastPrintJob } from "$lib/utils/printerData";
     import { resolveSpoolColor } from "$lib/utils/spoolColor";
     import { decodeHms, partCategoriesForHms } from "$lib/utils/hms";
+    import {
+        directPrinterEnabled,
+        printerPiEnabled,
+    } from "$lib/stores/connectionToggles";
+    import { isDesktop } from "$lib/stores/desktop";
     import SpoolGauge from "$lib/components/dashboard/SpoolGauge.svelte";
     import type {
         DashboardPrinter,
@@ -113,6 +118,23 @@
     // `finished`, OR it's still tracked as printing but live status already reports
     // FINISH (webhook lag — the screen the user sees the moment the print ends). In
     // both cases we show the confirmation layout, not the live printing chrome.
+    // ── Connection hint (mirrors PrinterCard) ────────────────────────────────
+    $: wantsDirect =
+        $directPrinterEnabled &&
+        $isDesktop &&
+        !!printer.printer_ip &&
+        !!printer.printer_serial &&
+        !!printer.printer_access_code;
+    $: wantsPi = $printerPiEnabled && !!printer.printer_serial;
+    $: sinceSeen = piLive?.last_seen ? now - piLive.last_seen * 1000 : Infinity;
+    $: connHint = !(wantsDirect || wantsPi)
+        ? "Running standalone"
+        : sinceSeen < 60_000
+          ? `Connected via ${piLive?.source === "direct" ? "direct network" : "Pi bridge"}`
+          : sinceSeen < 300_000
+            ? "Connection idle — no recent update"
+            : "No connection";
+
     $: liveDone = piLive?.gcode_state === "FINISH";
 
     // Printer health warnings (HMS), most urgent first.
@@ -209,6 +231,11 @@
                     >
                         {printer.preset?.brand ?? ""}
                         {printer.preset?.model ?? ""}
+                    </p>
+                    <p
+                        class="text-[11px] text-zinc-400 dark:text-zinc-600 mt-1.5 tracking-wide"
+                    >
+                        {connHint}
                     </p>
                 </div>
                 <div class="flex items-center gap-1">

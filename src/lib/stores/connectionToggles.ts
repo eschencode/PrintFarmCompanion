@@ -31,11 +31,11 @@ function createBoolStore(key: string, defaultValue = true) {
 /** Enable/disable the local file handler (sidecar) health polling and file opening */
 export const fileHandlerEnabled = createBoolStore(KEY_FILE_HANDLER);
 
-/** Enable/disable direct MQTT printer connections via Tauri */
-export const directPrinterEnabled = createBoolStore(KEY_DIRECT_PRINTER);
+/** Enable/disable direct MQTT printer connections via Tauri (opt-in beta addon) */
+export const directPrinterEnabled = createBoolStore(KEY_DIRECT_PRINTER, false);
 
-/** Enable/disable Raspberry Pi bridge polling */
-export const printerPiEnabled = createBoolStore(KEY_PRINTER_PI);
+/** Enable/disable Raspberry Pi bridge polling (opt-in beta addon) */
+export const printerPiEnabled = createBoolStore(KEY_PRINTER_PI, false);
 
 /** Enable manual mode — tracks prints without connecting to any printer */
 export const manualModeEnabled = createBoolStore(KEY_MANUAL_MODE, false);

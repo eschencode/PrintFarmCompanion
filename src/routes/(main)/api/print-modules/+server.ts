@@ -99,7 +99,6 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
     name, file_name, thumbnail,
     estimated_time, nozzle_diameter,
     objects_per_print, object_id, printer_preset_id,
-    local_file_handler_path, pi_file_path,
   } = body;
 
   if (!name || !file_name) {
@@ -111,7 +110,10 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
   const slots = normalizeSlots(body) ?? [];
   const moduleWeight = totalSlotWeight(slots);
 
-  const filename = (pi_file_path as string) || (local_file_handler_path as string) || (file_name as string);
+  // Store the bare basename only. The local copy lives at
+  // <appdata>/modules/<moduleId>_<filename>, a derivable path — no machine- or
+  // Pi-specific absolute paths in the cloud DB. See docs/local-file-flow.md.
+  const filename = file_name as string;
   const now = Math.floor(Date.now() / 1000);
 
   try {

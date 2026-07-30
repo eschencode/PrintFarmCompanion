@@ -237,6 +237,8 @@
                         speed_mag: s.speed_mag,
                         wifi_signal: s.wifi_signal,
                         updated_at: Math.floor(Date.now() / 1000),
+                        source: "direct",
+                        last_seen: Math.floor(Date.now() / 1000),
                     },
                 };
                 // Advance start queue on PREPARE→RUNNING
@@ -566,6 +568,8 @@
                     speed_mag: d.status.speed_mag ?? null,
                     wifi_signal: d.status.wifi_signal ?? null,
                     updated_at: d.status.updated_at ?? null,
+                    source: "pi",
+                    last_seen: Math.floor(Date.now() / 1000),
                 },
             };
             // Fire the shared finish handler on the TRANSITION into FINISH/FAILED
@@ -718,6 +722,7 @@
         const { module, printer } = startQueue[0];
         startQueueTimeout = setTimeout(advanceStartQueue, 120_000);
         const hasPi = !!(
+            get(printerPiEnabled) &&
             printer.printer_ip &&
             printer.printer_serial &&
             printer.printer_access_code
@@ -785,6 +790,9 @@
                 await invalidateAll();
                 setTimeout(advanceStartQueue, 3_000);
             } else {
+                // Default path: register the job, then open the local file so the
+                // user starts it from their slicer. Direct MQTT / Pi are opt-in beta
+                // addons handled above. See docs/local-file-flow.md.
                 const formData = new FormData();
                 formData.append("printerId", String(printer.id));
                 formData.append("moduleId", String(module.id));
@@ -792,12 +800,30 @@
                     method: "POST",
                     body: formData,
                 });
-                if (res.ok && hasLocalHandler)
-                    await openFileLocally(
-                        module.filename,
-                        module.name,
-                        printer.id,
-                    );
+                if (res.ok) {
+                    if ($isDesktop) {
+                        const { invoke } = await import("@tauri-apps/api/core");
+                        try {
+                            await invoke("open_module_file", {
+                                id: Number(module.id),
+                                fileName: module.filename,
+                            });
+                        } catch (e) {
+                            console.error("open_module_file failed:", e);
+                            startError = {
+                                printer: printer.name,
+                                message: `Couldn't find the file for "${module.name}" on this machine. Re-attach it on the Modules setup page, then start again.`,
+                            };
+                        }
+                    } else if (hasLocalHandler) {
+                        // Browser fallback: legacy :3001 sidecar file handler.
+                        await openFileLocally(
+                            module.filename,
+                            module.name,
+                            printer.id,
+                        );
+                    }
+                }
                 await invalidateAll();
                 setTimeout(advanceStartQueue, 3_000);
             }

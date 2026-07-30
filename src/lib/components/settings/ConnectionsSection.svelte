@@ -144,6 +144,7 @@
       <div class="px-4 py-3 bg-zinc-50 dark:bg-[#161616] flex items-center justify-between gap-4">
         <div class="flex-1 min-w-0 flex items-center gap-2">
           <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Direct Printer</p>
+          <span class="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400">Beta</span>
           {#if !desktop}
             <span class="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">Desktop only</span>
           {/if}

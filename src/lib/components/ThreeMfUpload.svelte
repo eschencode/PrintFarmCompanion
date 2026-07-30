@@ -460,11 +460,10 @@
     saving = true;
     error = null;
 
-    let piFilePath: string | null = null;
-    let fileStoredOnPi = 0;
-
     try {
-      // ── Step 1: Try to upload file to Pi (graceful degradation if not configured) ──
+      // ── Step 1 (beta): mirror the file to the Pi if configured. Best-effort —
+      // the Pi bridge is an opt-in beta transport; the local copy (step 3) is the
+      // source of truth. We no longer persist the Pi path. See docs/local-file-flow.md.
       savingStep = 'pi';
       try {
         const formData = new FormData();
@@ -475,11 +474,7 @@
           body: formData,
         });
         const piResult = await piRes.json() as { success: boolean; pi_available: boolean; path?: string; error?: string };
-
-        if (piResult.pi_available && piResult.success && piResult.path) {
-          piFilePath = piResult.path;
-          fileStoredOnPi = 1;
-        } else if (piResult.pi_available && !piResult.success) {
+        if (piResult.pi_available && !piResult.success) {
           console.warn('[Pi] File upload failed:', piResult.error);
         }
         // If pi_available === false, Pi is simply not configured — silent fallback
@@ -488,22 +483,9 @@
         console.warn('[Pi] Upload skipped:', piErr);
       }
 
-      // ── Step 1.5: Save file locally in desktop mode ─────────────────────────────
-      if (window.__IS_DESKTOP__ && currentFile) {
-        try {
-          const { invoke } = await import('@tauri-apps/api/core');
-          const bytes = new Uint8Array(await currentFile.arrayBuffer());
-          const localPath = await invoke<string>('save_module_file', {
-            fileName: currentFile.name,
-            data: Array.from(bytes),
-          });
-          previewData.localFileHandlerPath = localPath;
-        } catch (e) {
-          console.warn('[Desktop] Local file save failed:', e);
-        }
-      }
-
       // ── Step 2: Save metadata to D1 ──────────────────────────────────────────────
+      // Insert first so we get the module id — the local copy is named
+      // <id>_<filename> to stay collision-free. See docs/local-file-flow.md.
       savingStep = 'db';
       const res = await fetch('/api/print-modules', {
         method: 'POST',
@@ -523,14 +505,25 @@
           })),
           object_id: previewData.objectId,
           printer_preset_id: previewData.printerPresetId,
-          local_file_handler_path: previewData.localFileHandlerPath,
-          pi_file_path: piFilePath,
-          file_stored_on_pi: fileStoredOnPi,
         }),
       });
 
       const result = await res.json() as { success: boolean; data?: { id: number; name: string }; error?: string };
       if (result.success) {
+        // ── Step 3: Save the local copy in desktop mode, keyed on module id ──────
+        if (window.__IS_DESKTOP__ && currentFile && result.data) {
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const bytes = new Uint8Array(await currentFile.arrayBuffer());
+            await invoke<string>('save_module_file', {
+              fileName: `${result.data.id}_${previewData.fileName}`,
+              data: Array.from(bytes),
+            });
+          } catch (e) {
+            // Module exists without a local copy — the re-attach flow will surface it.
+            console.warn('[Desktop] Local file save failed:', e);
+          }
+        }
         dispatch('uploaded', result.data!);
         previewData = null;
         currentFile = null;

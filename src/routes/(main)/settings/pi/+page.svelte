@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import BackToDashboard from "$lib/components/BackToDashboard.svelte";
+  import { printerPiEnabled } from "$lib/stores/connectionToggles";
 
   let { data, form } = $props();
 
@@ -22,6 +23,32 @@
     </div>
 
     <div class="space-y-3">
+      <!-- Pi usage on/off -->
+      <div class="bg-white dark:bg-[#111] border border-zinc-100 dark:border-[#1e1e1e] rounded-xl p-5">
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Use Pi bridge</p>
+              <span class="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400">Beta</span>
+            </div>
+            <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed mt-1">
+              When off, printers run standalone / direct and the Pi is never polled or used to
+              start prints. The tunnel config below is kept either way.
+            </p>
+          </div>
+          <button
+            type="button"
+            onclick={() => printerPiEnabled.toggle()}
+            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {$printerPiEnabled ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'}"
+            role="switch"
+            aria-checked={$printerPiEnabled}
+            aria-label="Toggle Pi bridge usage"
+          >
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform {$printerPiEnabled ? 'translate-x-6' : 'translate-x-1'}"></span>
+          </button>
+        </div>
+      </div>
+
       <div class="bg-white dark:bg-[#111] border border-zinc-100 dark:border-[#1e1e1e] rounded-xl p-5">
         <p class="text-xs font-medium uppercase tracking-wide text-zinc-400 mb-3">Connection</p>
         <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed mb-4">

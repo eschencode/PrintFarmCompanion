@@ -35,6 +35,35 @@ fn get_modules_dir(app: tauri::AppHandle) -> Result<String, String> {
     Ok(modules_dir.to_string_lossy().into_owned())
 }
 
+/// Open a module's local copy in the OS default app (the user's slicer).
+/// The copy lives at <appdata>/modules/<id>_<file_name>.
+#[tauri::command]
+fn open_module_file(app: tauri::AppHandle, id: i64, file_name: String) -> Result<(), String> {
+    let path = app.path().app_data_dir()
+        .map_err(|e| format!("no app data dir: {e}"))?
+        .join("modules")
+        .join(format!("{id}_{file_name}"));
+    if !path.exists() {
+        return Err(format!("module file not found: {}", path.display()));
+    }
+    app.shell()
+        .open(path.to_string_lossy(), None)
+        .map_err(|e| format!("failed to open file: {e}"))
+}
+
+/// Given derived module file names (<id>_<file_name>), return the subset that is
+/// MISSING on disk. Used by the dashboard to surface a re-attach prompt.
+#[tauri::command]
+fn check_module_files(app: tauri::AppHandle, names: Vec<String>) -> Result<Vec<String>, String> {
+    let modules_dir = app.path().app_data_dir()
+        .map_err(|e| format!("no app data dir: {e}"))?
+        .join("modules");
+    Ok(names
+        .into_iter()
+        .filter(|n| !modules_dir.join(n).exists())
+        .collect())
+}
+
 /// Holds the sidecar child process so it stays alive for the duration of the app.
 struct SidecarHandle(std::sync::Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
@@ -62,6 +91,8 @@ pub fn run() {
             start_print_direct,
             save_module_file,
             get_modules_dir,
+            open_module_file,
+            check_module_files,
             fetch_direct_logs,
             fetch_direct_printers,
         ])

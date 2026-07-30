@@ -10,6 +10,11 @@
         stateColors,
         hexToRgb,
     } from "$lib/stores/dashboardPrefs";
+    import {
+        directPrinterEnabled,
+        printerPiEnabled,
+    } from "$lib/stores/connectionToggles";
+    import { isDesktop } from "$lib/stores/desktop";
     import SpoolGauge from "$lib/components/dashboard/SpoolGauge.svelte";
     import type {
         DashboardPrinter,
@@ -54,6 +59,35 @@
         ["RUNNING", "PREPARE", "PAUSE"].includes(piLive.gcode_state) &&
         // Don't treat a stale "done" frame as printing once the job is gone.
         !(liveDone && !hasActiveJob);
+
+    // ── Connection indicator ─────────────────────────────────────────────────
+    // Does the user want a live transport for this printer? (direct needs desktop
+    // + full config; pi needs a serial). If not, the printer runs "standalone"
+    // and we show no indicator.
+    $: wantsDirect =
+        $directPrinterEnabled &&
+        $isDesktop &&
+        !!printer.printer_ip &&
+        !!printer.printer_serial &&
+        !!printer.printer_access_code;
+    $: wantsPi = $printerPiEnabled && !!printer.printer_serial;
+    $: wantsLive = wantsDirect || wantsPi;
+    // Transport liveness from last_seen (local receive time), not the printer's
+    // frame time — this is "did we hear from the transport", not print progress.
+    $: sinceSeen = piLive?.last_seen ? now - piLive.last_seen * 1000 : Infinity;
+    $: connState = !wantsLive
+        ? "none"
+        : sinceSeen < 60_000
+          ? "live"
+          : sinceSeen < 300_000
+            ? "stale"
+            : "offline";
+    $: connLabel =
+        connState === "live"
+            ? `Live · via ${piLive?.source === "direct" ? "direct network" : "Pi bridge"}`
+            : connState === "stale"
+              ? "No update in a few minutes"
+              : "No connection";
 
     // Active printer health warnings (HMS). Empty unless the printer is reporting issues.
     $: hmsAlerts = decodeHms(piLive?.hms).filter((d) => d.severity !== "info");
@@ -294,11 +328,31 @@
     <div
         class="relative z-[1] w-full text-center border-t border-zinc-200/60 dark:border-[#1a1a22] pt-2 mt-2 min-h-0 flex-shrink-0"
     >
-        <h3
-            class="text-[clamp(0.55rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-100 truncate px-1 tracking-tight"
-        >
-            {printer.name}
-        </h3>
+        <div class="flex items-center justify-center gap-1.5 px-1 min-w-0">
+            <h3
+                class="text-[clamp(0.55rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-100 truncate tracking-tight"
+            >
+                {printer.name}
+            </h3>
+            {#if connState !== "none"}
+                <!-- Minimal monochrome signal indicator: bar count reflects
+                     transport liveness (live 3 / stale 2 / offline 1). -->
+                <svg
+                    viewBox="0 0 12 10"
+                    class="w-2.5 h-2.5 shrink-0 text-zinc-400 dark:text-zinc-500"
+                    fill="currentColor"
+                    aria-label={connLabel}
+                    role="img"
+                >
+                    <title>{connLabel}</title>
+                    <rect x="0" y="6" width="3" height="4" rx="0.5" opacity="0.9" />
+                    <rect x="4.5" y="3" width="3" height="7" rx="0.5"
+                          opacity={connState === "offline" ? "0.2" : "0.9"} />
+                    <rect x="9" y="0" width="3" height="10" rx="0.5"
+                          opacity={connState === "live" ? "0.9" : "0.2"} />
+                </svg>
+            {/if}
+        </div>
 
         <!-- Reserved progress area — fixed min-height keeps the name at a
              consistent height across idle / printing / finished cards. -->

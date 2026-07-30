@@ -462,6 +462,12 @@ export interface PiStatus {
   /** Unix secs when the Pi last received this frame. Used to flag stale frames
    *  (a cached RUNNING from a dead monitor must not masquerade as live). */
   updated_at?: number | null;
+  /** Which transport delivered this frame. Drives the connection indicator. */
+  source?: "pi" | "direct" | null;
+  /** Unix secs (local clock) when WE last received any frame over the transport.
+   *  Distinct from updated_at (the printer's frame time): this is transport
+   *  liveness, used by the dashboard connection indicator. */
+  last_seen?: number | null;
 }
 
 /** Raw HMS entry as the printer reports it. `attr`/`code` combine into a lookup code. */

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
+    "dev:stop": "pkill -f 'vite dev'; pkill -f 'bun run dev'; echo '✅ Stopped all dev servers'",
     "build": "vite build",
     "preview": "wrangler pages dev .svelte-kit/cloudflare --port 4173",
     "prepare": "npm run types && svelte-kit sync || echo ''",
