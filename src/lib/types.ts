@@ -408,16 +408,17 @@ export interface NewGridPreset {
 }
 
 // ============================================================================
-// PI / LIVE STATUS TYPES (not persisted — live MQTT data)
+// LIVE STATUS TYPES (not persisted — live MQTT data)
 // ============================================================================
 
-/** How a printer sends print commands and receives status updates. */
-export type TransportMode = 'auto' | 'direct' | 'pi';
+/** How a printer sends print commands and receives status updates.
+ *  'auto' = direct when configured (desktop), otherwise standalone. */
+export type TransportMode = 'auto' | 'direct';
 
 /**
- * A print the Pi reports on a printer we aren't tracking (started on the
- * machine's touchscreen, SD card, etc.). Surfaced inline on the printer card
- * for the user to adopt or dismiss. Produced by api/pi/status/+server.ts.
+ * A print running on a printer we aren't tracking (started on the machine's
+ * touchscreen, SD card, etc.). Detected from direct MQTT frames and surfaced
+ * inline on the printer card for the user to adopt or dismiss.
  */
 export interface DetectedExternalPrint {
   printer_id: number;
@@ -428,10 +429,10 @@ export interface DetectedExternalPrint {
 }
 
 /**
- * Live status snapshot for one printer, received via Pi polling or Tauri MQTT events.
- * Keyed by printer serial in the dashboard's piStatusBySerial map.
+ * Live status snapshot for one printer, received via direct Tauri MQTT events.
+ * Keyed by printer serial in the dashboard's liveBySerial map.
  */
-export interface PiStatus {
+export interface LiveStatus {
   gcode_state: string;
   progress: number;
   layer_num: number;
@@ -459,11 +460,11 @@ export interface PiStatus {
   speed_mag?: number | null;
   // Connectivity
   wifi_signal?: string | null;
-  /** Unix secs when the Pi last received this frame. Used to flag stale frames
-   *  (a cached RUNNING from a dead monitor must not masquerade as live). */
+  /** Unix secs (printer frame time) when this frame was produced. Used to flag
+   *  stale frames (a cached RUNNING from a dead monitor must not masquerade as live). */
   updated_at?: number | null;
   /** Which transport delivered this frame. Drives the connection indicator. */
-  source?: "pi" | "direct" | null;
+  source?: "direct" | null;
   /** Unix secs (local clock) when WE last received any frame over the transport.
    *  Distinct from updated_at (the printer's frame time): this is transport
    *  liveness, used by the dashboard connection indicator. */

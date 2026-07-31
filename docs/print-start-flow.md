@@ -1,6 +1,12 @@
 # Print Start Flow
 
-How a print goes from "user clicks Start" to "printer card shows Printing". Covers the four transport paths, the sequential start queue, and the UI states the card cycles through.
+How a print goes from "user clicks Start" to "printer card shows Printing". Covers the transport paths, the sequential start queue, and the UI states the card cycles through.
+
+> **Update 2026-07-31 — Pi bridge removed.** The `pi` transport and its entire path
+> (upload → Pi → FTP/MQTT) are gone. `dispatchNextStart` now has three branches:
+> `manual` (DB-only, time-based), `direct` (Tauri MQTT, desktop beta), and `local`
+> (default — register the job then open the local file). Sections below describing the
+> Pi path are historical.
 
 ---
 

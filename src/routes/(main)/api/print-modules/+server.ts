@@ -3,7 +3,6 @@ import type { RequestHandler } from './$types';
 import { sql } from 'drizzle-orm';
 import { getDb } from '$lib/db';
 import { requireCtx } from '$lib/server/context';
-import { getPiConfig } from '$lib/server/pi';
 
 type SlotInput = {
   slot_index: number;
@@ -291,19 +290,6 @@ export const DELETE: RequestHandler = async ({ url, platform, locals }) => {
       sql`SELECT filename FROM print_modules WHERE id = ${id} AND workspace_id = ${ctx.workspaceId}`
     );
     if (!module) return json({ success: false, error: 'Module not found' }, { status: 404 });
-
-    const piConfig = await getPiConfig(ctx);
-    if (module?.filename && piConfig) {
-      try {
-        await fetch(`${piConfig.tunnelUrl}/file`, {
-          method: 'DELETE',
-          headers: { 'content-type': 'application/json', 'x-pi-secret': piConfig.piSecret },
-          body: JSON.stringify({ file_path: module.filename }),
-        });
-      } catch (e) {
-        console.warn('[pi/delete-file] Pi unreachable, skipping file cleanup:', e);
-      }
-    }
 
     await drizzleDb.run(sql`UPDATE print_jobs SET module_id = NULL WHERE module_id = ${id} AND workspace_id = ${ctx.workspaceId}`);
     await drizzleDb.run(sql`DELETE FROM module_filament_slots WHERE module_id = ${id} AND workspace_id = ${ctx.workspaceId}`);

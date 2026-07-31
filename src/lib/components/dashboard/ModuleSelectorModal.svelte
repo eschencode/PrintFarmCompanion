@@ -392,8 +392,6 @@
             >
               {#if selectedModule && loadedSpool && (selectedModule.weight ?? 0) > loadedSpool.remaining_weight}
                 Start Print (Low Material)
-              {:else if selectedModule?.filename && printer?.printer_ip}
-                Start Print (Pi)
               {:else}
                 Start Print Job
               {/if}

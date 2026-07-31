@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PageData } from './$types';
+  import { onMount } from 'svelte';
   import ThreeMfUpload from '$lib/components/ThreeMfUpload.svelte';
   import ZipBulkUpload from '$lib/components/ZipBulkUpload.svelte';
   import EditModuleModal from '$lib/components/EditModuleModal.svelte';
@@ -160,6 +161,64 @@
     const res = await fetch('/api/print-modules');
     const result = await res.json() as any;
     if (result.success) modules = (result.data ?? []).map(decorateModule);
+    await refreshMissing();
+  }
+
+  // ── Re-attach: which modules are missing their local file (desktop only) ──
+  // The local copy lives at <appdata>/modules/<id>_<filename>. On desktop we ask
+  // Rust which are missing and offer a re-attach picker. See docs/local-file-flow.md.
+  let missingIds: Set<number> = new Set();
+  let attaching: number | null = null;
+  let attachTargetId: number | null = null;
+  let attachInput: HTMLInputElement;
+
+  const derivedName = (m: any) => `${m.id}_${m.filename}`;
+
+  async function refreshMissing() {
+    if (typeof window === 'undefined' || !window.__IS_DESKTOP__) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const withFile = modules.filter((m: any) => m.filename);
+      const names = withFile.map(derivedName);
+      const missing = await invoke<string[]>('check_module_files', { names });
+      const missingSet = new Set(missing);
+      missingIds = new Set(
+        withFile.filter((m: any) => missingSet.has(derivedName(m))).map((m: any) => Number(m.id)),
+      );
+    } catch (e) {
+      console.warn('[Desktop] check_module_files failed:', e);
+    }
+  }
+
+  onMount(refreshMissing);
+
+  function pickFileFor(id: number) {
+    attachTargetId = id;
+    attachInput?.click();
+  }
+
+  async function onAttachFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    const id = attachTargetId;
+    input.value = '';
+    if (!file || id == null) return;
+    const module = modules.find((m: any) => Number(m.id) === id);
+    if (!module) return;
+    attaching = id;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await invoke<string>('save_module_file', {
+        fileName: derivedName(module),
+        data: Array.from(bytes),
+      });
+      missingIds = new Set([...missingIds].filter((x) => x !== id));
+    } catch (err) {
+      console.warn('[Desktop] re-attach failed:', err);
+    } finally {
+      attaching = null;
+    }
   }
 
   async function handleUploaded() {
@@ -492,11 +551,23 @@
                 </div>
 
                 <!-- File indicator -->
-                <div class="mt-2 flex gap-1.5">
+                <div class="mt-2 flex items-center gap-1.5 flex-wrap">
                   {#if module.filename}
                     <span class="text-[9px] font-medium px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 truncate max-w-full" title={module.filename}>
                       {module.filename.split('/').pop()}
                     </span>
+                  {/if}
+                  {#if missingIds.has(Number(module.id))}
+                    <span class="text-[9px] font-medium px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                      Not on this machine
+                    </span>
+                    <button
+                      onclick={() => pickFileFor(Number(module.id))}
+                      disabled={attaching === Number(module.id)}
+                      class="text-[9px] font-medium px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30 disabled:opacity-50 transition-colors"
+                    >
+                      {attaching === Number(module.id) ? 'Attaching…' : 'Re-attach'}
+                    </button>
                   {/if}
                 </div>
               </div>
@@ -532,6 +603,15 @@
 
   </div>
 </div>
+
+<!-- Shared hidden picker for re-attaching a module's local file (desktop). -->
+<input
+  bind:this={attachInput}
+  onchange={onAttachFile}
+  type="file"
+  accept=".3mf,.gcode.3mf"
+  class="hidden"
+/>
 
 {#if editingModule}
   <EditModuleModal

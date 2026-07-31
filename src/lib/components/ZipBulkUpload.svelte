@@ -273,21 +273,7 @@
       entries = [...entries];
 
       try {
-        // 1. Upload to Pi
-        let piFilePath: string | null = null;
-        let fileStoredOnPi = 0;
-        try {
-          const fd = new FormData();
-          fd.append('file', new File([entry.blob], entry.fileName, { type: 'application/octet-stream' }));
-          const piRes = await fetch('/api/pi/upload', { method: 'POST', body: fd });
-          const piResult = await piRes.json() as { success: boolean; pi_available: boolean; path?: string };
-          if (piResult.pi_available && piResult.success && piResult.path) {
-            piFilePath = piResult.path;
-            fileStoredOnPi = 1;
-          }
-        } catch { /* Pi not configured — continue */ }
-
-        // 2. Save to DB
+        // 1. Save metadata to D1 (returns the module id).
         const res = await fetch('/api/print-modules', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -301,12 +287,23 @@
             objects_per_print: entry.objectsPerPrint,
             slots: entry.slots,
             printer_model: entry.printerModel || null,
-            pi_file_path: piFilePath,
-            file_stored_on_pi: fileStoredOnPi,
           }),
         });
-        const result = await res.json() as { success: boolean; error?: string };
+        const result = await res.json() as { success: boolean; data?: { id: number }; error?: string };
         if (result.success) {
+          // 2. Save the local copy in desktop mode, keyed on module id.
+          if (window.__IS_DESKTOP__ && result.data) {
+            try {
+              const { invoke } = await import('@tauri-apps/api/core');
+              const bytes = new Uint8Array(await entry.blob.arrayBuffer());
+              await invoke<string>('save_module_file', {
+                fileName: `${result.data.id}_${entry.fileName}`,
+                data: Array.from(bytes),
+              });
+            } catch (e) {
+              console.warn('[Desktop] Local file save failed:', e);
+            }
+          }
           entries[i] = { ...entries[i], state: 'done' };
           doneCount++;
         } else {
@@ -375,7 +372,7 @@
         </svg>
         <div>
           <p class="text-sm font-medium text-zinc-600 dark:text-zinc-400">Drop a <span class="font-mono">.zip</span> folder of <span class="font-mono">.3mf</span> files</p>
-          <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-0.5">Each .3mf inside becomes a module — all uploaded to Pi automatically</p>
+          <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-0.5">Each .3mf inside becomes a module — metadata extracted automatically</p>
         </div>
       </div>
     {/if}
@@ -468,7 +465,7 @@
 
     <div class="px-5 py-4 border-t border-zinc-100 dark:border-[#1a1a1a] flex items-center justify-between gap-3">
       <p class="text-[10px] text-zinc-400 dark:text-zinc-600">
-        Metadata extracted automatically — Pi upload included if configured
+        Metadata extracted automatically — files saved locally on desktop
       </p>
       <div class="flex items-center gap-2">
         {#if entries.some(e => e.state === 'error')}

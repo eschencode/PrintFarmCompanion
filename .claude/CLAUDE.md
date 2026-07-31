@@ -25,7 +25,6 @@ Treat any open-ended codebase question as a `/graphify` query unless the file is
 | Backend | SvelteKit server routes on Cloudflare Workers |
 | Database | Cloudflare D1 (SQLite) via **Drizzle ORM** (mostly raw `sql\`...\`` templates, not the builder) |
 | Desktop | Tauri 2 (Rust) for direct MQTT to Bambu printers |
-| Local bridge | Pi running a Bun service (`pi/`) for HTTP→MQTT bridge |
 | Charts | Apache ECharts 6 |
 | Package manager | **Bun** (not npm — `bun.lock` is the lockfile) |
 
@@ -54,15 +53,19 @@ bun run test:isolation    # Tenant-isolation leak test (needs dev server on :517
 
 ## Architecture & conventions
 
-### Three printer transport modes
+### Printer transport modes
 
-Every printer-control flow branches on transport. Resolved by `effectiveTransport(printer)` in `+page.svelte`.
+The Pi bridge was removed (2026-07-31). Two-and-a-half user modes remain:
+**standalone** (browser or desktop — inspect data, upload, time-based tracking),
+**desktop default** (opens the local file into the slicer), and **desktop + direct
+MQTT beta** (live status + control). Every control flow branches on the transport
+resolved by `effectiveTransport(printer)` in `+page.svelte`.
 
 | Mode | Path | When |
 |---|---|---|
 | `manual` | DB-only, time-based progress | `manualModeEnabled` toggle on |
-| `pi` | HTTP → Pi bridge → printer FTP/MQTT | Default when a Pi is reachable |
-| `direct` | Tauri Rust → Bambu MQTT directly | Desktop app + IP/serial/access code set |
+| `local` | DB job + open the local file (desktop) or legacy `:3001` handler (browser) | default when not direct/manual |
+| `direct` | Tauri Rust → Bambu MQTT directly | Desktop app + `directPrinterEnabled` beta toggle + IP/serial/access code set |
 
 See `docs/print-start-flow.md` for the full start-print logic.
 
@@ -122,7 +125,7 @@ IDs sometimes come back as strings from JSON. Always `Number(x) === Number(y)` w
 ### Form actions vs. API routes
 
 - SvelteKit form actions (`?/action`) — domain mutations that the UI initiates (`startPrint`, `loadSpool`, `completePrint`).
-- API routes (`/api/...`) — anything cross-cutting (Pi bridge, AI recommendations, status polling, webhooks).
+- API routes (`/api/...`) — anything cross-cutting (AI recommendations, printer control, webhooks).
 
 ---
 
@@ -145,9 +148,10 @@ The new schema rolled out recently. Watch for these in older code or AI suggesti
 
 Full catalog with grep commands: see the user's `schema-migration-patterns.md` memory.
 
-### Pi webhook column drift
+### Live status is client-only
 
-`api/pi/webhook/+server.ts` used to write `progress`, `layer_num`, `total_layer_num` columns that no longer exist. Live state comes from polling (`piStatusBySerial`), not the DB.
+Live state lives in `liveBySerial` (client, keyed on serial), populated from direct
+Tauri MQTT events — never persisted. Don't write `progress`/`layer_num`/etc. to the DB.
 
 ---
 
@@ -160,9 +164,7 @@ Full catalog with grep commands: see the user's `schema-migration-patterns.md` m
 | DB schema | `src/lib/db/schema.ts` |
 | Server-side queries by domain | `src/lib/server/{jobs,printers,spools,modules,grid}.ts` |
 | Type definitions | `src/lib/types.ts` |
-| Pi HTTP bridge endpoints | `src/routes/(main)/api/pi/*/+server.ts` |
 | Direct MQTT (Rust) | `desktop/src-tauri/src/bambu.rs` |
-| Pi-side Python service | `pi/bambu_client.py` |
 | Auth (config, guard, flows) | `src/lib/auth.ts`, `src/hooks.server.ts`, `src/routes/(auth)/*` — see `docs/authentication.md` |
 
 ---

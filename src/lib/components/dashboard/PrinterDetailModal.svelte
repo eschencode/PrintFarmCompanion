@@ -11,17 +11,14 @@
     import { getLastPrintJob } from "$lib/utils/printerData";
     import { resolveSpoolColor } from "$lib/utils/spoolColor";
     import { decodeHms, partCategoriesForHms } from "$lib/utils/hms";
-    import {
-        directPrinterEnabled,
-        printerPiEnabled,
-    } from "$lib/stores/connectionToggles";
+    import { directPrinterEnabled } from "$lib/stores/connectionToggles";
     import { isDesktop } from "$lib/stores/desktop";
     import SpoolGauge from "$lib/components/dashboard/SpoolGauge.svelte";
     import type {
         DashboardPrinter,
         PrintModuleFull,
         PrintJobWithDetails,
-        PiStatus,
+        LiveStatus,
         FailurePrefill,
         CatalogPart,
     } from "$lib/types";
@@ -33,7 +30,7 @@
     export let printer: DashboardPrinter;
     export let activePrintJob: PrintJobWithDetails | undefined;
     /** Live Pi/MQTT status for this printer — drives real-time progress and temps. */
-    export let piLive: PiStatus | undefined;
+    export let live: LiveStatus | undefined;
     export let controlLoading: string | null;
     /** Set of printer IDs currently being started — disables start buttons. */
     export let startingPrinterIds: Set<number>;
@@ -119,26 +116,25 @@
     // FINISH (webhook lag — the screen the user sees the moment the print ends). In
     // both cases we show the confirmation layout, not the live printing chrome.
     // ── Connection hint (mirrors PrinterCard) ────────────────────────────────
-    $: wantsDirect =
+    $: wantsLive =
         $directPrinterEnabled &&
         $isDesktop &&
         !!printer.printer_ip &&
         !!printer.printer_serial &&
         !!printer.printer_access_code;
-    $: wantsPi = $printerPiEnabled && !!printer.printer_serial;
-    $: sinceSeen = piLive?.last_seen ? now - piLive.last_seen * 1000 : Infinity;
-    $: connHint = !(wantsDirect || wantsPi)
+    $: sinceSeen = live?.last_seen ? now - live.last_seen * 1000 : Infinity;
+    $: connHint = !wantsLive
         ? "Running standalone"
         : sinceSeen < 60_000
-          ? `Connected via ${piLive?.source === "direct" ? "direct network" : "Pi bridge"}`
+          ? "Connected via direct network"
           : sinceSeen < 300_000
             ? "Connection idle — no recent update"
             : "No connection";
 
-    $: liveDone = piLive?.gcode_state === "FINISH";
+    $: liveDone = live?.gcode_state === "FINISH";
 
     // Printer health warnings (HMS), most urgent first.
-    $: hmsAlerts = decodeHms(piLive?.hms);
+    $: hmsAlerts = decodeHms(live?.hms);
     // Actionable alerts (exclude info) — these put the printer into an error state.
     $: activeAlerts = hmsAlerts.filter((a) => a.severity !== "info");
     $: hasError = activeAlerts.length > 0;
@@ -173,12 +169,12 @@
     }
     // Any mechanics/connectivity telemetry to show in the second row?
     $: hasMechTelemetry =
-        !!piLive &&
-        (piLive.cooling_fan_speed != null ||
-            piLive.aux_fan_speed != null ||
-            piLive.chamber_fan_speed != null ||
-            piLive.speed_level != null ||
-            piLive.wifi_signal != null);
+        !!live &&
+        (live.cooling_fan_speed != null ||
+            live.aux_fan_speed != null ||
+            live.chamber_fan_speed != null ||
+            live.speed_level != null ||
+            live.wifi_signal != null);
 
     // Cancel the running print and jump straight to the fail window with the
     // top HMS error pre-filled as the reason.
@@ -327,7 +323,7 @@
                 <!-- PRINTING / AWAITING-CONFIRMATION STATUS MENU -->
                 {@const displayProgress = isDone
                     ? 100
-                    : (piLive?.progress ??
+                    : (live?.progress ??
                       ((activePrintJob.progress ?? 0) > 0
                           ? (activePrintJob.progress ?? 0)
                           : getProgress(
@@ -362,9 +358,9 @@
                         >
                             {activePrintJob.module_name}
                         </p>
-                        {#if piLive && !isDone}
+                        {#if live && !isDone}
                             <p class="text-xs text-blue-500 mt-1">
-                                {piLive.label}
+                                {live.label}
                             </p>
                         {/if}
                     </div>
@@ -401,9 +397,9 @@
                                         now,
                                     )} elapsed</span
                                 >
-                                {#if (piLive?.total_layer_num ?? 0) > 0}
+                                {#if (live?.total_layer_num ?? 0) > 0}
                                     <span
-                                        >Layer {piLive?.layer_num} / {piLive?.total_layer_num}</span
+                                        >Layer {live?.layer_num} / {live?.total_layer_num}</span
                                     >
                                 {:else}
                                     <span
@@ -496,57 +492,57 @@
                         {/if}
 
                         <!-- Live telemetry (from Pi): temps + targets, fans, speed, Wi-Fi -->
-                        {#if piLive && (piLive.remaining_time != null || piLive.nozzle_temp != null || hasMechTelemetry)}
+                        {#if live && (live.remaining_time != null || live.nozzle_temp != null || hasMechTelemetry)}
                             <div
                                 class="bg-zinc-50 dark:bg-[#111114] rounded-xl p-4 border border-zinc-100 dark:border-[#1a1a22] space-y-4"
                             >
                                 <!-- Temps + remaining time -->
                                 <div class="flex flex-wrap gap-x-6 gap-y-3">
-                                    {#if piLive.remaining_time != null && piLive.remaining_time > 0}
+                                    {#if live.remaining_time != null && live.remaining_time > 0}
                                         <div>
                                             <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                 Remaining
                                             </p>
                                             <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
-                                                {formatRemainingTime(piLive.remaining_time)}
+                                                {formatRemainingTime(live.remaining_time)}
                                             </p>
                                         </div>
                                     {/if}
-                                    {#if piLive.nozzle_temp != null}
+                                    {#if live.nozzle_temp != null}
                                         <div>
                                             <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                 Nozzle
                                             </p>
                                             <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
-                                                {Math.round(piLive.nozzle_temp)}°C{#if piLive.nozzle_target_temp != null && piLive.nozzle_target_temp > 0}<span
+                                                {Math.round(live.nozzle_temp)}°C{#if live.nozzle_target_temp != null && live.nozzle_target_temp > 0}<span
                                                         class="text-zinc-400 dark:text-zinc-600"
                                                     >
-                                                        → {Math.round(piLive.nozzle_target_temp)}°</span
+                                                        → {Math.round(live.nozzle_target_temp)}°</span
                                                     >{/if}
                                             </p>
                                         </div>
                                     {/if}
-                                    {#if piLive.bed_temp != null}
+                                    {#if live.bed_temp != null}
                                         <div>
                                             <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                 Bed
                                             </p>
                                             <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
-                                                {Math.round(piLive.bed_temp)}°C{#if piLive.bed_target_temp != null && piLive.bed_target_temp > 0}<span
+                                                {Math.round(live.bed_temp)}°C{#if live.bed_target_temp != null && live.bed_target_temp > 0}<span
                                                         class="text-zinc-400 dark:text-zinc-600"
                                                     >
-                                                        → {Math.round(piLive.bed_target_temp)}°</span
+                                                        → {Math.round(live.bed_target_temp)}°</span
                                                     >{/if}
                                             </p>
                                         </div>
                                     {/if}
-                                    {#if piLive.chamber_temp != null}
+                                    {#if live.chamber_temp != null}
                                         <div>
                                             <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                 Chamber
                                             </p>
                                             <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
-                                                {Math.round(piLive.chamber_temp)}°C
+                                                {Math.round(live.chamber_temp)}°C
                                             </p>
                                         </div>
                                     {/if}
@@ -557,57 +553,57 @@
                                     <div
                                         class="flex flex-wrap gap-x-6 gap-y-3 pt-3 border-t border-zinc-100 dark:border-[#1a1a22]"
                                     >
-                                        {#if piLive.speed_level != null}
+                                        {#if live.speed_level != null}
                                             <div>
                                                 <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                     Speed
                                                 </p>
                                                 <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
-                                                    {SPEED_LEVELS[piLive.speed_level] ?? `L${piLive.speed_level}`}{#if piLive.speed_mag != null}<span
+                                                    {SPEED_LEVELS[live.speed_level] ?? `L${live.speed_level}`}{#if live.speed_mag != null}<span
                                                             class="text-zinc-400 dark:text-zinc-600"
                                                         >
-                                                            {piLive.speed_mag}%</span
+                                                            {live.speed_mag}%</span
                                                         >{/if}
                                                 </p>
                                             </div>
                                         {/if}
-                                        {#if fanPct(piLive.cooling_fan_speed) != null}
+                                        {#if fanPct(live.cooling_fan_speed) != null}
                                             <div>
                                                 <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                     Part fan
                                                 </p>
                                                 <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
-                                                    {fanPct(piLive.cooling_fan_speed)}%
+                                                    {fanPct(live.cooling_fan_speed)}%
                                                 </p>
                                             </div>
                                         {/if}
-                                        {#if fanPct(piLive.aux_fan_speed) != null}
+                                        {#if fanPct(live.aux_fan_speed) != null}
                                             <div>
                                                 <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                     Aux fan
                                                 </p>
                                                 <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
-                                                    {fanPct(piLive.aux_fan_speed)}%
+                                                    {fanPct(live.aux_fan_speed)}%
                                                 </p>
                                             </div>
                                         {/if}
-                                        {#if fanPct(piLive.chamber_fan_speed) != null}
+                                        {#if fanPct(live.chamber_fan_speed) != null}
                                             <div>
                                                 <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                     Chamber fan
                                                 </p>
                                                 <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
-                                                    {fanPct(piLive.chamber_fan_speed)}%
+                                                    {fanPct(live.chamber_fan_speed)}%
                                                 </p>
                                             </div>
                                         {/if}
-                                        {#if piLive.wifi_signal}
+                                        {#if live.wifi_signal}
                                             <div>
                                                 <p class="text-xs text-zinc-400 dark:text-zinc-600 mb-1 tracking-wide uppercase">
                                                     Wi-Fi
                                                 </p>
                                                 <p class="text-base text-zinc-900 dark:text-zinc-50 font-light tabular-nums">
-                                                    {piLive.wifi_signal}
+                                                    {live.wifi_signal}
                                                 </p>
                                             </div>
                                         {/if}
@@ -828,22 +824,25 @@
                         </div>
                     {/if}
 
-                    <!-- Pi Controls (Cancel / Pause / Resume) — only while actually
-                         printing and not in an error state (error has its own actions). -->
-                    {#if !isDone && !hasError && printer?.printer_ip && printer?.printer_serial && printer?.printer_access_code}
+                    <!-- Controls — while printing and not in an error state (error has
+                         its own actions). Cancel removes the job (and stops the printer
+                         when connected); pause/resume are direct-MQTT (desktop) only. -->
+                    {#if !isDone && !hasError && printer?.printer_serial}
                         <div class="grid grid-cols-2 gap-3 pt-1">
                             <button
                                 disabled={!!controlLoading}
                                 onclick={async () => {
                                     await onSendControl("cancel", printer.id);
                                 }}
-                                class="bg-red-500/8 hover:bg-red-500/15 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl transition-all duration-200 font-medium border border-red-500/10 hover:border-red-500/20 text-sm disabled:opacity-50"
+                                class="{$isDesktop ? '' : 'col-span-2'} bg-red-500/8 hover:bg-red-500/15 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl transition-all duration-200 font-medium border border-red-500/10 hover:border-red-500/20 text-sm disabled:opacity-50"
                             >
                                 {controlLoading === "cancel"
                                     ? "Cancelling…"
                                     : "Cancel Print"}
                             </button>
-                            {#if piLive?.gcode_state === "PAUSE"}
+                            {#if !$isDesktop}
+                                <!-- browser: no pause/resume (no live connection) -->
+                            {:else if live?.gcode_state === "PAUSE"}
                                 <button
                                     disabled={!!controlLoading}
                                     onclick={async () => {

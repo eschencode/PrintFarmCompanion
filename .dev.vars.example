@@ -1,10 +1,6 @@
 # Local dev environment variables for Cloudflare Workers (wrangler dev)
 # Copy to .dev.vars (gitignored) and fill in values
 
-# Pi tunnel URL + secret are configured per-workspace in Settings → Pi Bridge
-# (pi_settings table), not here. Only the inbound webhook secret is env-wide.
-PI_WEBHOOK_SECRET=change-me-to-a-random-string
-
 # Secret used to encrypt integration credentials at rest (Shopify token, etc.).
 # Any long, high-entropy random string. Generate one with: openssl rand -base64 32
 # Remote: set via `wrangler secret put ENCRYPTION_KEY` (do NOT commit it).

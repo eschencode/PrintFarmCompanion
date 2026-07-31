@@ -10,24 +10,21 @@
         stateColors,
         hexToRgb,
     } from "$lib/stores/dashboardPrefs";
-    import {
-        directPrinterEnabled,
-        printerPiEnabled,
-    } from "$lib/stores/connectionToggles";
+    import { directPrinterEnabled } from "$lib/stores/connectionToggles";
     import { isDesktop } from "$lib/stores/desktop";
     import SpoolGauge from "$lib/components/dashboard/SpoolGauge.svelte";
     import type {
         DashboardPrinter,
         PrintModuleFull,
         PrintJobFull,
-        PiStatus,
+        LiveStatus,
         DetectedExternalPrint,
     } from "$lib/types";
 
     /** The printer to display. Must be defined — caller guards against undefined. */
     export let printer: DashboardPrinter;
     /** Live Pi/MQTT status for this printer, if available. */
-    export let piLive: PiStatus | undefined;
+    export let live: LiveStatus | undefined;
     export let liveIsStarting: boolean;
     export let activePrintJobs: PrintJobFull[];
     export let printModules: PrintModuleFull[];
@@ -43,38 +40,35 @@
     // A live frame that's effectively done (final layer, no time left, ~100%).
     // Some Bambu firmware sticks at RUNNING 99% forever instead of emitting FINISH.
     $: liveDone =
-        !!piLive &&
-        piLive.progress >= 99 &&
-        piLive.total_layer_num > 0 &&
-        piLive.layer_num >= piLive.total_layer_num &&
-        (piLive.remaining_time ?? 0) === 0;
+        !!live &&
+        live.progress >= 99 &&
+        live.total_layer_num > 0 &&
+        live.layer_num >= live.total_layer_num &&
+        (live.remaining_time ?? 0) === 0;
     $: hasActiveJob = !!getActivePrintJob(Number(printer.id), activePrintJobs);
     // A frame the Pi hasn't refreshed in >60s is stale — the monitor likely died,
     // so a cached RUNNING must not keep masquerading as a live print.
     $: stale =
-        !!piLive?.updated_at && now - piLive.updated_at * 1000 > 60_000;
+        !!live?.updated_at && now - live.updated_at * 1000 > 60_000;
     $: liveIsPrinting =
-        !!piLive &&
+        !!live &&
         !stale &&
-        ["RUNNING", "PREPARE", "PAUSE"].includes(piLive.gcode_state) &&
+        ["RUNNING", "PREPARE", "PAUSE"].includes(live.gcode_state) &&
         // Don't treat a stale "done" frame as printing once the job is gone.
         !(liveDone && !hasActiveJob);
 
     // ── Connection indicator ─────────────────────────────────────────────────
-    // Does the user want a live transport for this printer? (direct needs desktop
-    // + full config; pi needs a serial). If not, the printer runs "standalone"
-    // and we show no indicator.
-    $: wantsDirect =
+    // Direct MQTT (desktop, beta) is the only live transport. Without it the
+    // printer runs standalone and we show no indicator.
+    $: wantsLive =
         $directPrinterEnabled &&
         $isDesktop &&
         !!printer.printer_ip &&
         !!printer.printer_serial &&
         !!printer.printer_access_code;
-    $: wantsPi = $printerPiEnabled && !!printer.printer_serial;
-    $: wantsLive = wantsDirect || wantsPi;
     // Transport liveness from last_seen (local receive time), not the printer's
     // frame time — this is "did we hear from the transport", not print progress.
-    $: sinceSeen = piLive?.last_seen ? now - piLive.last_seen * 1000 : Infinity;
+    $: sinceSeen = live?.last_seen ? now - live.last_seen * 1000 : Infinity;
     $: connState = !wantsLive
         ? "none"
         : sinceSeen < 60_000
@@ -84,13 +78,13 @@
             : "offline";
     $: connLabel =
         connState === "live"
-            ? `Live · via ${piLive?.source === "direct" ? "direct network" : "Pi bridge"}`
+            ? "Live · direct network"
             : connState === "stale"
               ? "No update in a few minutes"
               : "No connection";
 
     // Active printer health warnings (HMS). Empty unless the printer is reporting issues.
-    $: hmsAlerts = decodeHms(piLive?.hms).filter((d) => d.severity !== "info");
+    $: hmsAlerts = decodeHms(live?.hms).filter((d) => d.severity !== "info");
     $: topAlert = hmsAlerts[0];
     // A serious/fatal alert puts the card into a visible error state (red ring).
     $: hasError = hmsAlerts.some((d) => d.severity !== "common");
@@ -112,8 +106,8 @@
     $: printProgress =
         cardStatus !== "printing"
             ? 0
-            : piLive
-              ? Math.min(100, piLive.progress)
+            : live
+              ? Math.min(100, live.progress)
               : (() => {
                     const job = getActivePrintJob(
                         Number(printer.id),
@@ -396,8 +390,8 @@
                 activePrintJobs,
             )}
             {#if activePrint}
-                {@const progress = piLive
-                    ? piLive.progress
+                {@const progress = live
+                    ? live.progress
                     : getProgress(
                           Number(activePrint.start_time),
                           Number((activePrint as any).expected_time_minutes),
@@ -417,17 +411,17 @@
                     <p
                         class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-400 dark:text-zinc-500 mt-1 tabular-nums"
                     >
-                        {#if piLive}{piLive.label}{:else}{progress}%{/if}
+                        {#if live}{live.label}{:else}{progress}%{/if}
                     </p>
                 </div>
-            {:else if piLive}
+            {:else if live}
                 <!-- External / un-reconciled print: show whatever Pi gives us -->
                 <div class="px-1">
-                    {#if piLive.subtask_name}
+                    {#if live.subtask_name}
                         <p
                             class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-500 dark:text-zinc-400 truncate mb-1"
                         >
-                            {piLive.subtask_name}
+                            {live.subtask_name}
                         </p>
                     {/if}
                     <div
@@ -435,13 +429,13 @@
                     >
                         <div
                             class="bg-blue-500 h-full rounded-full transition-all duration-500 progress-shimmer"
-                            style="width: {Math.min(piLive.progress, 100)}%"
+                            style="width: {Math.min(live.progress, 100)}%"
                         ></div>
                     </div>
                     <p
                         class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-400 dark:text-zinc-500 mt-1 tabular-nums"
                     >
-                        {piLive.label}
+                        {live.label}
                     </p>
                 </div>
             {/if}

@@ -55,6 +55,14 @@ fn now_secs() -> f64 {
         .as_secs_f64()
 }
 
+/// Let the webview write into the same log buffer (category "UI") so we can see
+/// frontend-side events (listener registration, received status frames) on the
+/// Logs page alongside the Rust MQTT/FTPS logs.
+#[tauri::command]
+pub fn frontend_log(level: String, message: String, serial: Option<String>, name: Option<String>) {
+    log(&level, "UI", message, &serial.unwrap_or_default(), &name.unwrap_or_default());
+}
+
 /// Filtered retrieval — mirrors the Pi's `/logs` query params.
 #[tauri::command]
 pub fn fetch_direct_logs(

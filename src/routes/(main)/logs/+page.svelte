@@ -66,9 +66,7 @@
     return `${Math.floor(diff / 86400)}d ago`;
   }
 
-  // Separate cursors per source — Pi and desktop run on different clocks, so a
-  // single shared cursor could drop entries from whichever clock lags.
-  let piCursor = 0;
+  // Direct MQTT (desktop) is the only log source now that the Pi bridge is gone.
   let directCursor = 0;
 
   async function invokeTauri<T>(cmd: string, args: Record<string, unknown>): Promise<T | null> {
@@ -82,37 +80,11 @@
 
   async function fetchPrinters() {
     const merged = new Map<string, PrinterInfo>();
-    try {
-      const resp = await fetch('/api/pi/logs/printers');
-      const data = (await resp.json()) as { printers?: PrinterInfo[] };
-      for (const p of data.printers ?? []) merged.set(p.serial, p);
-    } catch {
-      // ignore — Pi may be unreachable / unconfigured
-    }
     if ($isDesktop) {
       const dp = await invokeTauri<PrinterInfo[]>('fetch_direct_printers', {});
-      for (const p of dp ?? []) if (!merged.has(p.serial)) merged.set(p.serial, p);
+      for (const p of dp ?? []) merged.set(p.serial, p);
     }
     printers = [...merged.values()];
-  }
-
-  async function fetchPiLogs(): Promise<LogEntry[]> {
-    const params = new URLSearchParams();
-    if (selectedPrinter) params.set('printer', selectedPrinter);
-    if (selectedLevel) params.set('level', selectedLevel);
-    if (selectedCategory) params.set('category', selectedCategory);
-    if (piCursor > 0) params.set('since', piCursor.toString());
-    params.set('limit', '500');
-
-    const resp = await fetch(`/api/pi/logs?${params}`);
-    const data = (await resp.json()) as { entries?: LogEntry[]; error?: string };
-    if (data.error) {
-      // On desktop the Pi may be unconfigured — don't let that hide the direct logs.
-      if (!$isDesktop) error = data.error;
-      return [];
-    }
-    error = '';
-    return data.entries ?? [];
   }
 
   async function fetchDirectLogs(): Promise<LogEntry[]> {
@@ -129,16 +101,14 @@
 
   async function fetchLogs(reset = false) {
     if (reset) {
-      piCursor = 0;
       directCursor = 0;
       entries = [];
     }
     try {
-      const [piNew, directNew] = await Promise.all([fetchPiLogs(), fetchDirectLogs()]);
-      if (piNew.length) piCursor = Math.max(piCursor, ...piNew.map((e) => e.timestamp));
+      const directNew = await fetchDirectLogs();
       if (directNew.length) directCursor = Math.max(directCursor, ...directNew.map((e) => e.timestamp));
 
-      const combined = [...piNew, ...directNew].sort((a, b) => a.timestamp - b.timestamp);
+      const combined = directNew.sort((a, b) => a.timestamp - b.timestamp);
       if (combined.length === 0 && !reset) return;
 
       entries = reset ? combined : [...entries, ...combined];

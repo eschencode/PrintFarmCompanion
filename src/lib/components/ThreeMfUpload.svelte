@@ -124,7 +124,7 @@
   let currentFile: File | null = null;  // original File kept for Pi upload
   let extracting = false;
   let saving = false;
-  let savingStep = '';  // 'pi' | 'db' | ''
+  let savingStep = '';  // 'db' | ''
   let error: string | null = null;
 
   async function handleDrop(e: DragEvent) {
@@ -461,29 +461,7 @@
     error = null;
 
     try {
-      // ── Step 1 (beta): mirror the file to the Pi if configured. Best-effort —
-      // the Pi bridge is an opt-in beta transport; the local copy (step 3) is the
-      // source of truth. We no longer persist the Pi path. See docs/local-file-flow.md.
-      savingStep = 'pi';
-      try {
-        const formData = new FormData();
-        formData.append('file', currentFile, currentFile.name);
-
-        const piRes = await fetch('/api/pi/upload', {
-          method: 'POST',
-          body: formData,
-        });
-        const piResult = await piRes.json() as { success: boolean; pi_available: boolean; path?: string; error?: string };
-        if (piResult.pi_available && !piResult.success) {
-          console.warn('[Pi] File upload failed:', piResult.error);
-        }
-        // If pi_available === false, Pi is simply not configured — silent fallback
-      } catch (piErr) {
-        // Pi endpoint unreachable or returned non-JSON — continue without Pi
-        console.warn('[Pi] Upload skipped:', piErr);
-      }
-
-      // ── Step 2: Save metadata to D1 ──────────────────────────────────────────────
+      // ── Step 1: Save metadata to D1 ──────────────────────────────────────────────
       // Insert first so we get the module id — the local copy is named
       // <id>_<filename> to stay collision-free. See docs/local-file-flow.md.
       savingStep = 'db';
@@ -510,7 +488,7 @@
 
       const result = await res.json() as { success: boolean; data?: { id: number; name: string }; error?: string };
       if (result.success) {
-        // ── Step 3: Save the local copy in desktop mode, keyed on module id ──────
+        // ── Step 2: Save the local copy in desktop mode, keyed on module id ──────
         if (window.__IS_DESKTOP__ && currentFile && result.data) {
           try {
             const { invoke } = await import('@tauri-apps/api/core');
@@ -842,7 +820,7 @@
         disabled={saving || !previewData.name.trim()}
         class="px-4 py-2 text-xs font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {savingStep === 'pi' ? 'Sending to Pi…' : savingStep === 'db' ? 'Saving…' : 'Confirm Upload'}
+        {savingStep === 'db' ? 'Saving…' : 'Confirm Upload'}
       </button>
     </div>
   </div>
