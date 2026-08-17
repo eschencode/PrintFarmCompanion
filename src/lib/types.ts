@@ -201,6 +201,9 @@ export interface PrintModuleFull extends PrintModule {
   filament_slots?: (ModuleFilamentSlot & { preset?: SpoolPreset | null })[];
   /** Spool preset required at slot 0 — joined from module_filament_slots. */
   default_spool_preset_id?: number | null;
+  /** Days of cover left for this module's produced object (null if no object /
+   *  no sales velocity). Attached by the dashboard loader for the picker UI. */
+  days_until_stockout?: number | null;
 }
 
 // ============================================================================
@@ -447,6 +450,8 @@ export interface LiveStatus {
   gcode_file?: string | null;
   /** Raw Bambu Health-Management-System entries (decode via $lib/utils/hms). */
   hms?: HmsEntry[] | null;
+  /** Current/last print error code (decode via $lib/utils/printError). 0 = none. */
+  error_code?: number | null;
   // Temps + targets
   nozzle_target_temp?: number | null;
   bed_target_temp?: number | null;

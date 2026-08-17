@@ -11,6 +11,7 @@
     import { getLastPrintJob } from "$lib/utils/printerData";
     import { resolveSpoolColor } from "$lib/utils/spoolColor";
     import { decodeHms, partCategoriesForHms } from "$lib/utils/hms";
+    import { decodePrintError } from "$lib/utils/printError";
     import { directPrinterEnabled } from "$lib/stores/connectionToggles";
     import { isDesktop } from "$lib/stores/desktop";
     import SpoolGauge from "$lib/components/dashboard/SpoolGauge.svelte";
@@ -31,6 +32,8 @@
     export let activePrintJob: PrintJobWithDetails | undefined;
     /** Live Pi/MQTT status for this printer — drives real-time progress and temps. */
     export let live: LiveStatus | undefined;
+    /** Whether this printer's direct MQTT connection is currently up. */
+    export let directConnected: boolean = false;
     export let controlLoading: string | null;
     /** Set of printer IDs currently being started — disables start buttons. */
     export let startingPrinterIds: Set<number>;
@@ -125,11 +128,11 @@
     $: sinceSeen = live?.last_seen ? now - live.last_seen * 1000 : Infinity;
     $: connHint = !wantsLive
         ? "Running standalone"
-        : sinceSeen < 60_000
-          ? "Connected via direct network"
-          : sinceSeen < 300_000
-            ? "Connection idle — no recent update"
-            : "No connection";
+        : !directConnected
+          ? "No connection to printer"
+          : sinceSeen < 60_000
+            ? "Connected via direct network · live"
+            : "Connected · no recent update";
 
     $: liveDone = live?.gcode_state === "FINISH";
 
@@ -138,6 +141,10 @@
     // Actionable alerts (exclude info) — these put the printer into an error state.
     $: activeAlerts = hmsAlerts.filter((a) => a.severity !== "info");
     $: hasError = activeAlerts.length > 0;
+    // Bambu `print_error` code — a separate single-code error stream.
+    $: printError = decodePrintError(live?.error_code);
+    $: showErrorPanel = hmsAlerts.length > 0 || !!printError;
+    $: panelIsError = hasError || !!printError;
 
     // Spare-part buy suggestions for a broken printer: HMS-mapped categories
     // first, then the generic parts-store row so the list is never empty.
@@ -416,20 +423,46 @@
 
                         <!-- Printer Health (HMS). Active (non-info) alerts put the
                              printer into an error state with Resume / Cancel actions. -->
-                        {#if hmsAlerts.length > 0}
+                        {#if showErrorPanel}
                             <div
-                                class="rounded-xl border p-4 {hasError
+                                class="rounded-xl border p-4 {panelIsError
                                     ? 'bg-red-500/5 border-red-500/20'
                                     : 'bg-zinc-50 dark:bg-[#111114] border-zinc-100 dark:border-[#1a1a22]'}"
                             >
                                 <p
-                                    class="text-[10px] uppercase tracking-wide font-semibold mb-3 {hasError
+                                    class="text-[10px] uppercase tracking-wide font-semibold mb-3 {panelIsError
                                         ? 'text-red-500/80'
                                         : 'text-zinc-400 dark:text-zinc-600'}"
                                 >
-                                    {hasError ? "Printer error" : "Printer notice"}
+                                    {panelIsError ? "Printer error" : "Printer notice"}
                                 </p>
                                 <div class="space-y-2">
+                                    {#if printError}
+                                        <a
+                                            href={printError.wikiUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            class="group flex items-start gap-3 rounded-lg p-2 -m-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                        >
+                                            <span class="mt-1 inline-flex h-2 w-2 shrink-0 rounded-full bg-red-500"></span>
+                                            <div class="min-w-0 flex-1">
+                                                <p class="text-sm text-zinc-800 dark:text-zinc-200 leading-snug">
+                                                    {printError.text}
+                                                </p>
+                                                <p class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-0.5 font-mono uppercase tracking-wide">
+                                                    print_error · {printError.grouped} · Bambu wiki
+                                                </p>
+                                            </div>
+                                            <svg
+                                                class="w-3.5 h-3.5 mt-0.5 text-zinc-300 dark:text-zinc-600 group-hover:text-zinc-500 shrink-0"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                            </svg>
+                                        </a>
+                                    {/if}
                                     {#each hmsAlerts as alert}
                                         <a
                                             href={alert.wikiUrl}
@@ -1239,8 +1272,7 @@
                                         <div
                                             class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 tabular-nums"
                                         >
-                                            {nextPrint.weight_of_print}g{#if nextPrint.priority === "TOPUP"}
-                                                · topup{:else if nextPrint.days_left != null}
+                                            {nextPrint.weight_of_print}g{#if nextPrint.days_left != null}
                                                 · {nextPrint.days_left >= 365
                                                     ? "365+"
                                                     : Math.round(

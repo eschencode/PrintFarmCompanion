@@ -5,6 +5,7 @@
   import ZipBulkUpload from '$lib/components/ZipBulkUpload.svelte';
   import EditModuleModal from '$lib/components/EditModuleModal.svelte';
   import { fileHandlerStore } from '$lib/stores/fileHandler';
+  import { isDesktop } from '$lib/stores/desktop';
   import { resolveSpoolColor } from '$lib/utils/spoolColor';
   import BackToDashboard from '$lib/components/BackToDashboard.svelte';
 
@@ -317,7 +318,7 @@
     {/if}
     {#if showZipUpload}
       <div class="mb-5">
-        <ZipBulkUpload {spoolPresets} {printerModels} on:done={handleZipUploaded} />
+        <ZipBulkUpload {spoolPresets} {printerModels} existingModules={modules} on:done={handleZipUploaded} />
       </div>
     {/if}
 
@@ -557,7 +558,7 @@
                       {module.filename.split('/').pop()}
                     </span>
                   {/if}
-                  {#if missingIds.has(Number(module.id))}
+                  {#if $isDesktop && missingIds.has(Number(module.id))}
                     <span class="text-[9px] font-medium px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400">
                       Not on this machine
                     </span>

@@ -12,6 +12,15 @@ use logs::{fetch_direct_logs, fetch_direct_printers, frontend_log};
 const PROD_URL: &str = "https://printfarmcompanion.pages.dev";
 const DEV_URL: &str = "http://localhost:5173";
 
+/// Flatten a derived module file name to a single path segment. Some modules
+/// (older rows not yet normalised to a basename) have a filename containing a
+/// path; `<id>_<filename>` would then be a nested path whose parent doesn't
+/// exist, breaking save/open/check/upload. Replacing separators keeps it flat —
+/// applied identically everywhere so save and read always agree.
+pub(crate) fn flatten_local_name(name: &str) -> String {
+    name.replace(['/', '\\'], "_")
+}
+
 /// Save a .3mf file into the app-data modules directory.
 /// Returns the full absolute path to the written file.
 #[tauri::command]
@@ -21,7 +30,7 @@ fn save_module_file(app: tauri::AppHandle, file_name: String, data: Vec<u8>) -> 
         .join("modules");
     std::fs::create_dir_all(&modules_dir)
         .map_err(|e| format!("failed to create modules dir: {e}"))?;
-    let dest = modules_dir.join(&file_name);
+    let dest = modules_dir.join(flatten_local_name(&file_name));
     std::fs::write(&dest, &data)
         .map_err(|e| format!("failed to write file: {e}"))?;
     Ok(dest.to_string_lossy().into_owned())
@@ -43,7 +52,7 @@ fn open_module_file(app: tauri::AppHandle, id: i64, file_name: String) -> Result
     let path = app.path().app_data_dir()
         .map_err(|e| format!("no app data dir: {e}"))?
         .join("modules")
-        .join(format!("{id}_{file_name}"));
+        .join(flatten_local_name(&format!("{id}_{file_name}")));
     if !path.exists() {
         return Err(format!("module file not found: {}", path.display()));
     }
@@ -61,7 +70,7 @@ fn check_module_files(app: tauri::AppHandle, names: Vec<String>) -> Result<Vec<S
         .join("modules");
     Ok(names
         .into_iter()
-        .filter(|n| !modules_dir.join(n).exists())
+        .filter(|n| !modules_dir.join(flatten_local_name(n)).exists())
         .collect())
 }
 

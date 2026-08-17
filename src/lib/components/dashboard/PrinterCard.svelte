@@ -5,6 +5,7 @@
     import { getActivePrintJob } from "$lib/utils/printerData";
     import { resolveSpoolColor } from "$lib/utils/spoolColor";
     import { decodeHms } from "$lib/utils/hms";
+    import { decodePrintError } from "$lib/utils/printError";
     import {
         printingEffect,
         stateColors,
@@ -25,6 +26,8 @@
     export let printer: DashboardPrinter;
     /** Live Pi/MQTT status for this printer, if available. */
     export let live: LiveStatus | undefined;
+    /** Whether this printer's direct MQTT connection is currently up. */
+    export let directConnected: boolean = false;
     export let liveIsStarting: boolean;
     export let activePrintJobs: PrintJobFull[];
     export let printModules: PrintModuleFull[];
@@ -69,32 +72,57 @@
     // Transport liveness from last_seen (local receive time), not the printer's
     // frame time — this is "did we hear from the transport", not print progress.
     $: sinceSeen = live?.last_seen ? now - live.last_seen * 1000 : Infinity;
+    // Signal bars: full when the MQTT link is up and we got a frame in the last
+    // 60s; fewer when connected but the last frame is older; "no connection" when
+    // configured for direct control but the link is down.
     $: connState = !wantsLive
         ? "none"
-        : sinceSeen < 60_000
-          ? "live"
-          : sinceSeen < 300_000
-            ? "stale"
-            : "offline";
+        : !directConnected
+          ? "offline"
+          : sinceSeen < 60_000
+            ? "live"
+            : "stale";
     $: connLabel =
         connState === "live"
-            ? "Live · direct network"
+            ? "Connected · live (updated <60s ago)"
             : connState === "stale"
-              ? "No update in a few minutes"
-              : "No connection";
+              ? "Connected · no update in over a minute"
+              : "No connection to printer";
 
     // Active printer health warnings (HMS). Empty unless the printer is reporting issues.
     $: hmsAlerts = decodeHms(live?.hms).filter((d) => d.severity !== "info");
     $: topAlert = hmsAlerts[0];
-    // A serious/fatal alert puts the card into a visible error state (red ring).
-    $: hasError = hmsAlerts.some((d) => d.severity !== "common");
+    // Bambu `print_error` — only treated as active while the printer isn't idle,
+    // so a leftover code on an idle printer doesn't badge every card.
+    $: printError = decodePrintError(live?.error_code);
+    $: printErrorActive = !!printError && !!live && live.gcode_state !== "IDLE";
+    // A serious/fatal HMS alert OR an active print error puts the card into a
+    // visible error state (red ring + badge).
+    $: hasError =
+        hmsAlerts.some((d) => d.severity !== "common") || printErrorActive;
+
+    // Do we have a current (non-stale) live frame from the local network?
+    $: liveFresh = !!live && !stale;
 
     // Single source of truth for the card's visual status — drives the dot and tint.
+    // When connected over the local network, the live printer state wins so the
+    // dashboard reflects reality (e.g. a printer that's actually idle no longer
+    // shows the "printing" tint just because the DB job hasn't been reconciled).
+    // DB overrides stay on top for app-level states the printer can't report:
+    //   inactive = user marked it broken; finished = a print is awaiting confirm.
     $: cardStatus = liveIsStarting
         ? "starting"
-        : liveIsPrinting || printer.status === "printing"
-          ? "printing"
-          : printer.status; // 'finished' | 'idle' | 'inactive'
+        : printer.status === "inactive"
+          ? "inactive"
+          : liveIsPrinting
+            ? "printing"
+            : printer.status === "finished"
+              ? "finished"
+              : liveFresh
+                ? "idle" // live-connected and not printing → reflect idle
+                : printer.status === "printing"
+                  ? "printing"
+                  : printer.status; // no live frame → fall back to DB status
 
     // Per-status colour config (customisable in settings). Drives the tint/effect.
     $: stateCfg = ($stateColors as Record<string, { color: string; enabled: boolean }>)[cardStatus];
@@ -195,18 +223,22 @@
          rounded-xl p-3 card-lift card-shine
          flex flex-col items-center justify-center overflow-hidden min-h-0"
 >
-    <!-- Health alert badge — shown when the printer reports an HMS warning/error. -->
-    {#if topAlert}
+    <!-- Health alert badge — shown for an HMS warning/error or an active print error. -->
+    {#if topAlert || printErrorActive}
+        {@const amber = !!topAlert && topAlert.severity === "common" && !printErrorActive}
         <div
             class="absolute top-1.5 right-1.5 z-[2] flex items-center gap-1 rounded-full pl-1 pr-1.5 py-0.5
-                   {topAlert.severity === 'common'
+                   {amber
                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
                        : 'bg-red-500/15 text-red-600 dark:text-red-400'}"
-            title={hmsAlerts.map((d) => d.text).join('\n')}
+            title={[
+                ...hmsAlerts.map((d) => d.text),
+                ...(printErrorActive && printError ? [printError.text] : []),
+            ].join("\n")}
         >
             <span class="relative flex h-1.5 w-1.5">
-                <span class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping {topAlert.severity === 'common' ? 'bg-amber-500' : 'bg-red-500'}"></span>
-                <span class="relative inline-flex h-1.5 w-1.5 rounded-full {topAlert.severity === 'common' ? 'bg-amber-500' : 'bg-red-500'}"></span>
+                <span class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping {amber ? 'bg-amber-500' : 'bg-red-500'}"></span>
+                <span class="relative inline-flex h-1.5 w-1.5 rounded-full {amber ? 'bg-amber-500' : 'bg-red-500'}"></span>
             </span>
             {#if hmsAlerts.length > 1}
                 <span class="text-[9px] font-bold tabular-nums leading-none">{hmsAlerts.length}</span>
@@ -329,21 +361,24 @@
                 {printer.name}
             </h3>
             {#if connState !== "none"}
-                <!-- Minimal monochrome signal indicator: bar count reflects
-                     transport liveness (live 3 / stale 2 / offline 1). -->
+                <!-- Minimal monochrome signal bars: live = 3 (full), stale = 2,
+                     offline = 0 (all faint = no connection). -->
                 <svg
                     viewBox="0 0 12 10"
-                    class="w-2.5 h-2.5 shrink-0 text-zinc-400 dark:text-zinc-500"
+                    class="w-2.5 h-2.5 shrink-0 {connState === 'offline'
+                        ? 'text-zinc-300 dark:text-zinc-600'
+                        : 'text-zinc-400 dark:text-zinc-500'}"
                     fill="currentColor"
                     aria-label={connLabel}
                     role="img"
                 >
                     <title>{connLabel}</title>
-                    <rect x="0" y="6" width="3" height="4" rx="0.5" opacity="0.9" />
+                    <rect x="0" y="6" width="3" height="4" rx="0.5"
+                          opacity={connState === "offline" ? "0.25" : "0.9"} />
                     <rect x="4.5" y="3" width="3" height="7" rx="0.5"
-                          opacity={connState === "offline" ? "0.2" : "0.9"} />
+                          opacity={connState === "offline" ? "0.25" : "0.9"} />
                     <rect x="9" y="0" width="3" height="10" rx="0.5"
-                          opacity={connState === "live" ? "0.9" : "0.2"} />
+                          opacity={connState === "live" ? "0.9" : "0.25"} />
                 </svg>
             {/if}
         </div>
@@ -369,7 +404,7 @@
                     {qPos === 0 ? "Sending to printer…" : "In queue…"}
                 </p>
             </div>
-        {:else if printer.status === "finished"}
+        {:else if cardStatus === "finished"}
             <div class="px-1">
                 <div
                     class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden"
@@ -384,7 +419,7 @@
                     100%
                 </p>
             </div>
-        {:else if liveIsPrinting || printer.status === "printing"}
+        {:else if cardStatus === "printing"}
             {@const activePrint = getActivePrintJob(
                 Number(printer.id),
                 activePrintJobs,

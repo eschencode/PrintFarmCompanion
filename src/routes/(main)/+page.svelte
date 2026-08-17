@@ -214,6 +214,7 @@
                 speed_mag: number | null;
                 wifi_signal: string | null;
                 hms: { attr: number; code: number }[] | null;
+                error_code: number;
             }>("printer-status", ({ payload: s }) => {
                 if (!firstStatusLogged) {
                     firstStatusLogged = true;
@@ -247,6 +248,7 @@
                         subtask_name: s.subtask_name ?? null,
                         gcode_file: s.gcode_file ?? null,
                         hms: s.hms ?? null,
+                        error_code: s.error_code ?? 0,
                         nozzle_target_temp: s.nozzle_target_temp,
                         bed_target_temp: s.bed_target_temp,
                         cooling_fan_speed: s.cooling_fan_speed,
@@ -260,14 +262,25 @@
                         last_seen: Math.floor(Date.now() / 1000),
                     },
                 }));
-                // Advance start queue on PREPARE→RUNNING
+                // A print we just sent still emits stale terminal frames from the
+                // PREVIOUS print until the printer switches to the new job. Ignore
+                // those (they'd otherwise trip the finish flow / advance the queue)
+                // until it confirms the new print started (RUNNING/PREPARE).
+                if (recentlyStarted.has(s.serial)) {
+                    if (newState === "RUNNING" || newState === "PREPARE") {
+                        recentlyStarted.delete(s.serial);
+                    } else {
+                        return;
+                    }
+                }
+                // Advance the start queue once the head printer starts (RUNNING) or
+                // genuinely terminates (a real fail before it ever ran).
                 const isHeadOfQueue =
                     startQueue.length > 0 &&
                     startQueue[0].printer.printer_serial === s.serial;
                 if (
                     isHeadOfQueue &&
-                    prevState === "PREPARE" &&
-                    newState === "RUNNING"
+                    ["RUNNING", "FINISH", "FAILED"].includes(newState)
                 )
                     advanceStartQueue();
                 // Trigger finish logic
@@ -289,14 +302,17 @@
                 serial: string;
                 printer_id: number;
             }>("printer-connected", ({ payload }) => {
-                directConnected = new Set([...directConnected, payload.serial]);
+                directConnected.update((s) => new Set([...s, payload.serial]));
             });
             const unlistenDisconnected = await listen<{
                 serial: string;
                 printer_id: number;
             }>("printer-disconnected", ({ payload }) => {
-                directConnected = new Set(
-                    [...directConnected].filter((s) => s !== payload.serial),
+                directConnected.update(
+                    (s) =>
+                        new Set(
+                            [...s].filter((x) => x !== payload.serial),
+                        ),
                 );
             });
 
@@ -352,10 +368,16 @@
     }
     // Guard: only trigger reload/auto-start once per serial per page load
     const reloadTriggered = new Set<string>();
+    // Serials of direct prints we just sent — used to ignore stale terminal frames
+    // from the previous print until the printer confirms the new one started.
+    const recentlyStarted = new Set<string>();
 
     // ── Direct MQTT transport (Tauri desktop only) ────────────────────────────
     // Serials currently connected via direct MQTT
-    let directConnected = new Set<string>();
+    // A store (not a plain `let`): updated from Tauri connect/disconnect events,
+    // so it must be reactive from outside Svelte's update cycle. Drives the
+    // per-printer connection indicator + control availability.
+    const directConnected = writable(new Set<string>());
     // Unlisten callbacks for Tauri event subscriptions
     let tauriUnlisteners: Array<() => void> = [];
 
@@ -676,8 +698,22 @@
                         method: "POST",
                         body: formData,
                     });
+                    // Drop the previous print's stale frame so the card doesn't
+                    // flash its old 100%/finished state, and ignore stale terminal
+                    // frames until the printer confirms the new print started. The
+                    // card stays in the "starting" shimmer until it reports RUNNING
+                    // (handler advances the queue then; 120s safety net covers stalls).
+                    recentlyStarted.add(printer.printer_serial);
+                    setTimeout(
+                        () => recentlyStarted.delete(printer.printer_serial),
+                        120_000,
+                    );
+                    reloadTriggered.delete(printer.printer_serial);
+                    liveBySerial.update((m) => {
+                        const { [printer.printer_serial]: _drop, ...rest } = m;
+                        return rest;
+                    });
                     await invalidateAll();
-                    setTimeout(advanceStartQueue, 3_000);
                 } catch (e) {
                     const msg = String(e);
                     startError = {
@@ -770,7 +806,7 @@
             );
             const isDirect = !!(
                 printer?.printer_serial &&
-                directConnected.has(printer.printer_serial)
+                get(directConnected).has(printer.printer_serial)
             );
 
             if (endpoint === "cancel") {
@@ -1324,24 +1360,37 @@
             alert("Please load a spool first");
             return;
         }
-        // Only generate queue if empty or all items are DONE
+        // Open immediately — the "Recommended for this Spool" list is derived
+        // client-side from data.printModules, so it doesn't need the server queue.
+        showModuleSelector = true;
+
+        // Populate the "Saved Print Queue" section in the background (this is the
+        // slow generateAndSaveSuggestedQueue call). Guard against a fast re-open on
+        // a different printer landing the result on the wrong one.
         const queue = selectedPrinter.suggested_queue;
         const shouldGenerateQueue =
             !queue ||
             queue.length === 0 ||
             queue.every((item) => item.status === "DONE");
-
         if (shouldGenerateQueue) {
-            const response = await fetch(
-                `/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`,
-            );
-            const result = await response.json();
-            if (result && Array.isArray(result)) {
-                selectedPrinter.suggested_queue = result;
-            }
+            const pid = selectedPrinter.id;
+            fetch(`/api/ai-recommendations?type=queue&printerId=${pid}`)
+                .then((r) => r.json())
+                .then((result) => {
+                    if (
+                        result &&
+                        Array.isArray(result) &&
+                        selectedPrinter &&
+                        Number(selectedPrinter.id) === Number(pid)
+                    ) {
+                        selectedPrinter = {
+                            ...selectedPrinter,
+                            suggested_queue: result,
+                        };
+                    }
+                })
+                .catch(() => {});
         }
-
-        showModuleSelector = true;
     }
 
     function closeModuleSelector() {
@@ -1432,6 +1481,9 @@
                                 live={$liveBySerial[
                                     printer.printer_serial as string
                                 ]}
+                                directConnected={$directConnected.has(
+                                    printer.printer_serial as string,
+                                )}
                                 liveIsStarting={startingPrinterIds.has(
                                     Number(printer.id),
                                 )}
@@ -1888,6 +1940,9 @@
             : selectedPrinter}
         {activePrintJob}
         live={$liveBySerial[selectedPrinter.printer_serial as string]}
+        directConnected={$directConnected.has(
+            selectedPrinter.printer_serial as string,
+        )}
         {controlLoading}
         {startingPrinterIds}
         {now}

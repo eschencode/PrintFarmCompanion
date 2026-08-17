@@ -7,6 +7,11 @@
 
   export let spoolPresets: any[] = [];
   export const printerModels: any[] = [];
+  /** Existing modules — a file whose name matches one re-attaches to it instead
+   *  of creating a duplicate. */
+  export let existingModules: { id: number; filename: string; name: string }[] = [];
+
+  const basename = (f: string) => f.split('/').pop() ?? f;
 
   // Same logic as ThreeMfUpload.matchPreset — kept inline to avoid a shared helper file.
   function matchPreset(presets: any[], type: string | null, color: string | null): number | null {
@@ -50,6 +55,15 @@
     /** Auto-detected slots. Sent to the API as-is on upload. */
     slots: { slot_index: number; spool_preset_id: number | null; weight: number | null }[];
     printerModel: string | null;
+    /** If the file name matches an existing module, re-attach to it instead of
+     *  creating a new one. */
+    matchedModuleId: number | null;
+    matchedModuleName: string | null;
+    /** The matched module's stored filename — the save name must match what the
+     *  direct-print path derives (`<id>_<module.filename>`), not the zip basename. */
+    matchedModuleFilename: string | null;
+    /** Whether this file is included in the upload. */
+    selected: boolean;
     state: EntryState;
     errorMsg: string | null;
   };
@@ -57,6 +71,15 @@
   let entries: ZipEntry[] = [];
   let uploading = false;
   let doneCount = 0;
+
+  $: selectedCount = entries.filter((e) => e.selected).length;
+
+  function toggleAll() {
+    const target = selectedCount < entries.length; // some unselected → select all; else clear
+    entries = entries.map((e) =>
+      e.state === 'uploading' || e.state === 'done' ? e : { ...e, selected: target },
+    );
+  }
 
   // ── Drop / file input ────────────────────────────────────────────────────────
 
@@ -117,6 +140,7 @@
         if (slots.length === 1 && slots[0].weight == null && meta.expectedWeight != null) {
           slots[0].weight = meta.expectedWeight;
         }
+        const matched = existingModules.find((m) => basename(m.filename) === baseName) ?? null;
         parsed.push({
           fileName: baseName,
           name: baseName.replace(/\.3mf$/i, ''),
@@ -129,6 +153,10 @@
           objectsPerPrint: meta.objectsPerPrint,
           slots,
           printerModel: null,
+          matchedModuleId: matched?.id ?? null,
+          matchedModuleName: matched?.name ?? null,
+          matchedModuleFilename: matched?.filename ?? null,
+          selected: true,
           state: 'pending',
           errorMsg: null,
         });
@@ -267,48 +295,79 @@
 
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
+      if (!entry.selected) continue;
       if (entry.state === 'done') { doneCount++; continue; }
 
       entries[i] = { ...entry, state: 'uploading', errorMsg: null };
       entries = [...entries];
 
       try {
-        // 1. Save metadata to D1 (returns the module id).
-        const res = await fetch('/api/print-modules', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            name: entry.name.trim() || entry.fileName.replace(/\.3mf$/i, ''),
-            file_name: entry.fileName,
-            thumbnail: entry.thumbnail,
-            estimated_time: entry.estimatedTime,
-            plate_type: entry.plateType,
-            nozzle_diameter: entry.nozzleDiameter,
-            objects_per_print: entry.objectsPerPrint,
-            slots: entry.slots,
-            printer_model: entry.printerModel || null,
-          }),
-        });
-        const result = await res.json() as { success: boolean; data?: { id: number }; error?: string };
-        if (result.success) {
-          // 2. Save the local copy in desktop mode, keyed on module id.
-          if (window.__IS_DESKTOP__ && result.data) {
-            try {
-              const { invoke } = await import('@tauri-apps/api/core');
-              const bytes = new Uint8Array(await entry.blob.arrayBuffer());
-              await invoke<string>('save_module_file', {
-                fileName: `${result.data.id}_${entry.fileName}`,
-                data: Array.from(bytes),
-              });
-            } catch (e) {
-              console.warn('[Desktop] Local file save failed:', e);
-            }
+        // Matched file → re-attach the local copy to the existing module (no new
+        // row). Unmatched → create a new module from the metadata, whose id keys
+        // the local copy. Re-attaching only stores a local file, so it's a
+        // desktop-only action; in the browser there's nothing to save.
+        let moduleId: number | null = entry.matchedModuleId;
+
+        if (moduleId == null) {
+          const res = await fetch('/api/print-modules', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              name: entry.name.trim() || entry.fileName.replace(/\.3mf$/i, ''),
+              file_name: entry.fileName,
+              thumbnail: entry.thumbnail,
+              estimated_time: entry.estimatedTime,
+              plate_type: entry.plateType,
+              nozzle_diameter: entry.nozzleDiameter,
+              objects_per_print: entry.objectsPerPrint,
+              slots: entry.slots,
+              printer_model: entry.printerModel || null,
+            }),
+          });
+          const result = await res.json() as { success: boolean; data?: { id: number }; error?: string };
+          if (!result.success || !result.data) {
+            entries[i] = { ...entries[i], state: 'error', errorMsg: result.error ?? 'Save failed' };
+            entries = [...entries];
+            continue;
           }
-          entries[i] = { ...entries[i], state: 'done' };
-          doneCount++;
-        } else {
-          entries[i] = { ...entries[i], state: 'error', errorMsg: result.error ?? 'Save failed' };
+          moduleId = result.data.id;
         }
+
+        const isReattach = entry.matchedModuleId != null;
+        // Save name must match exactly what the direct-print path reads:
+        // <id>_<module.filename> for a re-attach, <id>_<uploaded name> for a new one.
+        const saveFileName = `${moduleId}_${isReattach ? (entry.matchedModuleFilename ?? entry.fileName) : entry.fileName}`;
+
+        if (!window.__IS_DESKTOP__) {
+          // Re-attaching only makes sense on desktop (the local file lives in
+          // app-data). Don't fake success — a new module was still created above.
+          if (isReattach) {
+            entries[i] = { ...entries[i], state: 'error', errorMsg: 'Re-attach needs the desktop app' };
+            entries = [...entries];
+            continue;
+          }
+        } else if (moduleId != null) {
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const bytes = new Uint8Array(await entry.blob.arrayBuffer());
+            await invoke<string>('save_module_file', {
+              fileName: saveFileName,
+              data: Array.from(bytes),
+            });
+          } catch (e) {
+            // The local save is the whole point of a re-attach — surface it rather
+            // than reporting a false success.
+            const msg = `Local save failed: ${e instanceof Error ? e.message : e}`;
+            if (isReattach) {
+              entries[i] = { ...entries[i], state: 'error', errorMsg: msg };
+              entries = [...entries];
+              continue;
+            }
+            console.warn('[Desktop]', msg);
+          }
+        }
+        entries[i] = { ...entries[i], state: 'done' };
+        doneCount++;
       } catch (e) {
         entries[i] = { ...entries[i], state: 'error', errorMsg: e instanceof Error ? e.message : String(e) };
       }
@@ -316,7 +375,8 @@
     }
 
     uploading = false;
-    if (entries.every(e => e.state === 'done')) {
+    const selectedEntries = entries.filter((e) => e.selected);
+    if (selectedEntries.length > 0 && selectedEntries.every((e) => e.state === 'done')) {
       dispatch('done');
     }
   }
@@ -372,7 +432,7 @@
         </svg>
         <div>
           <p class="text-sm font-medium text-zinc-600 dark:text-zinc-400">Drop a <span class="font-mono">.zip</span> folder of <span class="font-mono">.3mf</span> files</p>
-          <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-0.5">Each .3mf inside becomes a module — metadata extracted automatically</p>
+          <p class="text-xs text-zinc-400 dark:text-zinc-600 mt-0.5">Files matching an existing module re-attach to it; the rest become new modules from their metadata</p>
         </div>
       </div>
     {/if}
@@ -388,15 +448,20 @@
     <div class="px-5 py-3 border-b border-zinc-100 dark:border-[#1a1a1a] flex items-center justify-between">
       <div>
         <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">
-          Bulk Upload — {entries.length} file{entries.length !== 1 ? 's' : ''} found
+          Bulk Upload — {selectedCount} of {entries.length} selected
         </p>
         {#if uploading}
-          <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{doneCount} / {entries.length} uploaded</p>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{doneCount} / {selectedCount} uploaded</p>
         {/if}
       </div>
-      <button onclick={reset} class="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
-        Cancel
-      </button>
+      <div class="flex items-center gap-4">
+        <button onclick={toggleAll} disabled={uploading} class="text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors disabled:opacity-50">
+          {selectedCount < entries.length ? 'Select all' : 'Deselect all'}
+        </button>
+        <button onclick={reset} class="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
+          Cancel
+        </button>
+      </div>
     </div>
 
     <!-- Progress bar (while uploading) -->
@@ -411,7 +476,16 @@
 
     <div class="divide-y divide-zinc-50 dark:divide-[#1a1a1a] max-h-[60vh] overflow-y-auto">
       {#each entries as entry, i (entry.fileName)}
-        <div class="flex items-center gap-3 px-5 py-3">
+        <div class="flex items-center gap-3 px-5 py-3 {entry.selected ? '' : 'opacity-45'}">
+          <!-- Include toggle -->
+          <input
+            type="checkbox"
+            bind:checked={entries[i].selected}
+            disabled={entry.state === 'uploading' || entry.state === 'done'}
+            aria-label="Include {entry.name}"
+            class="shrink-0 w-4 h-4 accent-zinc-900 dark:accent-zinc-100 cursor-pointer disabled:cursor-default"
+          />
+
           <!-- Thumbnail -->
           <div class="w-10 h-10 shrink-0 rounded-lg overflow-hidden bg-zinc-100 dark:bg-[#1a1a1a] flex items-center justify-center">
             {#if entry.thumbnail}
@@ -428,10 +502,22 @@
             <input
               type="text"
               bind:value={entries[i].name}
-              disabled={entry.state === 'uploading' || entry.state === 'done'}
+              disabled={entry.state === 'uploading' || entry.state === 'done' || entry.matchedModuleId != null}
               class="w-full bg-transparent text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none border-b border-transparent focus:border-zinc-300 dark:focus:border-zinc-600 transition-colors disabled:opacity-60"
             />
             <p class="text-[10px] text-zinc-400 dark:text-zinc-600 truncate mt-0.5">{entry.fileName}</p>
+            {#if entry.matchedModuleId != null}
+              <span class="inline-block mt-1 text-[9px] font-medium px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400">
+                ↻ Re-attach → {entry.matchedModuleName}
+              </span>
+            {:else}
+              <span class="inline-block mt-1 text-[9px] font-medium px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                ＋ New module
+              </span>
+            {/if}
+            {#if entry.state === 'error' && entry.errorMsg}
+              <p class="text-[10px] text-red-500 dark:text-red-400 mt-1 break-words">{entry.errorMsg}</p>
+            {/if}
           </div>
 
           <!-- Metadata chips -->
@@ -479,10 +565,10 @@
         {/if}
         <button
           onclick={uploadAll}
-          disabled={uploading || entries.every(e => e.state === 'done')}
+          disabled={uploading || selectedCount === 0 || entries.filter(e => e.selected).every(e => e.state === 'done')}
           class="px-4 py-2 text-xs font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {uploading ? `Uploading ${doneCount + 1}/${entries.length}…` : entries.every(e => e.state === 'done') ? 'All Done' : `Upload All (${entries.length})`}
+          {uploading ? `Uploading ${doneCount}/${selectedCount}…` : selectedCount === 0 ? 'None selected' : entries.filter(e => e.selected).every(e => e.state === 'done') ? 'All Done' : `Upload Selected (${selectedCount})`}
         </button>
       </div>
     </div>

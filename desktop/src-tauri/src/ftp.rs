@@ -108,7 +108,7 @@ pub async fn upload_file_direct(
         .app_data_dir()
         .map_err(|e| format!("no app data dir: {e}"))?
         .join("modules")
-        .join(format!("{id}_{file_name}"));
+        .join(crate::flatten_local_name(&format!("{id}_{file_name}")));
     if !path.exists() {
         return Err(format!("file not on this machine: {}", path.display()));
     }
@@ -116,7 +116,7 @@ pub async fn upload_file_direct(
     // Refuse to upload a file the printer can't print — fail fast with guidance.
     let param = find_gcode_param(&bytes, &serial, &name)
         .ok_or_else(|| NO_GCODE_MSG.to_string())?;
-    let remote_filename = sanitize(&file_name);
+    let remote_filename = sanitize(&crate::flatten_local_name(&file_name));
 
     // suppaftp is blocking — run it off the async runtime.
     let remote_path = tokio::task::spawn_blocking(move || {

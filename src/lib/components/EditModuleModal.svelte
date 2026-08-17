@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { resolveSpoolColor } from '$lib/utils/spoolColor';
+  import { isDesktop } from '$lib/stores/desktop';
 
   export let module: any;
   export let isOpen = false;
@@ -31,6 +32,46 @@
 
   let isSaving = false;
   let error = '';
+
+  // ── Local print file (desktop) — attach/replace the sliced .3mf ──────────────
+  // The local copy lives at <appdata>/modules/<id>_<filename>. See docs/local-file-flow.md.
+  let fileMissing = false;
+  let fileAttaching = false;
+  let fileInput: HTMLInputElement;
+  $: derivedFileName = module ? `${module.id}_${module.filename}` : '';
+
+  async function checkFile() {
+    fileMissing = false;
+    if (typeof window === 'undefined' || !window.__IS_DESKTOP__ || !module?.filename) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const missing = await invoke<string[]>('check_module_files', { names: [derivedFileName] });
+      fileMissing = missing.includes(derivedFileName);
+    } catch (e) {
+      console.warn('[Desktop] check_module_files failed:', e);
+    }
+  }
+
+  async function onAttachFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || !module) return;
+    fileAttaching = true;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await invoke<string>('save_module_file', {
+        fileName: derivedFileName,
+        data: Array.from(bytes),
+      });
+      fileMissing = false;
+    } catch (err) {
+      console.warn('[Desktop] attach/replace failed:', err);
+    } finally {
+      fileAttaching = false;
+    }
+  }
 
   // ── Inline new-object creation ────────────────────────────────────────────
   let showNewObjectForm = false;
@@ -89,6 +130,7 @@
     error = '';
     showNewObjectForm = false;
     createdObjects = [];
+    checkFile();
   }
 
   function formatTime(min: number): string {
@@ -175,6 +217,37 @@
 
       <!-- Scrollable body -->
       <div class="flex-1 overflow-y-auto p-5 space-y-5">
+
+        <!-- Print file (desktop): attach / replace the sliced .3mf -->
+        {#if module.filename}
+          <div>
+            <p class="text-[10px] uppercase tracking-wide text-zinc-400 dark:text-zinc-500 block mb-1">Print file</p>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs font-mono text-zinc-600 dark:text-zinc-300 truncate min-w-0 bg-zinc-50 dark:bg-[#1a1a1a] border border-zinc-200 dark:border-[#262626] rounded px-2 py-1" title={module.filename}>
+                {module.filename.split('/').pop()}
+              </span>
+              {#if $isDesktop}
+                {#if fileMissing}
+                  <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0">Not on this machine</span>
+                {/if}
+                <button
+                  type="button"
+                  onclick={() => fileInput?.click()}
+                  disabled={fileAttaching}
+                  class="text-xs font-medium px-3 py-1.5 rounded-lg border shrink-0 disabled:opacity-50 transition-colors {fileMissing
+                    ? 'border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-800/60 dark:text-amber-300 dark:hover:bg-amber-950/30'
+                    : 'border-zinc-200 dark:border-[#262626] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-[#1a1a1a]'}"
+                >
+                  {fileAttaching ? 'Saving…' : fileMissing ? 'Attach file' : 'Replace file'}
+                </button>
+              {/if}
+            </div>
+            {#if $isDesktop}
+              <p class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-1">The sliced <span class="font-mono">.3mf</span> stored on this machine, used for direct printing.</p>
+            {/if}
+          </div>
+          <input bind:this={fileInput} onchange={onAttachFile} type="file" accept=".3mf,.gcode.3mf" class="hidden" />
+        {/if}
 
         <!-- Print settings -->
         <div class="grid grid-cols-2 gap-3">

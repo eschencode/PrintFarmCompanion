@@ -28,7 +28,20 @@ export class AIContextBuilder {
     this.ctx = ctx;
   }
 
-  async getInventoryWithVelocity(): Promise<ObjectWithVelocity[]> {
+  /**
+   * Request-scoped memo: velocity is derived from inventory_log sales and never
+   * changes within a single request, but it was being recomputed 3+ times per
+   * printer-click (queue regen, per-printer assign, days-of-cover). Caching the
+   * promise on `ctx` collapses those to one DB+forecast pass — a big win now that
+   * dev talks to remote D1 (every query is a network round-trip).
+   */
+  getInventoryWithVelocity(): Promise<ObjectWithVelocity[]> {
+    const cache = this.ctx as unknown as { _velocityPromise?: Promise<ObjectWithVelocity[]> };
+    if (!cache._velocityPromise) cache._velocityPromise = this.computeInventoryWithVelocity();
+    return cache._velocityPromise;
+  }
+
+  private async computeInventoryWithVelocity(): Promise<ObjectWithVelocity[]> {
     const drizzleDb = this.ctx.db;
     const inventoryRows = await drizzleDb.all<{ id: number; name: string; in_stock: number; min_threshold: number }>(sql`
       SELECT id, name, in_stock, min_threshold FROM objects WHERE workspace_id = ${this.ctx.workspaceId}

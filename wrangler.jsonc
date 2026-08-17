@@ -11,6 +11,10 @@
       // commands. Do NOT point this at a test DB; swap only at a deliberate cutover.
       "database_name": "printfarm",
       "database_id": "ccefd784-1193-4936-a093-e1a14eeffcb8",
+      // Allow `vite dev` to bind this REMOTE D1 when REMOTE_DB=true (the default
+      // for `bun run dev`). Only this binding goes remote; AI stays local (its
+      // remote preview session errors with CF 1031). See svelte.config.js.
+      "remote": true,
       // Staging DB ("printfarm") — used by preview deployments and `--remote
       // --preview` CLI commands. Migrated + seeded with test data.
       //"preview_database_id": "ccefd784-1193-4936-a093-e1a14eeffcb8",
