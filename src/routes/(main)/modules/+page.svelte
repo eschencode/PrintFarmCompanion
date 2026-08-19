@@ -8,6 +8,7 @@
   import { isDesktop } from '$lib/stores/desktop';
   import { resolveSpoolColor } from '$lib/utils/spoolColor';
   import BackToDashboard from '$lib/components/BackToDashboard.svelte';
+  import { confirmAsync } from '$lib/stores/confirmDialog';
 
   export let data: PageData;
 
@@ -243,7 +244,7 @@
   }
 
   async function deleteModule(module: any) {
-    if (!confirm(`Delete "${module.name}"?`)) return;
+    if (!(await confirmAsync(`Delete "${module.name}"?`))) return;
     const res = await fetch(`/api/print-modules?id=${module.id}`, { method: 'DELETE' });
     const result = await res.json() as any;
     if (result.success) {
