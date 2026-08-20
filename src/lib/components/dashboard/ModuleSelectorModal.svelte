@@ -85,7 +85,7 @@
           Saved Print Queue
         </h3>
         <div class="space-y-2">
-          {#each printer.suggested_queue as item, i}
+          {#each (printer.suggested_queue ?? []) as item, i}
             <div class="flex items-center justify-between text-sm">
               <span class="text-zinc-700 dark:text-zinc-300">
                 {i + 1}. {item.module_name}
@@ -94,7 +94,7 @@
                 {/if}
               </span>
               <span class="text-zinc-500">
-                {item.weight_of_print}g{#if item.priority === 'TOPUP'}<span class="ml-1 text-zinc-400 dark:text-zinc-600">· topup</span>{:else if item.days_left != null}<span class="ml-1 text-zinc-400 dark:text-zinc-600">· {item.days_left >= 365 ? '365+' : Math.round(item.days_left)}d left</span>{/if}
+                {item.weight_of_print}g{#if item.days_left != null}<span class="ml-1 text-zinc-400 dark:text-zinc-600">· {item.days_left >= 365 ? '365+' : Math.round(item.days_left)}d left</span>{/if}
               </span>
             </div>
           {/each}
@@ -172,6 +172,12 @@
                         <span class="text-zinc-500">Time:</span>
                         <span class="text-zinc-500">{formatTime(module.expected_time_minutes ?? 0)}</span>
                       </div>
+                      {#if module.days_until_stockout != null}
+                        <div class="flex justify-between items-center">
+                          <span class="text-zinc-500">Days left:</span>
+                          <span class="text-zinc-500 tabular-nums">{module.days_until_stockout >= 365 ? '365+' : Math.round(module.days_until_stockout)}d</span>
+                        </div>
+                      {/if}
                       {#if loadedSpool}
                         <div class="flex justify-between items-center pt-1 border-t border-zinc-200/60 dark:border-[#1a1a22]">
                           <span class="text-zinc-500">After print:</span>
@@ -297,6 +303,12 @@
                         <span class="text-zinc-500">Time:</span>
                         <span class="text-zinc-500">{formatTime(module.expected_time_minutes ?? 0)}</span>
                       </div>
+                      {#if module.days_until_stockout != null}
+                        <div class="flex justify-between items-center">
+                          <span class="text-zinc-500">Days left:</span>
+                          <span class="text-zinc-500 tabular-nums">{module.days_until_stockout >= 365 ? '365+' : Math.round(module.days_until_stockout)}d</span>
+                        </div>
+                      {/if}
                       {#if loadedSpool}
                         <div class="flex justify-between items-center pt-1 border-t border-zinc-200/60 dark:border-[#1a1a22]">
                           <span class="text-zinc-500">After print:</span>
@@ -392,8 +404,6 @@
             >
               {#if selectedModule && loadedSpool && (selectedModule.weight ?? 0) > loadedSpool.remaining_weight}
                 Start Print (Low Material)
-              {:else if selectedModule?.filename && printer?.printer_ip}
-                Start Print (Pi)
               {:else}
                 Start Print Job
               {/if}

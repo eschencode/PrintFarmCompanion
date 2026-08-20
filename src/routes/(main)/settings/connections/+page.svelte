@@ -1,9 +1,6 @@
 <script lang="ts">
-  import type { PageData } from './$types';
   import ConnectionsSection from '$lib/components/settings/ConnectionsSection.svelte';
   import AutoQueueSection from '$lib/components/settings/AutoQueueSection.svelte';
-
-  export let data: PageData;
 </script>
 
 <div class="min-h-screen p-6 sm:p-10">
@@ -21,7 +18,7 @@
     </div>
 
     <div class="space-y-4">
-      <ConnectionsSection printers={data.printers as any[]} />
+      <ConnectionsSection />
       <AutoQueueSection />
     </div>
 

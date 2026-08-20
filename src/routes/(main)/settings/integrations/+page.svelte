@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PageData, ActionData } from './$types';
   import { enhance, applyAction, deserialize } from '$app/forms';
+  import { confirmAsync } from '$lib/stores/confirmDialog';
 
   export let data: PageData;
   export let form: ActionData;
@@ -222,7 +223,11 @@
               <form method="POST" action="?/baselineShopify" class="mt-2" use:enhance={() => { return async ({ update }) => { await update({ reset: false }); }; }}>
                 <button
                   type="submit"
-                  onclick={(e) => { if (!confirm('Mark all current orders as synced WITHOUT deducting inventory? Do this once when first connecting an existing store.')) e.preventDefault(); }}
+                  onclick={(e) => {
+                    e.preventDefault();
+                    const form = e.currentTarget.closest('form');
+                    confirmAsync('Mark all current orders as synced WITHOUT deducting inventory? Do this once when first connecting an existing store.').then((ok) => { if (ok) form?.requestSubmit(); });
+                  }}
                   class="h-8 px-3 rounded-lg text-xs font-medium border border-amber-300 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/40 transition-colors"
                 >
                   Mark current orders as synced
@@ -468,7 +473,11 @@
                     <button
                       type="submit"
                       class="flex items-center gap-1 px-2 py-1 rounded-md text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors text-xs"
-                      onclick={(e) => { if (!confirm(`Delete mapping for SKU "${sku}"?`)) e.preventDefault(); }}
+                      onclick={(e) => {
+                        e.preventDefault();
+                        const form = e.currentTarget.closest('form');
+                        confirmAsync(`Delete mapping for SKU "${sku}"?`).then((ok) => { if (ok) form?.requestSubmit(); });
+                      }}
                       aria-label="Delete mapping for {sku}"
                     >
                       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>

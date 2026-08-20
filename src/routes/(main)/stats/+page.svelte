@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { enhance } from '$app/forms';
+  import { confirmAsync } from '$lib/stores/confirmDialog';
   import * as echarts from 'echarts';
   import TimeRangeSelector from '$lib/components/stats/TimeRangeSelector.svelte';
   import { selectedTimeRange, customFrom, customTo } from '$lib/stores/timeRange';
@@ -1004,9 +1005,9 @@
                             <button
                               type="submit"
                               on:click|stopPropagation={(e) => {
-                                if (!confirm(`Delete spool #${spool.id} (${spool.preset?.brand ?? ''} ${spool.preset?.material ?? ''})?`)) {
-                                  e.preventDefault();
-                                }
+                                e.preventDefault();
+                                const form = e.currentTarget.closest('form');
+                                confirmAsync(`Delete spool #${spool.id} (${spool.preset?.brand ?? ''} ${spool.preset?.material ?? ''})?`).then((ok) => { if (ok) form?.requestSubmit(); });
                               }}
                               disabled={isLoaded}
                               class="text-red-600 dark:text-red-400 hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"

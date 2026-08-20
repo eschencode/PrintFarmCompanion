@@ -3,25 +3,34 @@ import type { PrintQueueItem, QueueSpoolDemand, ServerResponse, InventoryPriorit
 import { sql } from 'drizzle-orm';
 import { getDb } from '../db';
 import { AIContextBuilder } from '../recomendation/context-builder';
-import { bucketPriority } from '../recomendation/forecast';
-import { getPrinterById, getLoadedSpools, addPrinterQueuedJob } from './printers';
+import { getPrinterById, getLoadedSpools } from './printers';
 import type { TenantContext } from './context';
-
-const PRIORITY_SCORES: Record<InventoryPriority, number> = {
-  CRITICAL: 100000,
-  HIGH: 10000,
-  MEDIUM: 1000,
-  LOW: 100,
-  VERY_LOW: 10,
-};
 
 // Safety bound on knapsack item count, mirrors the old per-printer knapsack.
 const MAX_COPIES_PER_ITEM = 200;
 
-// Days of stock to aim for. Drives the suggested quantity (deficit to reach it)
-// used by per-printer assignment. The queue itself always lists every selling
-// SKU ranked by days-of-cover.
-const COVER_TARGET_DAYS = 45;
+// The one knob: aim to keep this many days of stock. Items with fewer days of
+// cover are "demand" (quantity = deficit to reach this); items past it ride along
+// at quantity 0 and only ever get printed as spool-filling topup. Everything —
+// ordering, quantity, topup preference — is driven by days-till-stockout, so
+// there is no risk model and no min-threshold floor anymore.
+const COVER_TARGET_DAYS = 30;
+
+/** Display-only tier derived purely from days-of-cover (no risk model). Ranking
+ *  and knapsack scoring use the continuous days value directly, not this label. */
+function priorityFromDays(days: number): InventoryPriority {
+  if (days < 7) return 'CRITICAL';
+  if (days < 15) return 'HIGH';
+  if (days < 30) return 'MEDIUM';
+  if (days < 90) return 'LOW';
+  return 'VERY_LOW';
+}
+
+/** Knapsack urgency: higher = fewer days of cover. Bounded, positive, strictly
+ *  decreasing in days, so packing prefers the lowest-days items. */
+function urgencyScore(days: number): number {
+  return 1000 / (Math.max(0, days) + 1);
+}
 
 /**
  * Rebuild the `source='auto'` backlog from current demand and stock.
@@ -56,39 +65,47 @@ export async function regenerateGlobalQueue(ctx: TenantContext): Promise<{ updat
   const desired = inventory
     .map((item) => {
       const vel = item.daily_velocity;
-      const daysCover = vel > 0 ? item.in_stock / vel : Infinity;
-      const belowFloor = item.min_threshold > 0 && item.in_stock <= item.min_threshold;
-      const target = Math.max(item.min_threshold, Math.ceil(vel * COVER_TARGET_DAYS));
-      const deficit = Math.max(0, target - item.in_stock);
+      // Only things that actually sell have a stockout date to rank by.
+      if (vel <= 0) return null;
 
-      if (!(belowFloor || vel > 0)) return null;
+      const daysCover = item.in_stock / vel;
+      const target = Math.ceil(vel * COVER_TARGET_DAYS);
+      const deficit = Math.max(0, target - item.in_stock);
 
       const moduleId = moduleByObject.get(item.id) ?? null;
       const quantity = deficit;
-      const priority = bucketPriority(item);
-      const coverLabel = Number.isFinite(daysCover) ? `${Math.round(daysCover)}d cover` : 'no recent sales';
+      const priority = priorityFromDays(daysCover);
       return {
         objectId: item.id,
         moduleId,
         quantity,
         priority,
-        reason: `${priority} — ${coverLabel}, stock ${item.in_stock}/${target}, ${vel}/d`,
+        reason: `${Math.round(daysCover)}d cover, stock ${item.in_stock}/${target}, ${vel}/d`,
       };
     })
     .filter((d): d is NonNullable<typeof d> => d !== null);
 
+  // One D1 batch (single round-trip) of single-row upserts. A multi-row VALUES
+  // insert would blow past D1's ~100 bound-parameter cap once there are more than
+  // ~a dozen objects; batch() keeps each statement tiny while still round-tripping once.
   const now = Math.floor(Date.now() / 1000);
-  for (const d of desired) {
-    await drizzleDb.run(sql`
+  if (desired.length > 0) {
+    const upsertSql = `
       INSERT INTO print_queue (workspace_id, object_id, module_id, quantity, priority, reason, source, status, created_at, updated_at)
-      VALUES (${ctx.workspaceId}, ${d.objectId}, ${d.moduleId}, ${d.quantity}, ${d.priority}, ${d.reason}, 'auto', 'pending', ${now}, ${now})
+      VALUES (?, ?, ?, ?, ?, ?, 'auto', 'pending', ?, ?)
       ON CONFLICT(object_id, source) DO UPDATE SET
         module_id = excluded.module_id,
         quantity  = excluded.quantity,
         priority  = excluded.priority,
         reason    = excluded.reason,
-        updated_at = ${now}
-    `);
+        updated_at = ?`;
+    await ctx.d1.batch(
+      desired.map((d) =>
+        ctx.d1
+          .prepare(upsertSql)
+          .bind(ctx.workspaceId, d.objectId, d.moduleId, d.quantity, d.priority, d.reason, now, now, now),
+      ),
+    );
   }
 
   // Drop auto rows that are no longer relevant. Manual pins are never touched.
@@ -119,14 +136,15 @@ export async function regenerateGlobalQueue(ctx: TenantContext): Promise<{ updat
 export async function regenerateGlobalQueueIfStale(ctx: TenantContext, ttlSeconds = 3600): Promise<void> {
   try {
     const drizzleDb = ctx.db;
-    const row = await drizzleDb.get<{ newest: number | null; n: number }>(sql`
-      SELECT MAX(updated_at) as newest, COUNT(*) as n FROM print_queue WHERE source = 'auto' AND workspace_id = ${ctx.workspaceId}
-    `);
+    const [row, logRow] = await Promise.all([
+      drizzleDb.get<{ newest: number | null; n: number }>(sql`
+        SELECT MAX(updated_at) as newest, COUNT(*) as n FROM print_queue WHERE source = 'auto' AND workspace_id = ${ctx.workspaceId}
+      `),
+      drizzleDb.get<{ newest: number | null }>(sql`
+        SELECT MAX(created_at) as newest FROM inventory_log WHERE workspace_id = ${ctx.workspaceId}
+      `),
+    ]);
     const queueNewest = row?.newest ?? 0;
-
-    const logRow = await drizzleDb.get<{ newest: number | null }>(sql`
-      SELECT MAX(created_at) as newest FROM inventory_log WHERE workspace_id = ${ctx.workspaceId}
-    `);
     const inventoryNewest = logRow?.newest ?? 0;
 
     const now = Math.floor(Date.now() / 1000);
@@ -157,10 +175,11 @@ export async function getGlobalQueue(ctx: TenantContext): Promise<PrintQueueItem
     status: 'pending' | 'assigned' | 'done';
     assigned_printer_id: number | null;
     in_stock: number;
+    objects_per_print: number | null;
   }>(sql`
     SELECT pq.id, pq.object_id, o.name as object_name, pq.module_id, pm.name as module_name,
            pq.quantity, pq.priority, pq.reason, pq.source, pq.status, pq.assigned_printer_id,
-           o.in_stock
+           o.in_stock, pm.objects_per_print
     FROM print_queue pq
     JOIN objects o ON pq.object_id = o.id
     LEFT JOIN print_modules pm ON pq.module_id = pm.id
@@ -182,14 +201,11 @@ export async function getGlobalQueue(ctx: TenantContext): Promise<PrintQueueItem
     } satisfies PrintQueueItem;
   });
 
-  // Canonical ranking: most-worth-printing first = lowest days-of-cover. Tier
-  // and quantity only break ties (with deep stock everything is one tier, so
-  // cover is what actually discriminates relevance). Manual pins sort ahead.
+  // Canonical ranking: purely lowest days-of-cover first. Manual pins sort ahead
+  // (deliberate user override); quantity only breaks exact ties.
   items.sort((a, b) => {
     if (a.source !== b.source) return a.source === 'manual' ? -1 : 1;
     if (a.days_until_stockout !== b.days_until_stockout) return a.days_until_stockout - b.days_until_stockout;
-    const tier = PRIORITY_SCORES[b.priority] - PRIORITY_SCORES[a.priority];
-    if (tier !== 0) return tier;
     return b.quantity - a.quantity;
   });
 
@@ -250,35 +266,39 @@ export async function removeQueueItem(ctx: TenantContext, id: number): Promise<S
  */
 export async function assignQueueToPrinter(ctx: TenantContext, printerId: number): Promise<{ assigned: number }> {
   const drizzleDb = ctx.db;
-  const printer = await getPrinterById(ctx, printerId);
+
+  // All independent reads in parallel — collapses five sequential round-trips
+  // (the dominant per-click cost on remote D1) into one batch.
+  const [printer, loadedSlots, rows, slotRows, inv] = await Promise.all([
+    getPrinterById(ctx, printerId),
+    getLoadedSpools(ctx, printerId),
+    drizzleDb.all<{
+      queue_id: number;
+      object_id: number;
+      module_id: number | null;
+      quantity: number;
+      priority: InventoryPriority;
+      printer_preset_id: number | null;
+      module_weight: number | null;
+    }>(sql`
+      SELECT pq.id as queue_id, pq.object_id, pq.module_id, pq.quantity, pq.priority,
+             pm.printer_preset_id, pm.weight as module_weight
+      FROM print_queue pq
+      JOIN print_modules pm ON pq.module_id = pm.id
+      WHERE pq.status != 'done' AND pq.workspace_id = ${ctx.workspaceId}
+    `),
+    drizzleDb.all<{
+      module_id: number;
+      slot_index: number;
+      spool_preset_id: number | null;
+      weight: number | null;
+    }>(sql`SELECT module_id, slot_index, spool_preset_id, weight FROM module_filament_slots WHERE workspace_id = ${ctx.workspaceId}`),
+    new AIContextBuilder(ctx).getInventoryWithVelocity(),
+  ]);
   if (!printer) return { assigned: 0 };
 
-  const loadedSlots = await getLoadedSpools(ctx, printerId);
   const loadedByIndex = new Map(loadedSlots.map((s) => [s.slot_index, s.spool]));
   if (!loadedSlots.some((s) => s.spool_id)) return { assigned: 0 };
-
-  const rows = await drizzleDb.all<{
-    queue_id: number;
-    object_id: number;
-    module_id: number | null;
-    quantity: number;
-    priority: InventoryPriority;
-    printer_preset_id: number | null;
-    module_weight: number | null;
-  }>(sql`
-    SELECT pq.id as queue_id, pq.object_id, pq.module_id, pq.quantity, pq.priority,
-           pm.printer_preset_id, pm.weight as module_weight
-    FROM print_queue pq
-    JOIN print_modules pm ON pq.module_id = pm.id
-    WHERE pq.status != 'done' AND pq.workspace_id = ${ctx.workspaceId}
-  `);
-
-  const slotRows = await drizzleDb.all<{
-    module_id: number;
-    slot_index: number;
-    spool_preset_id: number | null;
-    weight: number | null;
-  }>(sql`SELECT module_id, slot_index, spool_preset_id, weight FROM module_filament_slots WHERE workspace_id = ${ctx.workspaceId}`);
 
   const slotsByModule = new Map<number, typeof slotRows>();
   for (const r of slotRows ?? []) {
@@ -287,7 +307,11 @@ export async function assignQueueToPrinter(ctx: TenantContext, printerId: number
     slotsByModule.set(r.module_id, arr);
   }
 
-  type Candidate = { queueId: number; moduleId: number; weight: number; priority: InventoryPriority };
+  // Live days-of-cover per object — the sole driver of needed/topup scoring
+  // (inv is fetched in the parallel batch above; velocity is request-memoized).
+  const daysByObject = new Map(inv.map((i) => [i.id, i.days_until_stockout]));
+
+  type Candidate = { queueId: number; moduleId: number; weight: number; priority: InventoryPriority; days: number };
   const candidates: Candidate[] = [];
 
   for (const row of rows ?? []) {
@@ -320,7 +344,13 @@ export async function assignQueueToPrinter(ctx: TenantContext, printerId: number
     }
     if (!compatible || bottleneckWeight <= 0) continue;
 
-    candidates.push({ queueId: row.queue_id, moduleId: row.module_id, weight: Math.round(bottleneckWeight), priority: row.priority });
+    candidates.push({
+      queueId: row.queue_id,
+      moduleId: row.module_id,
+      weight: Math.round(bottleneckWeight),
+      priority: row.priority,
+      days: daysByObject.get(row.object_id) ?? 999,
+    });
   }
 
   // Capacity = the loaded spool with the least headroom across all candidates'
@@ -336,22 +366,20 @@ export async function assignQueueToPrinter(ctx: TenantContext, printerId: number
   const unrolled: UnrolledItem[] = [];
   const queueQuantity = new Map((rows ?? []).map((r) => [r.queue_id, r.quantity]));
 
-  // Each candidate contributes (a) "needed" copies up to its queue quantity,
-  // scored by priority, then (b) "filler" copies up to what fits, scored just
-  // above zero so they only ever claim leftover spool weight — never displacing
-  // real demand. This fills the spool to minimize waste / keep the printer busy
-  // once everything needed is queued. Filler ranks by the item's own tier, so
-  // surplus space goes to the next-most-relevant SKU.
+  // Each candidate contributes (a) "needed" copies up to its queue quantity and
+  // (b) "filler" copies up to what fits. Both are scored by days-till-stockout
+  // (fewer days = higher urgency), but needed copies carry a large base so they
+  // always outrank any filler and are never displaced by it. All scores are
+  // positive, so the knapsack still fills the spool as full as it can — and among
+  // filler options it prefers the lowest-days item (the next-most-needed).
+  const NEEDED_BASE = 1e6;
   for (const c of candidates) {
-    const baseScore = PRIORITY_SCORES[c.priority] || 0;
-    const fillBonus = (c.weight / capacity) * baseScore * 0.4;
+    const urgency = urgencyScore(c.days);
     const needed = Math.min(queueQuantity.get(c.queueId) ?? 1, MAX_COPIES_PER_ITEM);
     const maxFit = Math.min(Math.floor(capacity / c.weight), MAX_COPIES_PER_ITEM);
     for (let k = 0; k < maxFit; k++) {
       const filler = k >= needed;
-      // Filler score is a tiny positive (< any real VERY_LOW=10 copy) nudged by
-      // tier so faster sellers win leftover space.
-      const score = filler ? 0.001 + baseScore * 1e-6 : baseScore + fillBonus;
+      const score = filler ? urgency : NEEDED_BASE + urgency;
       unrolled.push({ candidate: c, score, filler });
     }
   }
@@ -378,19 +406,32 @@ export async function assignQueueToPrinter(ctx: TenantContext, printerId: number
     chosenCopies.push(from[w]!.item);
     w = from[w]!.prevWeight;
   }
-  // Needed prints first (by tier), then filler (by tier).
+  // Needed prints first, then filler — each ordered by fewest days of cover.
   chosenCopies.sort((a, b) => {
     if (a.filler !== b.filler) return a.filler ? 1 : -1;
-    return PRIORITY_SCORES[b.candidate.priority] - PRIORITY_SCORES[a.candidate.priority];
+    return a.candidate.days - b.candidate.days;
   });
 
   await drizzleDb.run(sql`DELETE FROM printer_queued_jobs WHERE printer_id = ${printerId} AND is_completed = 0 AND workspace_id = ${ctx.workspaceId}`);
 
+  // One D1 batch of single-row inserts (single round-trip, no bound-param cap)
+  // instead of N sequential awaited inserts — the old loop was the main per-click
+  // cost against remote D1.
   const assignedQueueIds = new Set<number>();
-  for (let i = 0; i < chosenCopies.length; i++) {
-    const { candidate: c, filler } = chosenCopies[i];
-    await addPrinterQueuedJob(ctx, { printerId, moduleId: c.moduleId, reason: filler ? 'TOPUP' : c.priority, sortOrder: i });
-    assignedQueueIds.add(c.queueId);
+  const now = Math.floor(Date.now() / 1000);
+  if (chosenCopies.length > 0) {
+    const insertSql = `
+      INSERT INTO printer_queued_jobs (workspace_id, printer_id, module_id, reason, sort_order, is_completed, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?)`;
+    await ctx.d1.batch(
+      chosenCopies.map((cc, i) => {
+        assignedQueueIds.add(cc.candidate.queueId);
+        const reason = cc.filler ? 'TOPUP' : cc.candidate.priority;
+        return ctx.d1
+          .prepare(insertSql)
+          .bind(ctx.workspaceId, printerId, cc.candidate.moduleId, reason, i, now, now);
+      }),
+    );
   }
 
   if (assignedQueueIds.size > 0) {

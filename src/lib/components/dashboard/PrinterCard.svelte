@@ -5,24 +5,29 @@
     import { getActivePrintJob } from "$lib/utils/printerData";
     import { resolveSpoolColor } from "$lib/utils/spoolColor";
     import { decodeHms } from "$lib/utils/hms";
+    import { decodePrintError } from "$lib/utils/printError";
     import {
         printingEffect,
         stateColors,
         hexToRgb,
     } from "$lib/stores/dashboardPrefs";
+    import { directPrinterEnabled } from "$lib/stores/connectionToggles";
+    import { isDesktop } from "$lib/stores/desktop";
     import SpoolGauge from "$lib/components/dashboard/SpoolGauge.svelte";
     import type {
         DashboardPrinter,
         PrintModuleFull,
         PrintJobFull,
-        PiStatus,
+        LiveStatus,
         DetectedExternalPrint,
     } from "$lib/types";
 
     /** The printer to display. Must be defined — caller guards against undefined. */
     export let printer: DashboardPrinter;
     /** Live Pi/MQTT status for this printer, if available. */
-    export let piLive: PiStatus | undefined;
+    export let live: LiveStatus | undefined;
+    /** Whether this printer's direct MQTT connection is currently up. */
+    export let directConnected: boolean = false;
     export let liveIsStarting: boolean;
     export let activePrintJobs: PrintJobFull[];
     export let printModules: PrintModuleFull[];
@@ -38,35 +43,86 @@
     // A live frame that's effectively done (final layer, no time left, ~100%).
     // Some Bambu firmware sticks at RUNNING 99% forever instead of emitting FINISH.
     $: liveDone =
-        !!piLive &&
-        piLive.progress >= 99 &&
-        piLive.total_layer_num > 0 &&
-        piLive.layer_num >= piLive.total_layer_num &&
-        (piLive.remaining_time ?? 0) === 0;
+        !!live &&
+        live.progress >= 99 &&
+        live.total_layer_num > 0 &&
+        live.layer_num >= live.total_layer_num &&
+        (live.remaining_time ?? 0) === 0;
     $: hasActiveJob = !!getActivePrintJob(Number(printer.id), activePrintJobs);
     // A frame the Pi hasn't refreshed in >60s is stale — the monitor likely died,
     // so a cached RUNNING must not keep masquerading as a live print.
     $: stale =
-        !!piLive?.updated_at && now - piLive.updated_at * 1000 > 60_000;
+        !!live?.updated_at && now - live.updated_at * 1000 > 60_000;
     $: liveIsPrinting =
-        !!piLive &&
+        !!live &&
         !stale &&
-        ["RUNNING", "PREPARE", "PAUSE"].includes(piLive.gcode_state) &&
+        ["RUNNING", "PREPARE", "PAUSE"].includes(live.gcode_state) &&
         // Don't treat a stale "done" frame as printing once the job is gone.
         !(liveDone && !hasActiveJob);
 
+    // ── Connection indicator ─────────────────────────────────────────────────
+    // Direct MQTT (desktop, beta) is the only live transport. Without it the
+    // printer runs standalone and we show no indicator.
+    $: wantsLive =
+        $directPrinterEnabled &&
+        $isDesktop &&
+        !!printer.printer_ip &&
+        !!printer.printer_serial &&
+        !!printer.printer_access_code;
+    // Transport liveness from last_seen (local receive time), not the printer's
+    // frame time — this is "did we hear from the transport", not print progress.
+    $: sinceSeen = live?.last_seen ? now - live.last_seen * 1000 : Infinity;
+    // Signal bars: full when the MQTT link is up and we got a frame in the last
+    // 60s; fewer when connected but the last frame is older; "no connection" when
+    // configured for direct control but the link is down.
+    $: connState = !wantsLive
+        ? "none"
+        : !directConnected
+          ? "offline"
+          : sinceSeen < 60_000
+            ? "live"
+            : "stale";
+    $: connLabel =
+        connState === "live"
+            ? "Connected · live (updated <60s ago)"
+            : connState === "stale"
+              ? "Connected · no update in over a minute"
+              : "No connection to printer";
+
     // Active printer health warnings (HMS). Empty unless the printer is reporting issues.
-    $: hmsAlerts = decodeHms(piLive?.hms).filter((d) => d.severity !== "info");
+    $: hmsAlerts = decodeHms(live?.hms).filter((d) => d.severity !== "info");
     $: topAlert = hmsAlerts[0];
-    // A serious/fatal alert puts the card into a visible error state (red ring).
-    $: hasError = hmsAlerts.some((d) => d.severity !== "common");
+    // Bambu `print_error` — only treated as active while the printer isn't idle,
+    // so a leftover code on an idle printer doesn't badge every card.
+    $: printError = decodePrintError(live?.error_code);
+    $: printErrorActive = !!printError && !!live && live.gcode_state !== "IDLE";
+    // A serious/fatal HMS alert OR an active print error puts the card into a
+    // visible error state (red ring + badge).
+    $: hasError =
+        hmsAlerts.some((d) => d.severity !== "common") || printErrorActive;
+
+    // Do we have a current (non-stale) live frame from the local network?
+    $: liveFresh = !!live && !stale;
 
     // Single source of truth for the card's visual status — drives the dot and tint.
+    // When connected over the local network, the live printer state wins so the
+    // dashboard reflects reality (e.g. a printer that's actually idle no longer
+    // shows the "printing" tint just because the DB job hasn't been reconciled).
+    // DB overrides stay on top for app-level states the printer can't report:
+    //   inactive = user marked it broken; finished = a print is awaiting confirm.
     $: cardStatus = liveIsStarting
         ? "starting"
-        : liveIsPrinting || printer.status === "printing"
-          ? "printing"
-          : printer.status; // 'finished' | 'idle' | 'inactive'
+        : printer.status === "inactive"
+          ? "inactive"
+          : liveIsPrinting
+            ? "printing"
+            : printer.status === "finished"
+              ? "finished"
+              : liveFresh
+                ? "idle" // live-connected and not printing → reflect idle
+                : printer.status === "printing"
+                  ? "printing"
+                  : printer.status; // no live frame → fall back to DB status
 
     // Per-status colour config (customisable in settings). Drives the tint/effect.
     $: stateCfg = ($stateColors as Record<string, { color: string; enabled: boolean }>)[cardStatus];
@@ -78,8 +134,8 @@
     $: printProgress =
         cardStatus !== "printing"
             ? 0
-            : piLive
-              ? Math.min(100, piLive.progress)
+            : live
+              ? Math.min(100, live.progress)
               : (() => {
                     const job = getActivePrintJob(
                         Number(printer.id),
@@ -167,18 +223,22 @@
          rounded-xl p-3 card-lift card-shine
          flex flex-col items-center justify-center overflow-hidden min-h-0"
 >
-    <!-- Health alert badge — shown when the printer reports an HMS warning/error. -->
-    {#if topAlert}
+    <!-- Health alert badge — shown for an HMS warning/error or an active print error. -->
+    {#if topAlert || printErrorActive}
+        {@const amber = !!topAlert && topAlert.severity === "common" && !printErrorActive}
         <div
             class="absolute top-1.5 right-1.5 z-[2] flex items-center gap-1 rounded-full pl-1 pr-1.5 py-0.5
-                   {topAlert.severity === 'common'
+                   {amber
                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
                        : 'bg-red-500/15 text-red-600 dark:text-red-400'}"
-            title={hmsAlerts.map((d) => d.text).join('\n')}
+            title={[
+                ...hmsAlerts.map((d) => d.text),
+                ...(printErrorActive && printError ? [printError.text] : []),
+            ].join("\n")}
         >
             <span class="relative flex h-1.5 w-1.5">
-                <span class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping {topAlert.severity === 'common' ? 'bg-amber-500' : 'bg-red-500'}"></span>
-                <span class="relative inline-flex h-1.5 w-1.5 rounded-full {topAlert.severity === 'common' ? 'bg-amber-500' : 'bg-red-500'}"></span>
+                <span class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping {amber ? 'bg-amber-500' : 'bg-red-500'}"></span>
+                <span class="relative inline-flex h-1.5 w-1.5 rounded-full {amber ? 'bg-amber-500' : 'bg-red-500'}"></span>
             </span>
             {#if hmsAlerts.length > 1}
                 <span class="text-[9px] font-bold tabular-nums leading-none">{hmsAlerts.length}</span>
@@ -294,11 +354,34 @@
     <div
         class="relative z-[1] w-full text-center border-t border-zinc-200/60 dark:border-[#1a1a22] pt-2 mt-2 min-h-0 flex-shrink-0"
     >
-        <h3
-            class="text-[clamp(0.55rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-100 truncate px-1 tracking-tight"
-        >
-            {printer.name}
-        </h3>
+        <div class="flex items-center justify-center gap-1.5 px-1 min-w-0">
+            <h3
+                class="text-[clamp(0.55rem,2vw,0.875rem)] font-medium text-zinc-900 dark:text-zinc-100 truncate tracking-tight"
+            >
+                {printer.name}
+            </h3>
+            {#if connState !== "none"}
+                <!-- Minimal monochrome signal bars: live = 3 (full), stale = 2,
+                     offline = 0 (all faint = no connection). -->
+                <svg
+                    viewBox="0 0 12 10"
+                    class="w-2.5 h-2.5 shrink-0 {connState === 'offline'
+                        ? 'text-zinc-300 dark:text-zinc-600'
+                        : 'text-zinc-400 dark:text-zinc-500'}"
+                    fill="currentColor"
+                    aria-label={connLabel}
+                    role="img"
+                >
+                    <title>{connLabel}</title>
+                    <rect x="0" y="6" width="3" height="4" rx="0.5"
+                          opacity={connState === "offline" ? "0.25" : "0.9"} />
+                    <rect x="4.5" y="3" width="3" height="7" rx="0.5"
+                          opacity={connState === "offline" ? "0.25" : "0.9"} />
+                    <rect x="9" y="0" width="3" height="10" rx="0.5"
+                          opacity={connState === "live" ? "0.9" : "0.25"} />
+                </svg>
+            {/if}
+        </div>
 
         <!-- Reserved progress area — fixed min-height keeps the name at a
              consistent height across idle / printing / finished cards. -->
@@ -321,7 +404,7 @@
                     {qPos === 0 ? "Sending to printer…" : "In queue…"}
                 </p>
             </div>
-        {:else if printer.status === "finished"}
+        {:else if cardStatus === "finished"}
             <div class="px-1">
                 <div
                     class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-1 overflow-hidden"
@@ -336,14 +419,14 @@
                     100%
                 </p>
             </div>
-        {:else if liveIsPrinting || printer.status === "printing"}
+        {:else if cardStatus === "printing"}
             {@const activePrint = getActivePrintJob(
                 Number(printer.id),
                 activePrintJobs,
             )}
             {#if activePrint}
-                {@const progress = piLive
-                    ? piLive.progress
+                {@const progress = live
+                    ? live.progress
                     : getProgress(
                           Number(activePrint.start_time),
                           Number((activePrint as any).expected_time_minutes),
@@ -363,17 +446,17 @@
                     <p
                         class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-400 dark:text-zinc-500 mt-1 tabular-nums"
                     >
-                        {#if piLive}{piLive.label}{:else}{progress}%{/if}
+                        {#if live}{live.label}{:else}{progress}%{/if}
                     </p>
                 </div>
-            {:else if piLive}
+            {:else if live}
                 <!-- External / un-reconciled print: show whatever Pi gives us -->
                 <div class="px-1">
-                    {#if piLive.subtask_name}
+                    {#if live.subtask_name}
                         <p
                             class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-500 dark:text-zinc-400 truncate mb-1"
                         >
-                            {piLive.subtask_name}
+                            {live.subtask_name}
                         </p>
                     {/if}
                     <div
@@ -381,13 +464,13 @@
                     >
                         <div
                             class="bg-blue-500 h-full rounded-full transition-all duration-500 progress-shimmer"
-                            style="width: {Math.min(piLive.progress, 100)}%"
+                            style="width: {Math.min(live.progress, 100)}%"
                         ></div>
                     </div>
                     <p
                         class="text-[clamp(0.35rem,1.2vw,0.6rem)] text-zinc-400 dark:text-zinc-500 mt-1 tabular-nums"
                     >
-                        {piLive.label}
+                        {live.label}
                     </p>
                 </div>
             {/if}

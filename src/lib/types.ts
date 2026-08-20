@@ -201,6 +201,9 @@ export interface PrintModuleFull extends PrintModule {
   filament_slots?: (ModuleFilamentSlot & { preset?: SpoolPreset | null })[];
   /** Spool preset required at slot 0 — joined from module_filament_slots. */
   default_spool_preset_id?: number | null;
+  /** Days of cover left for this module's produced object (null if no object /
+   *  no sales velocity). Attached by the dashboard loader for the picker UI. */
+  days_until_stockout?: number | null;
 }
 
 // ============================================================================
@@ -408,16 +411,17 @@ export interface NewGridPreset {
 }
 
 // ============================================================================
-// PI / LIVE STATUS TYPES (not persisted — live MQTT data)
+// LIVE STATUS TYPES (not persisted — live MQTT data)
 // ============================================================================
 
-/** How a printer sends print commands and receives status updates. */
-export type TransportMode = 'auto' | 'direct' | 'pi';
+/** How a printer sends print commands and receives status updates.
+ *  'auto' = direct when configured (desktop), otherwise standalone. */
+export type TransportMode = 'auto' | 'direct';
 
 /**
- * A print the Pi reports on a printer we aren't tracking (started on the
- * machine's touchscreen, SD card, etc.). Surfaced inline on the printer card
- * for the user to adopt or dismiss. Produced by api/pi/status/+server.ts.
+ * A print running on a printer we aren't tracking (started on the machine's
+ * touchscreen, SD card, etc.). Detected from direct MQTT frames and surfaced
+ * inline on the printer card for the user to adopt or dismiss.
  */
 export interface DetectedExternalPrint {
   printer_id: number;
@@ -428,10 +432,10 @@ export interface DetectedExternalPrint {
 }
 
 /**
- * Live status snapshot for one printer, received via Pi polling or Tauri MQTT events.
- * Keyed by printer serial in the dashboard's piStatusBySerial map.
+ * Live status snapshot for one printer, received via direct Tauri MQTT events.
+ * Keyed by printer serial in the dashboard's liveBySerial map.
  */
-export interface PiStatus {
+export interface LiveStatus {
   gcode_state: string;
   progress: number;
   layer_num: number;
@@ -446,6 +450,8 @@ export interface PiStatus {
   gcode_file?: string | null;
   /** Raw Bambu Health-Management-System entries (decode via $lib/utils/hms). */
   hms?: HmsEntry[] | null;
+  /** Current/last print error code (decode via $lib/utils/printError). 0 = none. */
+  error_code?: number | null;
   // Temps + targets
   nozzle_target_temp?: number | null;
   bed_target_temp?: number | null;
@@ -459,9 +465,15 @@ export interface PiStatus {
   speed_mag?: number | null;
   // Connectivity
   wifi_signal?: string | null;
-  /** Unix secs when the Pi last received this frame. Used to flag stale frames
-   *  (a cached RUNNING from a dead monitor must not masquerade as live). */
+  /** Unix secs (printer frame time) when this frame was produced. Used to flag
+   *  stale frames (a cached RUNNING from a dead monitor must not masquerade as live). */
   updated_at?: number | null;
+  /** Which transport delivered this frame. Drives the connection indicator. */
+  source?: "direct" | null;
+  /** Unix secs (local clock) when WE last received any frame over the transport.
+   *  Distinct from updated_at (the printer's frame time): this is transport
+   *  liveness, used by the dashboard connection indicator. */
+  last_seen?: number | null;
 }
 
 /** Raw HMS entry as the printer reports it. `attr`/`code` combine into a lookup code. */
@@ -535,6 +547,9 @@ export interface PrintQueueItem {
   daily_velocity: number;
   days_until_stockout: number;
   stockout_risk: number;
+  // Units produced per run of the preferred module — turns a unit deficit
+  // (quantity) into the number of module runs to schedule.
+  objects_per_print?: number | null;
 }
 
 /** Spare-part catalog row for broken-printer buy suggestions (kind='part' catalog_items). */

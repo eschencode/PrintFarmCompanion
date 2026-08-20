@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- macOS Local Network privacy: shown in the permission prompt and in
+	     System Settings → Privacy & Security → Local Network. Required for the
+	     app to reach Bambu printers on the LAN (direct MQTT + FTPS). -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Print Farm Companion connects directly to your Bambu Lab printers on your local network to show live status, upload files, and start prints.</string>
+</dict>
+</plist>

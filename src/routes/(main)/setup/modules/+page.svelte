@@ -1,11 +1,68 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
+  import { onMount } from "svelte";
   import ThreeMfUpload from "$lib/components/ThreeMfUpload.svelte";
   let { data, form } = $props();
   let submitting = $state(false);
   let newObject = $state(false);
   let manualMode = $state(false);
+
+  // ── Re-attach: which modules are missing their local file (desktop only) ──
+  // The local copy lives at <appdata>/modules/<id>_<filename>. On desktop we ask
+  // Rust which are missing and offer a re-attach picker. See docs/local-file-flow.md.
+  let missingIds = $state<Set<number>>(new Set());
+  let attaching = $state<number | null>(null);
+  let attachTargetId: number | null = null;
+  let attachInput = $state<HTMLInputElement | null>(null);
+
+  const derivedName = (m: { id: number; filename: string }) => `${m.id}_${m.filename}`;
+
+  async function refreshMissing() {
+    if (!window.__IS_DESKTOP__) return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const names = data.modules.map(derivedName);
+      const missing = await invoke<string[]>("check_module_files", { names });
+      const missingSet = new Set(missing);
+      missingIds = new Set(
+        data.modules.filter((m) => missingSet.has(derivedName(m))).map((m) => Number(m.id)),
+      );
+    } catch (e) {
+      console.warn("[Desktop] check_module_files failed:", e);
+    }
+  }
+
+  onMount(refreshMissing);
+
+  function pickFileFor(id: number) {
+    attachTargetId = id;
+    attachInput?.click();
+  }
+
+  async function onAttachFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    const id = attachTargetId;
+    input.value = "";
+    if (!file || id == null) return;
+    const module = data.modules.find((m) => Number(m.id) === id);
+    if (!module) return;
+    attaching = id;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await invoke<string>("save_module_file", {
+        fileName: derivedName(module),
+        data: Array.from(bytes),
+      });
+      missingIds = new Set([...missingIds].filter((x) => x !== id));
+    } catch (err) {
+      console.warn("[Desktop] re-attach failed:", err);
+    } finally {
+      attaching = null;
+    }
+  }
 
   const inputClass =
     "mt-1.5 w-full rounded-lg bg-white dark:bg-[#0f0f11] border border-zinc-200 dark:border-[#232329] px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 focus:border-zinc-500 focus:outline-none focus:ring-0 transition-colors";
@@ -40,17 +97,38 @@
 {#if data.modules.length > 0}
   <div class="mb-6 space-y-2">
     {#each data.modules as module}
-      <div class="flex items-center gap-3 bg-zinc-50 dark:bg-[#0c0c0f] border border-zinc-200/80 dark:border-[#1a1a22] rounded-xl px-4 py-3">
-        <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
-        <div class="flex-1">
+      {@const isMissing = missingIds.has(Number(module.id))}
+      <div class="flex items-center gap-3 bg-zinc-50 dark:bg-[#0c0c0f] border rounded-xl px-4 py-3 {isMissing ? 'border-amber-300/70 dark:border-amber-800/50' : 'border-zinc-200/80 dark:border-[#1a1a22]'}">
+        <div class="w-2 h-2 rounded-full shrink-0 {isMissing ? 'bg-amber-500' : 'bg-emerald-500'}"></div>
+        <div class="flex-1 min-w-0">
           <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{module.name}</p>
           <p class="text-xs text-zinc-400">
             {module.expected_time_minutes} min · {module.weight} g · {module.objects_per_print}× per print
           </p>
+          {#if isMissing}
+            <p class="text-[11px] text-amber-600 dark:text-amber-400 mt-1">File not on this machine — re-attach to start prints.</p>
+          {/if}
         </div>
+        {#if isMissing}
+          <button
+            type="button"
+            onclick={() => pickFileFor(Number(module.id))}
+            disabled={attaching === Number(module.id)}
+            class="shrink-0 rounded-lg border border-amber-300 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 text-xs font-medium px-3 py-1.5 hover:bg-amber-50 dark:hover:bg-amber-950/30 disabled:opacity-50 transition-colors"
+          >
+            {attaching === Number(module.id) ? "Attaching…" : "Re-attach file"}
+          </button>
+        {/if}
       </div>
     {/each}
   </div>
+  <input
+    bind:this={attachInput}
+    onchange={onAttachFile}
+    type="file"
+    accept=".3mf,.gcode.3mf"
+    class="hidden"
+  />
 {/if}
 
 <!-- Primary path: upload a sliced file, values extracted automatically -->
