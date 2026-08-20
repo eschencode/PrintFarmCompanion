@@ -115,27 +115,28 @@ export async function generateAndSaveSuggestedQueue(
   await assignQueueToPrinter(ctx, printerId);
 
   const drizzleDb = ctx.db;
-  const rows = await drizzleDb.all<{
-    module_id: number;
-    module_name: string;
-    object_id: number | null;
-    object_name: string | null;
-    reason: InventoryPriority | 'TOPUP';
-    weight: number;
-  }>(sql`
-    SELECT pqj.module_id, pm.name as module_name, pm.object_id, o.name as object_name, pqj.reason, pm.weight
-    FROM printer_queued_jobs pqj
-    JOIN print_modules pm ON pqj.module_id = pm.id
-    LEFT JOIN objects o ON pm.object_id = o.id
-    WHERE pqj.printer_id = ${printerId} AND pqj.is_completed = 0 AND pqj.workspace_id = ${ctx.workspaceId}
-    ORDER BY pqj.sort_order
-  `);
-
+  // Independent post-assignment reads in parallel (inv is request-memoized).
+  const [rows, inv, loadedSlots] = await Promise.all([
+    drizzleDb.all<{
+      module_id: number;
+      module_name: string;
+      object_id: number | null;
+      object_name: string | null;
+      reason: InventoryPriority | 'TOPUP';
+      weight: number;
+    }>(sql`
+      SELECT pqj.module_id, pm.name as module_name, pm.object_id, o.name as object_name, pqj.reason, pm.weight
+      FROM printer_queued_jobs pqj
+      JOIN print_modules pm ON pqj.module_id = pm.id
+      LEFT JOIN objects o ON pm.object_id = o.id
+      WHERE pqj.printer_id = ${printerId} AND pqj.is_completed = 0 AND pqj.workspace_id = ${ctx.workspaceId}
+      ORDER BY pqj.sort_order
+    `),
+    new AIContextBuilder(ctx).getInventoryWithVelocity(),
+    getLoadedSpools(ctx, printerId),
+  ]);
   // Live days-of-cover per object, so the card can show "Xd left" on needed prints.
-  const inv = await new AIContextBuilder(ctx).getInventoryWithVelocity();
   const coverByObject = new Map(inv.map((i) => [i.id, i.days_until_stockout]));
-
-  const loadedSlots = await getLoadedSpools(ctx, printerId);
   let runningWeight = Math.min(
     ...loadedSlots.filter((s) => s.spool_id).map((s) => s.spool?.remaining_weight ?? 0),
     Infinity

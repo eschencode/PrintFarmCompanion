@@ -213,11 +213,10 @@ pub async fn subscribe_printer(
         }
     });
 
-    let _ = app.emit(
-        "printer-connected",
-        PrinterConnectionEvent { printer_id, serial },
-    );
-
+    // Note: we do NOT emit "printer-connected" here — that would be premature
+    // (the TCP/MQTT link isn't established yet). The event loop emits it on the
+    // actual ConnAck, so the connection indicator only shows "connected" for
+    // printers we can genuinely reach.
     Ok(())
 }
 
@@ -355,11 +354,20 @@ async fn run_eventloop(
     // Incremental state — merge like Pi's BambuMQTTClient
     let mut last: Option<PrinterStatusEvent> = None;
     let mut backoff = std::time::Duration::from_secs(1);
+    // Diagnostics: how many report frames we've seen / emitted this connection.
+    let mut frames_seen: u64 = 0;
+    let mut frames_emitted: u64 = 0;
+    // Log a disconnect only once per outage (not on every backoff retry) so an
+    // unreachable printer doesn't flood the log.
+    let mut disconnect_logged = false;
 
     loop {
         match eventloop.poll().await {
             Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(_))) => {
                 backoff = std::time::Duration::from_secs(1);
+                frames_seen = 0;
+                frames_emitted = 0;
+                disconnect_logged = false;
                 logs::log("info", "MQTT", "Connected", &serial, &name);
                 // (Re)subscribe + request a full state push on every (re)connect —
                 // Bambu doesn't persist sessions, so subscriptions are lost on drop.
@@ -377,17 +385,61 @@ async fn run_eventloop(
                     PrinterConnectionEvent { printer_id, serial: serial.clone() },
                 );
             }
+            Ok(rumqttc::Event::Incoming(rumqttc::Packet::SubAck(_))) => {
+                logs::log("info", "MQTT", format!("Subscribed OK to device/{serial}/report — awaiting frames"), &serial, &name);
+            }
             Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(p))) => {
-                if let Ok(text) = std::str::from_utf8(&p.payload) {
-                    if let Some(evt) = merge_status(printer_id, &serial, text, last.as_ref()) {
-                        last = Some(evt.clone());
-                        let _ = app.emit("printer-status", &evt);
+                frames_seen += 1;
+                match std::str::from_utf8(&p.payload) {
+                    Ok(text) => {
+                        // Log the first frame's shape so we can see what the printer
+                        // actually sends; then stay quiet to avoid flooding the buffer.
+                        if frames_seen == 1 {
+                            let has_print = text.contains("\"print\"");
+                            logs::log("info", "MQTT",
+                                format!("First frame on {}: {} bytes, has print={}", p.topic, p.payload.len(), has_print),
+                                &serial, &name);
+                        }
+                        if let Some(evt) = merge_status(printer_id, &serial, text, last.as_ref()) {
+                            frames_emitted += 1;
+                            if frames_emitted == 1 {
+                                logs::log("info", "MQTT",
+                                    format!("First status parsed: state={} progress={}%", evt.gcode_state, evt.progress),
+                                    &serial, &name);
+                            }
+                            // Surface a printer-side error the moment it appears (e.g. a
+                            // rejected print command, filament runout) — non-zero print_error.
+                            let prev_err = last.as_ref().map(|s| s.error_code).unwrap_or(0);
+                            if evt.error_code != 0 && evt.error_code != prev_err {
+                                let hex = format!("{:08X}", evt.error_code as u32);
+                                logs::log("error", "Print",
+                                    format!("Printer reported error {}_{} (0x{}, state {})",
+                                        &hex[..4], &hex[4..], hex, evt.gcode_state),
+                                    &serial, &name);
+                            }
+                            last = Some(evt.clone());
+                            let _ = app.emit("printer-status", &evt);
+                        } else if frames_seen <= 3 {
+                            logs::log("warning", "MQTT",
+                                format!("Frame {} had no 'print' state (topic {})", frames_seen, p.topic),
+                                &serial, &name);
+                        }
+                    }
+                    Err(_) => {
+                        if frames_seen <= 3 {
+                            logs::log("warning", "MQTT",
+                                format!("Frame {} was not valid UTF-8 ({} bytes)", frames_seen, p.payload.len()),
+                                &serial, &name);
+                        }
                     }
                 }
             }
             Err(e) => {
-                logs::log("warning", "MQTT",
-                    format!("Disconnected ({e}) — reconnecting in {backoff:?}"), &serial, &name);
+                if !disconnect_logged {
+                    logs::log("warning", "MQTT",
+                        format!("Disconnected ({e}) — retrying with backoff"), &serial, &name);
+                    disconnect_logged = true;
+                }
                 let _ = app.emit(
                     "printer-disconnected",
                     PrinterConnectionEvent { printer_id, serial: serial.clone() },

@@ -1,6 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
 import { regenerateGlobalQueueIfStale } from '$lib/server/printQueue';
+import { AIContextBuilder } from '$lib/recomendation/context-builder';
 import { requireCtx } from '$lib/server/context';
 import type { DashboardPrinter, PrinterFull } from '$lib/types';
 
@@ -28,6 +29,15 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     db.getAllGridPresets(ctx),
     db.getSparePartCatalog(ctx),
   ]);
+
+  // Days-of-cover per object → attached to each module so the start-print picker
+  // can show "Xd left" alongside the spool-fill numbers. Purely days-till-stockout.
+  const inv = await new AIContextBuilder(ctx).getInventoryWithVelocity();
+  const daysByObject = new Map(inv.map((i) => [i.id, i.days_until_stockout]));
+  const printModulesWithCover = printModules.map((m: any) => ({
+    ...m,
+    days_until_stockout: m.object_id != null ? daysByObject.get(m.object_id) ?? null : null,
+  }));
 
   // Flatten secrets + derive status onto each printer for the UI
   const nowSec = Math.floor(Date.now() / 1000);
@@ -58,7 +68,7 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     };
   });
 
-  return { printers, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets, sparePartsCatalog, workspaceName: locals.workspace?.name ?? null };
+  return { printers, spools, printModules: printModulesWithCover, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets, sparePartsCatalog, workspaceName: locals.workspace?.name ?? null };
 };
 
 export const actions: Actions = {

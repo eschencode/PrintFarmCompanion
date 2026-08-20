@@ -4,7 +4,7 @@
         GridCell,
         SpoolSuggestion,
         DashboardPrinter,
-        PiStatus,
+        LiveStatus,
         FailurePrefill,
     } from "$lib/types";
     import { enhance } from "$app/forms";
@@ -41,7 +41,6 @@
     import {
         fileHandlerEnabled,
         directPrinterEnabled,
-        printerPiEnabled,
         manualModeEnabled,
     } from "$lib/stores/connectionToggles";
     import { isDesktop } from "$lib/stores/desktop";
@@ -166,7 +165,6 @@
             nowStore.set(Date.now());
         }, 5000);
 
-        const piOn = get(printerPiEnabled);
         const directOn = get(directPrinterEnabled);
 
         // Register the Tauri MQTT listeners BEFORE subscribing any printer, so the
@@ -182,6 +180,16 @@
             };
             const { listen } = await import("@tauri-apps/api/event");
             const { emit } = await import("@tauri-apps/api/event");
+            // Diagnostic: prove the status listener actually registers in the webview.
+            let firstStatusLogged = false;
+            import("@tauri-apps/api/core").then(({ invoke }) =>
+                invoke("frontend_log", {
+                    level: "info",
+                    message: "UI status listener registered",
+                    serial: null,
+                    name: null,
+                }).catch(() => {}),
+            );
 
             const unlistenStatus = await listen<{
                 serial: string;
@@ -206,15 +214,27 @@
                 speed_mag: number | null;
                 wifi_signal: string | null;
                 hms: { attr: number; code: number }[] | null;
+                error_code: number;
             }>("printer-status", ({ payload: s }) => {
-                const prevState = piStatusBySerial[s.serial]?.gcode_state;
+                if (!firstStatusLogged) {
+                    firstStatusLogged = true;
+                    import("@tauri-apps/api/core").then(({ invoke }) =>
+                        invoke("frontend_log", {
+                            level: "info",
+                            message: `UI received first printer-status: ${s.serial} state=${s.gcode_state}`,
+                            serial: s.serial,
+                            name: null,
+                        }).catch(() => {}),
+                    );
+                }
+                const prevState = get(liveBySerial)[s.serial]?.gcode_state;
                 const newState = s.gcode_state;
                 const label =
                     newState === "RUNNING"
                         ? `Printing ${s.progress}%`
                         : (stateLabels[newState] ?? newState);
-                piStatusBySerial = {
-                    ...piStatusBySerial,
+                liveBySerial.update((m) => ({
+                    ...m,
                     [s.serial]: {
                         gcode_state: newState,
                         progress: s.progress,
@@ -228,6 +248,7 @@
                         subtask_name: s.subtask_name ?? null,
                         gcode_file: s.gcode_file ?? null,
                         hms: s.hms ?? null,
+                        error_code: s.error_code ?? 0,
                         nozzle_target_temp: s.nozzle_target_temp,
                         bed_target_temp: s.bed_target_temp,
                         cooling_fan_speed: s.cooling_fan_speed,
@@ -237,39 +258,61 @@
                         speed_mag: s.speed_mag,
                         wifi_signal: s.wifi_signal,
                         updated_at: Math.floor(Date.now() / 1000),
+                        source: "direct",
+                        last_seen: Math.floor(Date.now() / 1000),
                     },
-                };
-                // Advance start queue on PREPARE→RUNNING
+                }));
+                // A print we just sent still emits stale terminal frames from the
+                // PREVIOUS print until the printer switches to the new job. Ignore
+                // those (they'd otherwise trip the finish flow / advance the queue)
+                // until it confirms the new print started (RUNNING/PREPARE).
+                if (recentlyStarted.has(s.serial)) {
+                    if (newState === "RUNNING" || newState === "PREPARE") {
+                        recentlyStarted.delete(s.serial);
+                    } else {
+                        return;
+                    }
+                }
+                // Advance the start queue once the head printer starts (RUNNING) or
+                // genuinely terminates (a real fail before it ever ran).
                 const isHeadOfQueue =
                     startQueue.length > 0 &&
                     startQueue[0].printer.printer_serial === s.serial;
                 if (
                     isHeadOfQueue &&
-                    prevState === "PREPARE" &&
-                    newState === "RUNNING"
+                    ["RUNNING", "FINISH", "FAILED"].includes(newState)
                 )
                     advanceStartQueue();
-                // Trigger finish logic (shared with Pi poll)
+                // Trigger finish logic
                 handleFinishTransition(s.serial, prevState, newState, {
                     progress: s.progress,
                     total_layer_num: s.total_layer_num,
                     layer_num: s.layer_num,
                     remaining_time: s.remaining_time,
                 });
+                // Surface / clear an untracked print running on this printer.
+                detectExternalFromFrame(
+                    s.printer_id,
+                    newState,
+                    s.subtask_name ?? s.gcode_file ?? null,
+                );
             });
 
             const unlistenConnected = await listen<{
                 serial: string;
                 printer_id: number;
             }>("printer-connected", ({ payload }) => {
-                directConnected = new Set([...directConnected, payload.serial]);
+                directConnected.update((s) => new Set([...s, payload.serial]));
             });
             const unlistenDisconnected = await listen<{
                 serial: string;
                 printer_id: number;
             }>("printer-disconnected", ({ payload }) => {
-                directConnected = new Set(
-                    [...directConnected].filter((s) => s !== payload.serial),
+                directConnected.update(
+                    (s) =>
+                        new Set(
+                            [...s].filter((x) => x !== payload.serial),
+                        ),
                 );
             });
 
@@ -280,16 +323,12 @@
             ];
         }
 
-        // Now subscribe each printer (direct MQTT) + start Pi polling as fallback.
-        for (const printer of data.printers as any[]) {
-            if (!printer.printer_serial) continue;
-            const transport = effectiveTransport(printer);
-            if (transport === "pi") {
-                if (piOn) startPiPolling(printer.printer_serial);
-            } else {
-                // Direct-mode: subscribe via Tauri MQTT + still poll Pi as fallback
-                if (piOn) startPiPolling(printer.printer_serial);
-                if (directOn) await subscribeDirectPrinter(printer);
+        // Subscribe each configured printer to direct MQTT (desktop, opt-in beta).
+        // Standalone/browser printers have no live transport.
+        if (directOn) {
+            for (const printer of data.printers as any[]) {
+                if (!printer.printer_serial) continue;
+                await subscribeDirectPrinter(printer);
             }
         }
     });
@@ -303,14 +342,16 @@
         return await fileHandlerStore.openFile(filePath, moduleName, printerId);
     }
 
-    // ── Pi live status polling ────────────────────────────────────────────────
-    // Keyed by printer_serial — receives updates from Pi polling OR direct MQTT events
-    let piStatusBySerial: Record<string, PiStatus> = {};
-    let piPollingIntervals: Record<string, ReturnType<typeof setTimeout>> = {};
+    // ── Live status ───────────────────────────────────────────────────────────
+    // Keyed by printer_serial — populated from direct MQTT (Tauri) events.
+    // A Svelte store (not a plain `let`): updates from the Tauri MQTT callback must
+    // trigger reactivity from outside Svelte's update cycle, which a store guarantees
+    // and a plain `let` read through a {@const} in an {#each} does not.
+    const liveBySerial = writable<Record<string, LiveStatus>>({});
 
     // ── Externally-started print detection ────────────────────────────────────
-    // Pi reports a print we aren't tracking → surface it inline on the printer
-    // card (not a blocking modal). Keyed by printer id so each card shows its own.
+    // A direct frame shows a print we aren't tracking → surface it inline on the
+    // printer card (not a blocking modal). Keyed by printer id so each card shows its own.
     let detectedExternalByPrinter: Record<number, DetectedExternalPrint> = {};
     // task_ids the user already acted on (added or dismissed). Persisted to
     // localStorage so a dismissed print stays dismissed across reloads (it used
@@ -327,32 +368,36 @@
     }
     // Guard: only trigger reload/auto-start once per serial per page load
     const reloadTriggered = new Set<string>();
+    // Serials of direct prints we just sent — used to ignore stale terminal frames
+    // from the previous print until the printer confirms the new one started.
+    const recentlyStarted = new Set<string>();
 
     // ── Direct MQTT transport (Tauri desktop only) ────────────────────────────
     // Serials currently connected via direct MQTT
-    let directConnected = new Set<string>();
+    // A store (not a plain `let`): updated from Tauri connect/disconnect events,
+    // so it must be reactive from outside Svelte's update cycle. Drives the
+    // per-printer connection indicator + control availability.
+    const directConnected = writable(new Set<string>());
     // Unlisten callbacks for Tauri event subscriptions
     let tauriUnlisteners: Array<() => void> = [];
 
     /**
      * Resolves the active transport for a printer at runtime.
-     * Precedence: explicit 'direct' > explicit 'pi' > auto-prefer-direct > fallback-pi.
-     * 'auto' picks direct only when the desktop app is running and all Bambu credentials are present.
+     * 'manual' overrides everything; 'direct' when the desktop app is running,
+     * the beta toggle is on, and all Bambu credentials are present; else 'local'
+     * (standalone — prints are started by opening the file).
      */
-    function effectiveTransport(printer: any): "direct" | "pi" | "manual" {
+    function effectiveTransport(printer: any): "direct" | "manual" | "local" {
         if (get(manualModeEnabled)) return "manual";
-        const t: TransportMode = printer.transport ?? "auto";
-        const directEnabled = get(directPrinterEnabled);
         const canDirect =
-            directEnabled &&
+            get(directPrinterEnabled) &&
             $isDesktop &&
             printer.printer_ip &&
             printer.printer_serial &&
             printer.printer_access_code;
-        if (t === "direct" && canDirect) return "direct";
-        if (t === "pi") return "pi";
-        // auto: prefer direct in desktop, fall back to pi
-        return canDirect ? "direct" : "pi";
+        // Direct MQTT (opt-in beta) when fully configured; otherwise the printer
+        // runs standalone and prints are started by opening the local file.
+        return canDirect ? "direct" : "local";
     }
 
     async function updatePrinterTransport(
@@ -457,161 +502,50 @@
     }
 
     /**
-     * Polls Pi status for one printer and updates piStatusBySerial.
-     * Also detects the PREPARE→RUNNING transition to advance the start queue,
-     * and the →FINISH/FAILED transition to trigger a reload.
-     * Transition detection requires a previous non-terminal state so that a fresh
-     * page load while the printer is already in FINISH doesn't immediately reload again.
+     * Detect (or clear) an untracked print running on a printer, from a direct
+     * MQTT frame. A printer that reports an actively-printing state while we have
+     * no tracked job for it is running something started outside the app (e.g.
+     * from the printer's screen) — surface it inline so the user can adopt it.
+     *
+     * Identity is the printer's current file/subtask name; the adopt flow matches
+     * it to a module by filename. (A real Bambu task id from the MQTT layer would
+     * be sturdier — a later refinement.)
      */
-    async function fetchPiStatus(serial: string): Promise<void> {
-        try {
-            const res = await fetch(`/api/pi/status?serial=${serial}`);
-            if (!res.ok) return;
-            const d = (await res.json()) as {
-                connected: boolean;
-                status: {
-                    gcode_state: string;
-                    progress: number;
-                    layer_num: number;
-                    total_layer_num: number;
-                    remaining_time?: number | null;
-                    nozzle_temp?: number | null;
-                    bed_temp?: number | null;
-                    chamber_temp?: number | null;
-                    subtask_name?: string | null;
-                    gcode_file?: string | null;
-                    hms?: { attr: number; code: number }[] | null;
-                    nozzle_target_temp?: number | null;
-                    bed_target_temp?: number | null;
-                    cooling_fan_speed?: number | string | null;
-                    aux_fan_speed?: number | string | null;
-                    chamber_fan_speed?: number | string | null;
-                    speed_level?: number | null;
-                    speed_mag?: number | null;
-                    wifi_signal?: string | null;
-                    updated_at?: number | null;
-                } | null;
-                detected_external?: DetectedExternalPrint;
-            };
-            // Surface / clear the inline "untracked print" banner for this printer.
-            // Once adopted or finished, the server stops reporting detected_external
-            // → drop the banner. Ignore tasks the user already handled this session.
-            const extPrinterId =
-                d.detected_external?.printer_id ??
-                data.printers.find(
-                    (p) => p.printer_serial === serial,
-                )?.id;
-            if (
-                d.detected_external &&
-                !handledExternalTasks.has(d.detected_external.task_id)
-            ) {
-                detectedExternalByPrinter = {
-                    ...detectedExternalByPrinter,
-                    [Number(d.detected_external.printer_id)]:
-                        d.detected_external,
-                };
-            } else if (
-                extPrinterId != null &&
-                detectedExternalByPrinter[Number(extPrinterId)]
-            ) {
-                const { [Number(extPrinterId)]: _cleared, ...rest } =
-                    detectedExternalByPrinter;
-                detectedExternalByPrinter = rest;
-            }
-            if (!d.status) return;
+    function detectExternalFromFrame(
+        printerId: number,
+        state: string,
+        fileHint: string | null,
+    ): void {
+        const pid = Number(printerId);
+        const printing = ["RUNNING", "PREPARE", "PAUSE"].includes(state);
+        const tracked = !!getActivePrintJob(pid, data.activePrintJobs);
+        const taskId = fileHint ? `direct:${pid}:${fileHint}` : "";
 
-            const stateLabels: Record<string, string> = {
-                IDLE: "Idle",
-                PREPARE: "Preparing…",
-                RUNNING: `Printing ${d.status.progress}%`,
-                PAUSE: "Paused",
-                FINISH: "Done",
-                FAILED: "Failed",
-            };
-            const label =
-                stateLabels[d.status.gcode_state] ?? d.status.gcode_state;
-            // Capture previous observed state before overwriting — used for transition detection
-            const prevState = piStatusBySerial[serial]?.gcode_state;
-            const newState = d.status.gcode_state;
-            piStatusBySerial = {
-                ...piStatusBySerial,
-                [serial]: {
-                    gcode_state: newState,
-                    progress: d.status.progress,
-                    layer_num: d.status.layer_num ?? 0,
-                    total_layer_num: d.status.total_layer_num ?? 0,
-                    label,
-                    remaining_time: d.status.remaining_time,
-                    nozzle_temp: d.status.nozzle_temp,
-                    bed_temp: d.status.bed_temp,
-                    chamber_temp: d.status.chamber_temp,
-                    subtask_name: d.status.subtask_name ?? null,
-                    gcode_file: d.status.gcode_file ?? null,
-                    hms: d.status.hms ?? null,
-                    nozzle_target_temp: d.status.nozzle_target_temp ?? null,
-                    bed_target_temp: d.status.bed_target_temp ?? null,
-                    cooling_fan_speed:
-                        d.status.cooling_fan_speed != null
-                            ? Number(d.status.cooling_fan_speed)
-                            : null,
-                    aux_fan_speed:
-                        d.status.aux_fan_speed != null
-                            ? Number(d.status.aux_fan_speed)
-                            : null,
-                    chamber_fan_speed:
-                        d.status.chamber_fan_speed != null
-                            ? Number(d.status.chamber_fan_speed)
-                            : null,
-                    speed_level: d.status.speed_level ?? null,
-                    speed_mag: d.status.speed_mag ?? null,
-                    wifi_signal: d.status.wifi_signal ?? null,
-                    updated_at: d.status.updated_at ?? null,
+        if (printing && !tracked && fileHint && !handledExternalTasks.has(taskId)) {
+            const base = fileHint.split("/").pop() ?? fileHint;
+            const match = (data.printModules as any[]).find(
+                (m) => (m.filename?.split("/").pop() ?? m.filename) === base,
+            );
+            detectedExternalByPrinter = {
+                ...detectedExternalByPrinter,
+                [pid]: {
+                    printer_id: pid,
+                    task_id: taskId,
+                    gcode_file: fileHint,
+                    suggested_module_id: match?.id ?? null,
+                    suggested_module_name: match?.name ?? null,
                 },
             };
-            // Fire the shared finish handler on the TRANSITION into FINISH/FAILED
-            // (or the stuck-at-99 fallback). The handler self-guards against firing
-            // twice and against a fresh load that's already in a terminal state.
-            handleFinishTransition(serial, prevState, newState, {
-                progress: d.status.progress,
-                total_layer_num: d.status.total_layer_num ?? 0,
-                layer_num: d.status.layer_num ?? 0,
-                remaining_time: d.status.remaining_time ?? null,
-            });
-            // Advance start queue when front-of-queue printer moves from PREPARE to RUNNING
-            const isHeadOfQueue =
-                startQueue.length > 0 &&
-                startQueue[0].printer.printer_serial === serial;
-            if (
-                isHeadOfQueue &&
-                prevState === "PREPARE" &&
-                newState === "RUNNING"
-            ) {
-                advanceStartQueue();
-            }
-        } catch {
-            /* network error — will retry on next poll */
+        } else if (
+            detectedExternalByPrinter[pid] &&
+            (tracked || !printing)
+        ) {
+            const { [pid]: _cleared, ...rest } = detectedExternalByPrinter;
+            detectedExternalByPrinter = rest;
         }
-    }
-
-    function startPiPolling(serial: string) {
-        if (piPollingIntervals[serial]) return;
-        fetchPiStatus(serial); // immediate fetch
-        function scheduleNext() {
-            piPollingIntervals[serial] = setTimeout(async () => {
-                await fetchPiStatus(serial);
-                scheduleNext();
-            }, 10_000); // poll every 10s for all printers
-        }
-        scheduleNext();
-    }
-
-    function stopPiPolling(serial: string) {
-        clearTimeout(piPollingIntervals[serial]);
-        delete piPollingIntervals[serial];
     }
 
     onDestroy(() => {
-        Object.values(piPollingIntervals).forEach(clearTimeout);
         clearInterval(tickerInterval);
         tauriUnlisteners.forEach((u) => u());
     });
@@ -704,9 +638,9 @@
 
     /**
      * Sends the head of the start queue to its printer via one of three paths:
-     *   1. Pi bridge — Pi handles file upload and triggers print; live state comes from polling.
+     *   1. Manual — DB job only; time-based progress, user confirms/fails.
      *   2. Direct + local file — registers the job in DB then invokes Bambu MQTT directly.
-     *   3. Fallback — DB job + optional local file-handler open; advances after 3 s.
+     *   3. Standalone — DB job + open the local file (desktop) or legacy handler; advances after 3 s.
      * The 120 s safety-net timeout on startQueueTimeout advances the queue even if
      * the printer never transitions through PREPARE, preventing a permanent stall.
      */
@@ -717,18 +651,10 @@
         saveStartQueue();
         const { module, printer } = startQueue[0];
         startQueueTimeout = setTimeout(advanceStartQueue, 120_000);
-        const hasPi = !!(
-            printer.printer_ip &&
-            printer.printer_serial &&
-            printer.printer_access_code
-        );
         const hasLocalHandler = !!(
             module.filename && fileHandlerState.connected
         );
         const transport = effectiveTransport(printer);
-        const hasDirect =
-            transport === "direct" &&
-            directConnected.has(printer.printer_serial ?? "");
         try {
             if (transport === "manual") {
                 // Manual mode: register the job in DB only — no printer connection.
@@ -739,52 +665,71 @@
                 await fetch("?/startPrint", { method: "POST", body: formData });
                 await invalidateAll();
                 setTimeout(advanceStartQueue, 3_000);
-            } else if (hasPi) {
-                // Pi path: Pi handles file upload and print start.
-                // In direct mode, MQTT events (not Pi polling) deliver live status.
-                const res = await fetch("/api/pi/print", {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({
-                        module_id: module.id,
-                        printer_id: printer.id,
-                    }),
-                });
-                const result = (await res.json()) as {
-                    success: boolean;
-                    error?: string;
-                };
-                if (result.success) {
-                    startPiPolling(printer.printer_serial);
+            } else if (transport === "direct") {
+                // Direct beta: upload the local file to the printer over FTPS, then
+                // send the MQTT print command. Every step logs to the Logs page.
+                // Any failure surfaces as an error — we do NOT silently open the file.
+                try {
+                    const { invoke } = await import("@tauri-apps/api/core");
+                    // Ensure an MQTT session exists (idempotent) for the print command.
+                    await subscribeDirectPrinter(printer);
+                    const uploaded = await invoke<{
+                        remote_path: string;
+                        param: string;
+                    }>("upload_file_direct", {
+                        id: Number(module.id),
+                        fileName: module.filename,
+                        ip: printer.printer_ip,
+                        serial: printer.printer_serial,
+                        accessCode: printer.printer_access_code,
+                        printerModel: printer.preset?.model ?? "",
+                        name: printer.name ?? "",
+                    });
+                    await invoke("start_print_direct", {
+                        serial: printer.printer_serial,
+                        remotePath: uploaded.remote_path,
+                        param: uploaded.param,
+                    });
+                    // Register the tracked job only once the printer accepted the send.
+                    const formData = new FormData();
+                    formData.append("printerId", String(printer.id));
+                    formData.append("moduleId", String(module.id));
+                    await fetch("?/startPrint", {
+                        method: "POST",
+                        body: formData,
+                    });
+                    // Drop the previous print's stale frame so the card doesn't
+                    // flash its old 100%/finished state, and ignore stale terminal
+                    // frames until the printer confirms the new print started. The
+                    // card stays in the "starting" shimmer until it reports RUNNING
+                    // (handler advances the queue then; 120s safety net covers stalls).
+                    recentlyStarted.add(printer.printer_serial);
+                    setTimeout(
+                        () => recentlyStarted.delete(printer.printer_serial),
+                        120_000,
+                    );
+                    reloadTriggered.delete(printer.printer_serial);
+                    liveBySerial.update((m) => {
+                        const { [printer.printer_serial]: _drop, ...rest } = m;
+                        return rest;
+                    });
                     await invalidateAll();
-                    // Stays in queue — advances on PREPARE→RUNNING or 30s timeout
-                } else {
+                } catch (e) {
+                    const msg = String(e);
                     startError = {
                         printer: printer.name,
-                        message: result.error ?? "Unknown error",
+                        // The "no sliced gcode" error is already user-facing — show it
+                        // as-is; wrap anything else with a pointer to the Logs.
+                        message: msg.includes("no sliced gcode")
+                            ? msg.replace(/^Error:\s*/, "")
+                            : `Direct send failed: ${msg}. Open Logs for the full trace.`,
                     };
                     advanceStartQueue();
                 }
-            } else if (hasDirect && module.filename) {
-                // Direct mode with local file: register job in DB then send MQTT print command.
-                // The file must already be on the printer SD card at /sdcard/cache/<filename>.
-                const formData = new FormData();
-                formData.append("printerId", String(printer.id));
-                formData.append("moduleId", String(module.id));
-                await fetch("?/startPrint", { method: "POST", body: formData });
-                const filename =
-                    (module.filename as string).split("/").pop() ?? "";
-                const { invoke } = await import("@tauri-apps/api/core");
-                await invoke("start_print_direct", {
-                    serial: printer.printer_serial,
-                    remotePath: `/cache/${filename}`,
-                    param: "Metadata/plate_1.gcode",
-                }).catch((e: unknown) =>
-                    console.error("start_print_direct failed:", e),
-                );
-                await invalidateAll();
-                setTimeout(advanceStartQueue, 3_000);
             } else {
+                // Default path: register the job, then open the local file so the
+                // user starts it from their slicer. Direct MQTT / Pi are opt-in beta
+                // addons handled above. See docs/local-file-flow.md.
                 const formData = new FormData();
                 formData.append("printerId", String(printer.id));
                 formData.append("moduleId", String(module.id));
@@ -792,12 +737,30 @@
                     method: "POST",
                     body: formData,
                 });
-                if (res.ok && hasLocalHandler)
-                    await openFileLocally(
-                        module.filename,
-                        module.name,
-                        printer.id,
-                    );
+                if (res.ok) {
+                    if ($isDesktop) {
+                        const { invoke } = await import("@tauri-apps/api/core");
+                        try {
+                            await invoke("open_module_file", {
+                                id: Number(module.id),
+                                fileName: module.filename,
+                            });
+                        } catch (e) {
+                            console.error("open_module_file failed:", e);
+                            startError = {
+                                printer: printer.name,
+                                message: `Couldn't find the file for "${module.name}" on this machine. Re-attach it on the Modules page, then start again.`,
+                            };
+                        }
+                    } else if (hasLocalHandler) {
+                        // Browser fallback: legacy :3001 sidecar file handler.
+                        await openFileLocally(
+                            module.filename,
+                            module.name,
+                            printer.id,
+                        );
+                    }
+                }
                 await invalidateAll();
                 setTimeout(advanceStartQueue, 3_000);
             }
@@ -812,8 +775,8 @@
 
     /**
      * Removes the head of the start queue and dispatches the next item if one exists.
-     * No page reload — Pi polling continuously streams state into piStatusBySerial,
-     * so the printer card's liveIsPrinting flag flips automatically without a reload.
+     * No page reload — direct MQTT streams state into liveBySerial, so the printer
+     * card's liveIsPrinting flag flips automatically without a reload.
      */
     function advanceStartQueue() {
         if (startQueueTimeout) {
@@ -825,56 +788,58 @@
         if (startQueue.length > 0) {
             dispatchNextStart();
         }
-        // No reload — Pi polling streams live state into piStatusBySerial, and
-        // the printer card uses liveIsPrinting to flip to "Printing" automatically.
+        // No reload — direct MQTT streams live state into liveBySerial, and the
+        // printer card uses liveIsPrinting to flip to "Printing" automatically.
     }
 
+    /**
+     * Printer controls. Pause/resume go over direct MQTT (desktop, beta) and are
+     * no-ops without a live connection. Cancel is special: it removes the tracked
+     * job as if it never happened (no "failed" record) and, when we have a live
+     * connection, also tells the printer to stop.
+     */
     async function sendPrinterControl(endpoint: string, printerId: number) {
         controlLoading = endpoint;
         try {
             const printer = (data.printers as any[]).find(
                 (p: any) => Number(p.id) === printerId,
             );
-            const transport = printer ? effectiveTransport(printer) : "pi";
-            if (transport === "manual") return; // no printer connected in manual mode
-            const isDirect =
-                transport === "direct" &&
+            const isDirect = !!(
                 printer?.printer_serial &&
-                directConnected.has(printer.printer_serial);
+                get(directConnected).has(printer.printer_serial)
+            );
 
-            if (isDirect) {
-                // Map control action names to Bambu MQTT command names
-                const commandMap: Record<string, string> = {
-                    pause: "pause",
-                    resume: "resume",
-                    cancel: "stop",
-                };
-                const command = commandMap[endpoint] ?? endpoint;
-                const { invoke } = await import("@tauri-apps/api/core");
-                await invoke("send_printer_command", {
-                    serial: printer.printer_serial,
-                    command,
-                });
-            } else {
-                await fetch(`/api/pi/control`, {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({
-                        printer_id: printerId,
-                        action: endpoint,
-                    }),
-                });
+            if (endpoint === "cancel") {
+                // Tell the printer to stop if we're connected — best effort.
+                if (isDirect) {
+                    const { invoke } = await import("@tauri-apps/api/core");
+                    await invoke("send_printer_command", {
+                        serial: printer.printer_serial,
+                        command: "stop",
+                    }).catch((e: unknown) =>
+                        console.error("stop command failed:", e),
+                    );
+                }
+                // Remove the job — cancelled prints leave no trace.
+                const job = getActivePrintJob(printerId, data.activePrintJobs);
+                if (job?.id) {
+                    const fd = new FormData();
+                    fd.append("jobId", String(job.id));
+                    await fetch("?/deleteJob", { method: "POST", body: fd });
+                }
+                await invalidateAll();
+                return;
             }
+
+            // pause / resume — direct MQTT only.
+            if (!isDirect) return;
+            const { invoke } = await import("@tauri-apps/api/core");
+            await invoke("send_printer_command", {
+                serial: printer.printer_serial,
+                command: endpoint,
+            });
         } finally {
-            if (endpoint !== "cancel") {
-                controlLoading = null;
-            } else {
-                // Cancel stays loading until the page reloads via the Pi webhook.
-                // Safety reset after 30 s in case the webhook never arrives (Pi offline, etc.)
-                setTimeout(() => {
-                    if (controlLoading === "cancel") controlLoading = null;
-                }, 30_000);
-            }
+            controlLoading = null;
         }
     }
 
@@ -921,14 +886,13 @@
         suggestedSpools = [];
         spoolInitialPresetId = null;
         selectedPrinter = printer;
-        // Quick Start mode only applies to Pi-connected printers; otherwise the
-        // regular detail modal opens. Either way we still want the suggested
+        // Quick Start mode only applies to network-connected printers; otherwise
+        // the regular detail modal opens. Either way we still want the suggested
         // queue populated on open (below) so "Next Suggested Print" shows
         // immediately, not only after visiting the module selector.
         const isQuickStart =
             $quickStartMode && printer.printer_serial && printer.printer_ip;
         showQuickStart = isQuickStart;
-        if (printer.printer_serial) fetchPiStatus(printer.printer_serial);
 
         // Populate the suggested queue for whichever modal is showing, when a
         // spool is loaded and we don't already have a pending queue.
@@ -1396,24 +1360,37 @@
             alert("Please load a spool first");
             return;
         }
-        // Only generate queue if empty or all items are DONE
+        // Open immediately — the "Recommended for this Spool" list is derived
+        // client-side from data.printModules, so it doesn't need the server queue.
+        showModuleSelector = true;
+
+        // Populate the "Saved Print Queue" section in the background (this is the
+        // slow generateAndSaveSuggestedQueue call). Guard against a fast re-open on
+        // a different printer landing the result on the wrong one.
         const queue = selectedPrinter.suggested_queue;
         const shouldGenerateQueue =
             !queue ||
             queue.length === 0 ||
             queue.every((item) => item.status === "DONE");
-
         if (shouldGenerateQueue) {
-            const response = await fetch(
-                `/api/ai-recommendations?type=queue&printerId=${selectedPrinter.id}`,
-            );
-            const result = await response.json();
-            if (result && Array.isArray(result)) {
-                selectedPrinter.suggested_queue = result;
-            }
+            const pid = selectedPrinter.id;
+            fetch(`/api/ai-recommendations?type=queue&printerId=${pid}`)
+                .then((r) => r.json())
+                .then((result) => {
+                    if (
+                        result &&
+                        Array.isArray(result) &&
+                        selectedPrinter &&
+                        Number(selectedPrinter.id) === Number(pid)
+                    ) {
+                        selectedPrinter = {
+                            ...selectedPrinter,
+                            suggested_queue: result,
+                        };
+                    }
+                })
+                .catch(() => {});
         }
-
-        showModuleSelector = true;
     }
 
     function closeModuleSelector() {
@@ -1501,9 +1478,12 @@
                                 ) && printer.status === "finished"
                                     ? { ...printer, status: "idle" }
                                     : printer}
-                                piLive={piStatusBySerial[
+                                live={$liveBySerial[
                                     printer.printer_serial as string
                                 ]}
+                                directConnected={$directConnected.has(
+                                    printer.printer_serial as string,
+                                )}
                                 liveIsStarting={startingPrinterIds.has(
                                     Number(printer.id),
                                 )}
@@ -1959,7 +1939,10 @@
             ? { ...selectedPrinter, status: "idle" }
             : selectedPrinter}
         {activePrintJob}
-        piLive={piStatusBySerial[selectedPrinter.printer_serial as string]}
+        live={$liveBySerial[selectedPrinter.printer_serial as string]}
+        directConnected={$directConnected.has(
+            selectedPrinter.printer_serial as string,
+        )}
         {controlLoading}
         {startingPrinterIds}
         {now}
@@ -1984,6 +1967,7 @@
         printer={selectedPrinter}
         {orderedSpoolPresets}
         spoolPresets={data.spoolPresets}
+        printModules={data.printModules}
         spools={data.spools}
         initialPresetId={spoolInitialPresetId}
         initialSlotIndex={spoolTargetSlotIndex}

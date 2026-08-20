@@ -18,9 +18,9 @@ const PUBLIC_PAGES = new Set([
   "/reset-password",
 ]);
 // API endpoints that authenticate via their own incoming shared secret
-// (external callers: cron + Pi webhook). better-auth's /api/auth/* is handled
-// by svelteKitHandler and has a null route.id, so it bypasses the guard already.
-const PUBLIC_API_PREFIXES = ["/api/cron-sync", "/api/pi/webhook"];
+// (external caller: cron). better-auth's /api/auth/* is handled by svelteKitHandler
+// and has a null route.id, so it bypasses the guard already.
+const PUBLIC_API_PREFIXES = ["/api/cron-sync"];
 
 function isPublic(path: string): boolean {
   if (PUBLIC_PAGES.has(path)) return true;

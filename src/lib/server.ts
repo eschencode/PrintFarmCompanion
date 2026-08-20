@@ -13,7 +13,6 @@ export * from './server/jobs';
 export * from './server/events';
 export * from './server/grid';
 export * from './server/printQueue';
-export * from './server/pi';
 export * from './server/workspaces';
 export * from './server/context';
 export * from './server/setup';

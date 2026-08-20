@@ -56,6 +56,7 @@
         unitWeights: UnitWeight[];
         categories: Category[];
         weeklyThroughput?: number;
+        restocked7d?: number;
         globalQueue?: PrintQueueItem[];
     }
 
@@ -66,30 +67,7 @@
     let showLowStockOnly = $state(false);
     // Sort within categories: 'name' (A→Z) or 'urgency' (days-of-cover asc).
     let sortMode = $state<"name" | "urgency">("urgency");
-    // Toggles the flat, category-free reorder list.
-    let showReorderList = $state(false);
     let queueRefreshing = $state(false);
-
-    // Toggle the Print Queue panel. Opening it force-regenerates the global queue
-    // (catches changes the inventory_log staleness check misses, e.g. module edits)
-    // then refreshes the page data.
-    async function togglePrintQueue() {
-        const opening = !showReorderList;
-        showReorderList = opening;
-        if (!opening || queueRefreshing) return;
-        queueRefreshing = true;
-        try {
-            await fetch("?/regenerateQueue", {
-                method: "POST",
-                body: new FormData(),
-            });
-            await invalidateAll();
-        } catch (e) {
-            console.error("Failed to regenerate print queue:", e);
-        } finally {
-            queueRefreshing = false;
-        }
-    }
 
     // ============ INVENTORY CHECK TOOL STATE ============
     let activeCheckPanel = $state<"sets" | "weight" | "direct" | null>(null);
@@ -530,6 +508,29 @@
         }
     }
 
+    // Manual queue rebuild for the Print Queue panel's refresh button. Same force
+    // regenerate the old toggle did (catches module edits the staleness check misses).
+    async function refreshQueue() {
+        if (queueRefreshing) return;
+        queueRefreshing = true;
+        try {
+            await fetch("?/regenerateQueue", {
+                method: "POST",
+                body: new FormData(),
+            });
+            await invalidateAll();
+        } catch (e) {
+            console.error("Failed to regenerate print queue:", e);
+        } finally {
+            queueRefreshing = false;
+        }
+    }
+
+    // Units that flowed back into stock over the last 7d (printed + manual
+    // restocks). Computed server-side — see getRestocked7d — because data.logs is
+    // capped at 50 rows and can't represent a full week at real sales volume.
+    const restocked7d = $derived(data.restocked7d ?? 0);
+
     // Format timestamp. created_at is stored in Unix SECONDS — convert to ms for Date.
     function formatTime(timestamp: number): string {
         const ms = timestamp * 1000;
@@ -680,14 +681,11 @@
 
         <!-- KPI Cards — decision-oriented -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-            <!-- Critical → urgent subset; opens the print queue panel -->
-            <button
-                onclick={() =>
-                    (showReorderList =
-                        reorderNowCount > 0 ? true : showReorderList)}
-                class="text-left rounded-xl border p-5 transition-colors {reorderNowCount >
+            <!-- Critical → urgent subset (also drives the top of the print queue) -->
+            <div
+                class="rounded-xl border p-5 transition-colors {reorderNowCount >
                 0
-                    ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40 hover:bg-red-100/60 dark:hover:bg-red-950/30'
+                    ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40'
                     : 'bg-white dark:bg-[#111] border-zinc-100 dark:border-[#1e1e1e]'}"
             >
                 <p
@@ -708,7 +706,7 @@
                 <p class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-1">
                     ≤ {LEAD_TIME_DAYS}d of cover left
                 </p>
-            </button>
+            </div>
             <div
                 class="rounded-xl border p-5 transition-colors {runoutWeek.length >
                 0
@@ -774,6 +772,43 @@
                 </p>
             </div>
         </div>
+        <!-- Replenishment flow strip: demand out → queued → printed in.
+             Reads as the in/out balance of the print farm at a glance. -->
+        <div
+            class="flex items-center gap-3 mb-3 flex-wrap text-[11px] text-zinc-400 dark:text-zinc-500"
+        >
+            <span class="flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                <span class="tabular-nums font-medium text-zinc-600 dark:text-zinc-300">{weeklyThroughput}</span>
+                sold&nbsp;/&nbsp;7d
+            </span>
+            <svg class="w-3.5 h-3.5 text-zinc-300 dark:text-zinc-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+            <span class="flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
+                <span class="tabular-nums font-medium text-zinc-600 dark:text-zinc-300">{globalQueue.length}</span>
+                queued
+            </span>
+            <svg class="w-3.5 h-3.5 text-zinc-300 dark:text-zinc-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+            <span class="flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span class="tabular-nums font-medium text-zinc-600 dark:text-zinc-300">{restocked7d}</span>
+                restocked&nbsp;/&nbsp;7d
+            </span>
+            {#if weeklyThroughput > restocked7d}
+                <span
+                    class="ml-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30"
+                    title="Selling faster than you're restocking"
+                    >−{weeklyThroughput - restocked7d}/wk net</span
+                >
+            {:else if restocked7d > weeklyThroughput}
+                <span
+                    class="ml-1 px-2 py-0.5 rounded-full text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30"
+                    title="Restocking faster than you're selling"
+                    >+{restocked7d - weeklyThroughput}/wk net</span
+                >
+            {/if}
+        </div>
+
         <!-- Secondary totals -->
         <div
             class="flex items-center gap-4 mb-8 text-[11px] text-zinc-400 dark:text-zinc-600"
@@ -857,126 +892,75 @@
                     >A–Z</button
                 >
             </div>
-
-            <button
-                onclick={togglePrintQueue}
-                class="ml-auto inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border text-xs font-medium transition-colors {showReorderList
-                    ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 border-transparent'
-                    : 'border-zinc-200 dark:border-[#1e1e1e] bg-white dark:bg-[#111] text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#161616]'}"
-            >
-                {#if queueRefreshing}
-                    <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                    </svg>
-                {/if}
-                Print queue
-                {#if globalQueue.length > 0}
-                    <span
-                        class="inline-flex items-center justify-center min-w-4 h-4 px-1 rounded text-[10px] font-bold {showReorderList
-                            ? 'bg-white/20 text-white dark:bg-zinc-900/20 dark:text-zinc-900'
-                            : 'bg-red-500/10 text-red-500'}"
-                        >{globalQueue.length}</span
-                    >
-                {/if}
-            </button>
         </div>
 
         {#snippet itemRow(item: ObjectItemUI, padClass: string)}
             {@const stockLevel = getStockLevel(item)}
             {@const trend = trendOf(item)}
+            {@const cover = item.days_until_stockout}
             <div
                 role="listitem"
                 draggable={manageMode}
                 ondragstart={(e) => onDragStart(e, item.id)}
                 ondragend={onDragEnd}
-                class="flex items-center gap-4 {padClass} pr-5 py-2.5 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors {manageMode
+                class="flex items-center gap-3 {padClass} pr-5 h-11 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors {manageMode
                     ? 'cursor-grab active:cursor-grabbing'
-                    : ''} {draggedId === item.id
-                    ? 'opacity-40'
-                    : ''} {stockLevel === 'out'
-                    ? 'border-l-2 border-l-red-400'
-                    : stockLevel === 'low'
-                      ? 'border-l-2 border-l-amber-400'
-                      : 'border-l-2 border-l-transparent'}"
+                    : ''} {draggedId === item.id ? 'opacity-40' : ''}"
             >
-                <div class="flex items-center gap-2 flex-1 min-w-0">
-                    {#if manageMode}
-                        <svg
-                            class="w-3 h-3 text-zinc-300 dark:text-zinc-700 shrink-0"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            ><path
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="2"
-                                d="M8 9h8M8 15h8"
-                            /></svg
-                        >
-                    {/if}
+                {#if manageMode}
+                    <svg
+                        class="w-3 h-3 text-zinc-300 dark:text-zinc-700 shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        ><path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M8 9h8M8 15h8"
+                        /></svg
+                    >
+                {/if}
+                <div class="flex items-center gap-1.5 flex-1 min-w-0">
                     <span
-                        class="text-xs text-zinc-600 dark:text-zinc-400 truncate"
+                        class="text-xs text-zinc-600 dark:text-zinc-300 truncate"
                         >{item.name}</span
                     >
+                    {#if trend === "up"}<span
+                            class="text-emerald-500 text-[10px] shrink-0"
+                            title="Demand rising vs. last 30d">▲</span
+                        >
+                    {:else if trend === "down"}<span
+                            class="text-zinc-400 text-[10px] shrink-0"
+                            title="Demand falling vs. last 30d">▼</span
+                        >{/if}
                 </div>
-                <div class="flex items-center gap-5">
-                    <div class="hidden sm:block w-14 text-right">
-                        <span
-                            class="text-[9px] text-zinc-400 block leading-none mb-0.5"
-                            >vel.</span
-                        >
-                        <span
-                            class="text-xs tabular-nums text-zinc-500 inline-flex items-center gap-0.5 justify-end"
-                        >
-                            {formatVelocity(item.daily_velocity)}
-                            {#if trend === "up"}<span
-                                    class="text-emerald-500"
-                                    title="Demand rising vs. last 30d">▲</span
-                                >
-                            {:else if trend === "down"}<span
-                                    class="text-zinc-400"
-                                    title="Demand falling vs. last 30d">▼</span
-                                >{/if}
-                        </span>
-                    </div>
-                    <div class="w-16 text-right">
-                        <span
-                            class="text-[9px] text-zinc-400 block leading-none mb-0.5"
-                            >days left</span
-                        >
-                        <span
-                            class="text-xs tabular-nums {item.days_until_stockout !=
-                                null && item.days_until_stockout <= 7
-                                ? 'text-red-500'
-                                : item.days_until_stockout != null &&
-                                    item.days_until_stockout <= 14
-                                  ? 'text-amber-500'
-                                  : 'text-zinc-500'}"
-                        >
-                            {item.days_until_stockout == null ||
-                            item.days_until_stockout >= 365
-                                ? "+365"
-                                : Math.round(item.days_until_stockout)}
-                        </span>
-                    </div>
-                    <span
-                        class="min-w-10 h-7 px-2.5 flex items-center justify-center rounded-md text-xs font-semibold tabular-nums {stockLevel ===
-                        'out'
-                            ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400'
-                            : stockLevel === 'low'
-                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
-                              : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'}"
-                        >{item.in_stock}</span
-                    >
-                </div>
+                <!-- Days of cover -->
+                <span
+                    class="w-12 text-right text-xs tabular-nums shrink-0 text-zinc-400 dark:text-zinc-500"
+                    title="Days of cover at current sell-through"
+                >
+                    {cover == null || cover >= 365
+                        ? "365+"
+                        : Math.round(cover) + "d"}
+                </span>
+                <!-- Stock on hand — status color lives here -->
+                <span
+                    class="min-w-10 h-7 px-2.5 flex items-center justify-center rounded-md text-xs font-semibold tabular-nums shrink-0 {stockLevel ===
+                    'out'
+                        ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400'
+                        : stockLevel === 'low'
+                          ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
+                          : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'}"
+                    >{item.in_stock}</span
+                >
             </div>
         {/snippet}
 
-        <!-- Main Content Grid -->
-        <div class="grid lg:grid-cols-3 gap-5 mb-10">
-            <!-- Stock Levels 2/3 -->
-            <div class="lg:col-span-2">
+        <!-- Main Content Grid — the replenishment pipeline: stock → queue → activity -->
+        <div class="grid lg:grid-cols-12 gap-5 mb-10 items-start">
+            <!-- Stock levels (cover meters) -->
+            <div class="lg:col-span-5">
                 <div
                     class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden"
                 >
@@ -986,16 +970,13 @@
                         <h2
                             class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500"
                         >
-                            {showReorderList ? "Print Queue" : "Stock Levels"}
+                            Stock Levels
                         </h2>
                         <div class="flex items-center gap-3">
                             <span class="text-[10px] text-zinc-400"
-                                >{showReorderList
-                                    ? `${globalQueue.length} ranked`
-                                    : `${totalItems} items`}</span
+                                >{totalItems} items</span
                             >
-                            {#if !showReorderList}
-                                <button
+                            <button
                                     onclick={() => (manageMode = !manageMode)}
                                     title={manageMode
                                         ? "Done organizing"
@@ -1025,7 +1006,6 @@
                                         />
                                     </svg>
                                 </button>
-                            {/if}
                         </div>
                     </div>
                     {#if manageMode}
@@ -1039,73 +1019,6 @@
                     {/if}
 
                     <div class="divide-y divide-zinc-50 dark:divide-[#171717]">
-                        {#if showReorderList}
-                            <!-- Global print queue: the real backlog, ranked by days-of-cover -->
-                            {#if globalQueue.length === 0}
-                                <div class="py-12 text-center">
-                                    <p class="text-sm text-zinc-400">
-                                        Print queue is empty
-                                    </p>
-                                    <p
-                                        class="text-xs text-zinc-300 dark:text-zinc-600 mt-1"
-                                    >
-                                        Everything is well above its cover
-                                        target
-                                    </p>
-                                </div>
-                            {:else}
-                                {#each globalQueue as q (q.id)}
-                                    {@const cover =
-                                        q.days_until_stockout ?? 999}
-                                    <div
-                                        class="flex items-center gap-4 px-5 py-3 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors border-l-2 {cover <=
-                                        7
-                                            ? 'border-l-red-400'
-                                            : cover <= 30
-                                              ? 'border-l-amber-400'
-                                              : 'border-l-zinc-200 dark:border-l-zinc-700'}"
-                                    >
-                                        <div class="flex-1 min-w-0">
-                                            <p
-                                                class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate flex items-center gap-1.5"
-                                            >
-                                                {q.object_name}
-                                                {#if q.source === "manual"}<span
-                                                        class="text-[9px] uppercase tracking-wide text-blue-500 border border-blue-300/50 rounded px-1"
-                                                        >pin</span
-                                                    >{/if}
-                                            </p>
-                                            <p
-                                                class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-0.5 tabular-nums"
-                                            >
-                                                {q.in_stock} in stock · {formatVelocity(
-                                                    q.daily_velocity,
-                                                )}
-                                            </p>
-                                        </div>
-                                        <div class="text-right shrink-0">
-                                            <span
-                                                class="text-[9px] text-zinc-400 block leading-none mb-0.5"
-                                                >cover</span
-                                            >
-                                            <span
-                                                class="text-xs tabular-nums {(q.days_until_stockout ??
-                                                    999) <= 7
-                                                    ? 'text-red-500'
-                                                    : (q.days_until_stockout ??
-                                                            999) <= 30
-                                                      ? 'text-amber-500'
-                                                      : 'text-zinc-500'}"
-                                            >
-                                                {formatDays(
-                                                    q.days_until_stockout,
-                                                )}
-                                            </span>
-                                        </div>
-                                    </div>
-                                {/each}
-                            {/if}
-                        {:else}
                             {#if (data.items || []).length === 0 && tree.groups.length === 0}
                                 <div class="py-12 text-center">
                                     <p class="text-sm text-zinc-400">
@@ -1621,13 +1534,127 @@
                                     >
                                 </div>
                             {/if}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Print queue (persistent) — the real backlog, ranked by days-of-cover.
+                 Same print_queue table the dashboard knapsacks per printer. -->
+            <div class="lg:col-span-4">
+                <div
+                    class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden"
+                >
+                    <div
+                        class="px-5 py-4 border-b border-zinc-50 dark:border-[#1a1a1a] flex items-center justify-between"
+                    >
+                        <h2
+                            class="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500"
+                        >
+                            Print Queue
+                        </h2>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] text-zinc-400 tabular-nums"
+                                >{globalQueue.length} ranked</span
+                            >
+                            <button
+                                onclick={refreshQueue}
+                                disabled={queueRefreshing}
+                                title="Rebuild queue"
+                                class="w-7 h-7 flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                            >
+                                <svg
+                                    class="w-3.5 h-3.5 {queueRefreshing ? 'animate-spin' : ''}"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        stroke-width="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="divide-y divide-zinc-50 dark:divide-[#171717] max-h-130 overflow-y-auto">
+                        {#if globalQueue.length === 0}
+                            <div class="py-12 text-center">
+                                <p class="text-sm text-zinc-400">
+                                    Print queue is empty
+                                </p>
+                                <p
+                                    class="text-xs text-zinc-300 dark:text-zinc-600 mt-1"
+                                >
+                                    Everything is above its cover target
+                                </p>
+                            </div>
+                        {:else}
+                            {#each globalQueue as q, i (q.id)}
+                                {@const cover = q.days_until_stockout ?? 999}
+                                {@const runs = Math.ceil(
+                                    q.quantity / (q.objects_per_print || 1),
+                                )}
+                                <div
+                                    class="flex items-center gap-3 px-5 py-3 hover:bg-zinc-50 dark:hover:bg-[#161616] transition-colors border-l-2 {cover <=
+                                    7
+                                        ? 'border-l-red-400'
+                                        : cover <= 30
+                                          ? 'border-l-amber-400'
+                                          : 'border-l-zinc-200 dark:border-l-zinc-700'}"
+                                >
+                                    <span
+                                        class="text-[10px] tabular-nums text-zinc-300 dark:text-zinc-600 w-4 shrink-0 text-right"
+                                        >{i + 1}</span
+                                    >
+                                    <div class="flex-1 min-w-0">
+                                        <p
+                                            class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate flex items-center gap-1.5"
+                                        >
+                                            {q.object_name}
+                                            {#if q.source === "manual"}<span
+                                                    class="text-[9px] uppercase tracking-wide text-blue-500 border border-blue-300/50 rounded px-1"
+                                                    >pin</span
+                                                >{/if}
+                                            {#if runs > 1}<span
+                                                    class="text-[10px] font-semibold tabular-nums text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 rounded px-1 shrink-0"
+                                                    title="{runs} runs of this module to hit cover target ({q.quantity} units @ {q.objects_per_print}/run)"
+                                                    >×{runs}</span
+                                                >{/if}
+                                        </p>
+                                        <p
+                                            class="text-[10px] text-zinc-400 dark:text-zinc-600 mt-0.5 tabular-nums"
+                                        >
+                                            {q.in_stock} in stock · {formatVelocity(
+                                                q.daily_velocity,
+                                            )}
+                                        </p>
+                                    </div>
+                                    <div class="text-right shrink-0">
+                                        <span
+                                            class="text-[9px] text-zinc-400 block leading-none mb-0.5"
+                                            >cover</span
+                                        >
+                                        <span
+                                            class="text-xs tabular-nums {cover <=
+                                            7
+                                                ? 'text-red-500'
+                                                : cover <= 30
+                                                  ? 'text-amber-500'
+                                                  : 'text-zinc-500'}"
+                                            >{formatDays(q.days_until_stockout)}</span
+                                        >
+                                    </div>
+                                </div>
+                            {/each}
                         {/if}
                     </div>
                 </div>
             </div>
 
-            <!-- Activity Log 1/3 -->
-            <div class="lg:col-span-1">
+            <!-- Activity — the depletion side of the loop -->
+            <div class="lg:col-span-3">
                 <div
                     class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden"
                 >

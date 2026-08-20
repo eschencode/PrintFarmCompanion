@@ -1,19 +1,16 @@
 <script lang="ts">
   import { fileHandlerStore } from '$lib/stores/fileHandler';
-  import { fileHandlerEnabled, directPrinterEnabled, printerPiEnabled, manualModeEnabled } from '$lib/stores/connectionToggles';
+  import { fileHandlerEnabled, directPrinterEnabled, manualModeEnabled } from '$lib/stores/connectionToggles';
   import { isDesktop } from '$lib/stores/desktop';
-  import type { PrinterFull } from '$lib/types';
 
   /**
-   * Settings section for enabling/disabling and testing the three printer connection modes:
-   * File Handler (local .3mf opener), Direct Printer (Tauri MQTT), and Printer Pi (bridge).
+   * Settings section for enabling/disabling and testing the printer connection modes:
+   * File Handler (local .3mf opener), Direct Printer (Tauri MQTT), and Manual.
    * Each connection manages its own test state internally.
    */
-  export let printers: PrinterFull[];
 
   $: fhEnabled = $fileHandlerEnabled;
   $: dpEnabled = $directPrinterEnabled;
-  $: piEnabled = $printerPiEnabled;
   $: manualEnabled = $manualModeEnabled;
   $: desktop = $isDesktop;
 
@@ -22,7 +19,6 @@
   let testStatus: Record<string, { testing: boolean; result: 'untested' | 'success' | 'failed' }> = {
     fileHandler: { testing: false, result: 'untested' },
     directPrinter: { testing: false, result: 'untested' },
-    printerPi: { testing: false, result: 'untested' },
   };
 
   function saveFileHandlerToken() {
@@ -51,21 +47,6 @@
     }
   }
 
-  async function testPrinterPi() {
-    const serial = printers.find(p => p.secrets?.serial)?.secrets?.serial;
-    if (!serial) {
-      testStatus = { ...testStatus, printerPi: { testing: false, result: 'failed' } };
-      return;
-    }
-    testStatus = { ...testStatus, printerPi: { testing: true, result: 'untested' } };
-    try {
-      const res = await fetch(`/api/pi/status?serial=${serial}`);
-      const d = await res.json() as { pi_available?: boolean };
-      testStatus = { ...testStatus, printerPi: { testing: false, result: d.pi_available ? 'success' : 'failed' } };
-    } catch {
-      testStatus = { ...testStatus, printerPi: { testing: false, result: 'failed' } };
-    }
-  }
 </script>
 
 <div id="connections" class="bg-white dark:bg-[#111] rounded-xl border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden mb-10">
@@ -144,6 +125,7 @@
       <div class="px-4 py-3 bg-zinc-50 dark:bg-[#161616] flex items-center justify-between gap-4">
         <div class="flex-1 min-w-0 flex items-center gap-2">
           <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Direct Printer</p>
+          <span class="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400">Beta</span>
           {#if !desktop}
             <span class="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">Desktop only</span>
           {/if}
@@ -162,7 +144,7 @@
       </div>
       <div class="px-4 py-3 space-y-3">
         <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-          Connects directly to Bambu Lab printers on your local network using MQTT. Enables real-time status updates, sending print commands, and starting prints without going through the Pi. Requires the desktop app — each printer needs an IP, serial number, and access code configured.
+          Connects directly to Bambu Lab printers on your local network using MQTT. Enables real-time status updates, sending print commands, and starting prints. Requires the desktop app — each printer needs an IP, serial number, and access code configured.
         </p>
         {#if dpEnabled && desktop}
           <div class="flex items-center gap-2.5">
@@ -208,50 +190,6 @@
         <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
           Tracks prints without connecting to any printer. Starting a print registers the job using the module's estimated time and weight — progress is time-based. Confirm or fail prints manually when done. Overrides all other connection modes while enabled.
         </p>
-      </div>
-    </div>
-
-    <!-- ── Printer Pi ── -->
-    <div class="rounded-lg border border-zinc-100 dark:border-[#1e1e1e] overflow-hidden">
-      <div class="px-4 py-3 bg-zinc-50 dark:bg-[#161616] flex items-center justify-between gap-4">
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Printer Pi</p>
-        </div>
-        <button
-          type="button"
-          onclick={() => printerPiEnabled.toggle()}
-          class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {piEnabled ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'}"
-          role="switch"
-          aria-checked={piEnabled}
-          aria-label="Toggle Printer Pi"
-        >
-          <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform {piEnabled ? 'translate-x-6' : 'translate-x-1'}"></span>
-        </button>
-      </div>
-      <div class="px-4 py-3 space-y-3">
-        <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-          A Raspberry Pi on your local network acts as a bridge to your printers via a Cloudflare tunnel. Handles file uploads, print commands, and live status polling. Works from any browser — no desktop app needed. Configure the tunnel URL and secret in Settings → Pi Bridge.
-        </p>
-        {#if piEnabled}
-          <div class="flex items-center gap-2.5">
-            <button onclick={testPrinterPi}
-              disabled={testStatus.printerPi.testing}
-              class="h-7 px-2.5 rounded-md text-[11px] font-medium border border-zinc-200 dark:border-[#262626] text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-[#1a1a1a] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-              {testStatus.printerPi.testing ? 'Testing...' : 'Test'}
-            </button>
-            {#if testStatus.printerPi.result === 'success'}
-              <span class="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
-                Pi reachable
-              </span>
-            {:else if testStatus.printerPi.result === 'failed'}
-              <span class="inline-flex items-center gap-1 text-[11px] font-medium text-red-600 dark:text-red-400">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
-                {printers.some(p => p.secrets?.serial) ? 'Pi unreachable' : 'No printers with serial configured'}
-              </span>
-            {/if}
-          </div>
-        {/if}
       </div>
     </div>
 
