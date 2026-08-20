@@ -1,6 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
-import { regenerateGlobalQueueIfStale } from '$lib/server/printQueue';
 import { AIContextBuilder } from '$lib/recomendation/context-builder';
 import { requireCtx } from '$lib/server/context';
 import type { DashboardPrinter, PrinterFull } from '$lib/types';
@@ -13,10 +12,12 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     return { printers: [], spools: [], printModules: [], activePrintJobs: [], printJobs: [], spoolPresets: [], spoolUsage: [], gridPresets: [] };
   }
 
-  // Warm the global queue on dashboard load so the first per-printer spool-load
-  // assignment is fast (no synchronous full regeneration on the click path).
+  // NOTE: the global queue is NOT regenerated here. Doing so ran the heavy
+  // getInventoryWithVelocity() forecast a second time (it also runs below for the
+  // module cover labels) plus a per-object write loop, blowing the free plan's
+  // per-request CPU/subrequest limits (Error 1102). The queue is regenerated on
+  // the inventory page and on-demand by the per-printer assignment instead.
   const ctx = requireCtx(locals);
-  await regenerateGlobalQueueIfStale(ctx);
 
   const [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets, sparePartsCatalog] = await Promise.all([
     db.getAllPrintersFull(ctx),
