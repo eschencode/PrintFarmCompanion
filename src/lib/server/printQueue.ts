@@ -175,10 +175,11 @@ export async function getGlobalQueue(ctx: TenantContext): Promise<PrintQueueItem
     status: 'pending' | 'assigned' | 'done';
     assigned_printer_id: number | null;
     in_stock: number;
+    objects_per_print: number | null;
   }>(sql`
     SELECT pq.id, pq.object_id, o.name as object_name, pq.module_id, pm.name as module_name,
            pq.quantity, pq.priority, pq.reason, pq.source, pq.status, pq.assigned_printer_id,
-           o.in_stock
+           o.in_stock, pm.objects_per_print
     FROM print_queue pq
     JOIN objects o ON pq.object_id = o.id
     LEFT JOIN print_modules pm ON pq.module_id = pm.id

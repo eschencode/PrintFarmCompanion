@@ -2,13 +2,15 @@
   import { enhance } from '$app/forms';
   import type { SubmitFunction } from '@sveltejs/kit';
   import { resolveSpoolColor } from '$lib/utils/spoolColor';
-  import type { DashboardPrinter, SpoolPreset, SpoolSuggestion, SpoolWithPreset } from '$lib/types';
+  import type { DashboardPrinter, PrintModuleFull, SpoolPreset, SpoolSuggestion, SpoolWithPreset } from '$lib/types';
 
   export let printer: DashboardPrinter;
   /** Presets ordered: AI suggestions first, then the rest. */
   export let orderedSpoolPresets: Array<{ preset: SpoolPreset; suggestion: SpoolSuggestion | null }>;
   /** Full preset list — used to resolve hidden form inputs. */
   export let spoolPresets: SpoolPreset[];
+  /** All modules — used to surface each preset's most-urgent module on its card. */
+  export let printModules: PrintModuleFull[] = [];
   /** All open physical spools (for the "load existing" mode). */
   export let spools: SpoolWithPreset[];
   export let onClose: () => void;
@@ -40,6 +42,22 @@
   });
 
   $: selectedPreset = spoolPresets.find(p => p.id === selectedPresetId) ?? null;
+
+  // Per-preset "most urgent module": among active modules that print with this
+  // spool preset (slot-0 requirement), the one whose object runs out soonest.
+  // Lets every spool card show what it's needed for, not just AI-suggested ones.
+  $: bestModuleByPreset = (() => {
+    const map = new Map<number, { module_name: string; days: number | null }>();
+    for (const m of printModules) {
+      if (!m.active || m.default_spool_preset_id == null) continue;
+      const days = m.days_until_stockout ?? null;
+      const cur = map.get(m.default_spool_preset_id);
+      if (!cur || (days ?? Infinity) < (cur.days ?? Infinity)) {
+        map.set(m.default_spool_preset_id, { module_name: m.name, days });
+      }
+    }
+    return map;
+  })();
 </script>
 
 <div
@@ -144,6 +162,11 @@
           {#if orderedSpoolPresets.length > 0}
             <div class="grid grid-cols-2 gap-4">
               {#each orderedSpoolPresets as { preset, suggestion } (preset.id)}
+                {@const modInfo =
+                  bestModuleByPreset.get(preset.id) ??
+                  (suggestion
+                    ? { module_name: suggestion.module_name, days: suggestion.days_until_stockout }
+                    : null)}
                 <button
                   type="button"
                   onclick={() => (selectedPresetId = preset.id)}
@@ -181,22 +204,22 @@
                     >
                       In storage: {preset.in_storage ?? 0}
                     </p>
+                    {#if modInfo}
+                      <div
+                        class="flex justify-between items-center gap-2 text-xs text-zinc-400 dark:text-zinc-600 mt-3 pt-3 border-t border-zinc-200/60 dark:border-[#1a1a22]"
+                      >
+                        <span class="truncate">{modInfo.module_name}</span>
+                        <span class="shrink-0">{modInfo.days == null || modInfo.days >= 365 ? '365+' : Math.round(modInfo.days)}d left</span>
+                      </div>
+                    {/if}
                     <div
                       class="flex justify-between items-center mt-3 pt-3 border-t border-zinc-200/60 dark:border-[#1a1a22]"
                     >
-                      <span class="text-zinc-400 dark:text-zinc-600">Default weight</span>
+                      <span class="text-zinc-400 dark:text-zinc-600">Weight</span>
                       <span class="text-zinc-900 dark:text-zinc-100 font-medium tabular-nums"
                         >{preset.default_weight}g</span
                       >
                     </div>
-                    {#if suggestion}
-                      <div
-                        class="flex justify-between items-center gap-2 text-xs text-zinc-400 dark:text-zinc-600 mt-3 pt-3 border-t border-zinc-200/60 dark:border-[#1a1a22]"
-                      >
-                        <span class="truncate">{suggestion.module_name}</span>
-                        <span class="shrink-0">{suggestion.days_until_stockout >= 365 ? '365+' : Math.round(suggestion.days_until_stockout)}d left</span>
-                      </div>
-                    {/if}
                   </div>
                 </button>
               {/each}

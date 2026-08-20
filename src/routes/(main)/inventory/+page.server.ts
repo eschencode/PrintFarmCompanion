@@ -129,6 +129,22 @@ async function getSalesWindows(ctx: TenantContext): Promise<SalesWindow[]> {
   return (rows || []) as SalesWindow[];
 }
 
+// Total units that flowed back INTO stock over the last 7d — printed jobs plus
+// manual restocks (add-by-weight/sets/direct all log '+ stock count'). Computed
+// in SQL, not from the truncated recent-logs list, so it survives high volume.
+// This is the "in" side of the replenishment flow strip.
+async function getRestocked7d(ctx: TenantContext): Promise<number> {
+  const cutoff7 = Math.floor(Date.now() / 1000) - 7 * 86_400;
+  const rows = await ctx.db.all(sql`
+    SELECT COALESCE(SUM(ABS(quantity)), 0) as restocked
+    FROM inventory_log
+    WHERE workspace_id = ${ctx.workspaceId}
+      AND change_type IN ('+ printed', '+ stock count')
+      AND created_at > ${cutoff7}
+  `);
+  return Number((rows?.[0] as { restocked: number } | undefined)?.restocked ?? 0);
+}
+
 export const load: PageServerLoad = async ({ platform, locals }) => {
   const db = platform?.env?.DB;
   if (!db) return { items: [], logs: [], setDefinitions: [], unitWeights: [], categories: [], globalQueue: [] };
@@ -166,6 +182,12 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   const prodById = new Map(productionStats.map(p => [p.object_id, p]));
   const salesById = new Map(salesWindows.map(s => [s.object_id, s]));
   const weeklyThroughput = salesWindows.reduce((sum, s) => sum + (s.sold_7d ?? 0), 0);
+  let restocked7d = 0;
+  try {
+    restocked7d = await getRestocked7d(ctx);
+  } catch (err) {
+    console.error('Failed to load restock window:', err);
+  }
 
   try {
     const builder = new AIContextBuilder(ctx);
@@ -189,9 +211,9 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
         sold_30d: s?.sold_30d ?? 0,
       };
     });
-    return { items: itemsWithVelocity, logs, setDefinitions, unitWeights, categories, weeklyThroughput, globalQueue };
+    return { items: itemsWithVelocity, logs, setDefinitions, unitWeights, categories, weeklyThroughput, restocked7d, globalQueue };
   } catch {
-    return { items, logs, setDefinitions, unitWeights, categories, weeklyThroughput, globalQueue };
+    return { items, logs, setDefinitions, unitWeights, categories, weeklyThroughput, restocked7d, globalQueue };
   }
 };
 

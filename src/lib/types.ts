@@ -547,6 +547,9 @@ export interface PrintQueueItem {
   daily_velocity: number;
   days_until_stockout: number;
   stockout_risk: number;
+  // Units produced per run of the preferred module — turns a unit deficit
+  // (quantity) into the number of module runs to schedule.
+  objects_per_print?: number | null;
 }
 
 /** Spare-part catalog row for broken-printer buy suggestions (kind='part' catalog_items). */

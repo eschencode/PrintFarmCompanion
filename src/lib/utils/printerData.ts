@@ -101,12 +101,19 @@ export function getCategorizedModules(
     }
   }
 
-  const sortByWeight = (a: PrintModuleFull, b: PrintModuleFull) =>
-    (b.weight ?? 0) - (a.weight ?? 0);
-  categories.compatiblePrintable.sort(sortByWeight);
-  categories.compatibleInsufficientMaterial.sort(sortByWeight);
-  categories.anySpoolPrintable.sort(sortByWeight);
-  categories.anySpoolInsufficientMaterial.sort(sortByWeight);
+  // Rank by urgency: the module whose object runs out soonest comes first, so
+  // loading a spool surfaces every module it can print, worst-cover first.
+  // Items with no sell-through (null / 365+) fall to the bottom; weight breaks ties.
+  const sortByUrgency = (a: PrintModuleFull, b: PrintModuleFull) => {
+    const ad = a.days_until_stockout ?? Infinity;
+    const bd = b.days_until_stockout ?? Infinity;
+    if (ad !== bd) return ad - bd;
+    return (b.weight ?? 0) - (a.weight ?? 0);
+  };
+  categories.compatiblePrintable.sort(sortByUrgency);
+  categories.compatibleInsufficientMaterial.sort(sortByUrgency);
+  categories.anySpoolPrintable.sort(sortByUrgency);
+  categories.anySpoolInsufficientMaterial.sort(sortByUrgency);
 
   return categories;
 }

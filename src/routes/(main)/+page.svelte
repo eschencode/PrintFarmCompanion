@@ -1967,6 +1967,7 @@
         printer={selectedPrinter}
         {orderedSpoolPresets}
         spoolPresets={data.spoolPresets}
+        printModules={data.printModules}
         spools={data.spools}
         initialPresetId={spoolInitialPresetId}
         initialSlotIndex={spoolTargetSlotIndex}
