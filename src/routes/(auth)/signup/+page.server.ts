@@ -32,6 +32,8 @@ export const actions: Actions = {
       });
       userId = res.user.id;
     } catch (e) {
+      // Temporary: surface the real cause in `wrangler tail`.
+      console.error("signUpEmail failed:", e);
       const message =
         e instanceof Error ? e.message : "Could not create your account.";
       // Most common failure: the email already has an account. Surface a

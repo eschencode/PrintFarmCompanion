@@ -18,7 +18,10 @@ export const actions: Actions = {
         body: { email, password },
         headers: request.headers,
       });
-    } catch {
+    } catch (e) {
+      // Temporary: surface the real cause in `wrangler tail`. The generic
+      // message below hides runtime failures (e.g. scrypt) as "wrong password".
+      console.error("signInEmail failed:", e);
       // Don't leak which part was wrong.
       return fail(400, { email, error: "Invalid email or password." });
     }

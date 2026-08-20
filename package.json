@@ -57,6 +57,7 @@
     "wrangler": "^4.121.0"
   },
   "dependencies": {
+    "@noble/hashes": "^2.0.1",
     "@tauri-apps/api": "^2.10.1",
     "better-auth": "^1.6.23",
     "drizzle-orm": "^0.45.2",
