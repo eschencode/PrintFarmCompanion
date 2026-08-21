@@ -206,45 +206,45 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   // ── Inventory stats ───────────────────────────────────────────────────────
   let inventoryStats = null;
   try {
-    const inventoryItems = await getAllObjects(ctx);
-
     // inventory_log.created_at is stored as Unix seconds (D1 INTEGER, no /1000 conversion needed)
     const cutoff7d = Math.floor((now - 7 * 86400 * 1000) / 1000);
     const cutoff14d = Math.floor((now - 14 * 86400 * 1000) / 1000);
     const cutoff30d = Math.floor((now - 30 * 86400 * 1000) / 1000);
 
-    const velocityResult = await drizzleDb.all(sql`
-      SELECT
-        o.id, o.name, o.in_stock, o.min_threshold,
-        o.in_stock - o.min_threshold as stock_above_min,
-        COALESCE(SUM(CASE WHEN il.change_type IN ('- sold b2c','- sold b2b') AND il.created_at > ${cutoff7d}  THEN il.quantity ELSE 0 END), 0) as sold_7d,
-        COALESCE(SUM(CASE WHEN il.change_type IN ('- sold b2c','- sold b2b') AND il.created_at > ${cutoff14d} THEN il.quantity ELSE 0 END), 0) as sold_14d,
-        COALESCE(SUM(CASE WHEN il.change_type IN ('- sold b2c','- sold b2b') AND il.created_at > ${cutoff30d} THEN il.quantity ELSE 0 END), 0) as sold_30d
-      FROM objects o
-      LEFT JOIN inventory_log il ON il.object_id = o.id
-      WHERE o.workspace_id = ${ctx.workspaceId}
-      GROUP BY o.id
-    `);
+    // Independent reads — run concurrently instead of three serial round-trips.
+    const [inventoryItems, velocityResult, stockFlowResult] = await Promise.all([
+      getAllObjects(ctx),
+      drizzleDb.all(sql`
+        SELECT
+          o.id, o.name, o.in_stock, o.min_threshold,
+          o.in_stock - o.min_threshold as stock_above_min,
+          COALESCE(SUM(CASE WHEN il.change_type IN ('- sold b2c','- sold b2b') AND il.created_at > ${cutoff7d}  THEN il.quantity ELSE 0 END), 0) as sold_7d,
+          COALESCE(SUM(CASE WHEN il.change_type IN ('- sold b2c','- sold b2b') AND il.created_at > ${cutoff14d} THEN il.quantity ELSE 0 END), 0) as sold_14d,
+          COALESCE(SUM(CASE WHEN il.change_type IN ('- sold b2c','- sold b2b') AND il.created_at > ${cutoff30d} THEN il.quantity ELSE 0 END), 0) as sold_30d
+        FROM objects o
+        LEFT JOIN inventory_log il ON il.object_id = o.id
+        WHERE o.workspace_id = ${ctx.workspaceId}
+        GROUP BY o.id
+      `),
+      drizzleDb.all(sql`
+        SELECT
+          DATE(created_at, 'unixepoch') as day,
+          SUM(CASE WHEN change_type = '+ printed'     THEN quantity ELSE 0 END) as produced,
+          SUM(CASE WHEN change_type = '- sold b2c'    THEN quantity ELSE 0 END) as sold_b2c,
+          SUM(CASE WHEN change_type = '- sold b2b'    THEN quantity ELSE 0 END) as sold_b2b,
+          SUM(CASE WHEN change_type = '- stock count' THEN quantity ELSE 0 END) as removed
+        FROM inventory_log
+        WHERE workspace_id = ${ctx.workspaceId} AND created_at > ${cutoff30d}
+        GROUP BY day
+        ORDER BY day ASC
+      `),
+    ]);
     const velocityItems = (velocityResult || []).map((r: any) => ({
       ...r,
       stock_count: r.in_stock, // legacy alias for UI
       daily_velocity: r.sold_30d > 0 ? Math.round((r.sold_30d / 30) * 100) / 100 : 0,
       days_until_stockout: r.sold_30d > 0 ? Math.round((r.in_stock / (r.sold_30d / 30)) * 10) / 10 : 999,
     }));
-
-    // Daily stock flow from inventory_log — created_at is already seconds
-    const stockFlowResult = await drizzleDb.all(sql`
-      SELECT
-        DATE(created_at, 'unixepoch') as day,
-        SUM(CASE WHEN change_type = '+ printed'     THEN quantity ELSE 0 END) as produced,
-        SUM(CASE WHEN change_type = '- sold b2c'    THEN quantity ELSE 0 END) as sold_b2c,
-        SUM(CASE WHEN change_type = '- sold b2b'    THEN quantity ELSE 0 END) as sold_b2b,
-        SUM(CASE WHEN change_type = '- stock count' THEN quantity ELSE 0 END) as removed
-      FROM inventory_log
-      WHERE workspace_id = ${ctx.workspaceId} AND created_at > ${cutoff30d}
-      GROUP BY day
-      ORDER BY day ASC
-    `);
     const stockFlow = (stockFlowResult || []) as {
       day: string; produced: number; sold_b2c: number; sold_b2b: number; removed: number;
     }[];
@@ -290,34 +290,35 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   try {
     const cutoff30s = Math.floor((now - 30 * 86400 * 1000) / 1000);
 
-    const ordersResult = (await drizzleDb.get(sql`
-      SELECT
-        COUNT(*) as total_orders,
-        SUM(total_items) as total_items,
-        MIN(processed_at) as first_order,
-        MAX(processed_at) as last_order
-      FROM shopify_orders
-      WHERE workspace_id = ${ctx.workspaceId}
-    `)) as { total_orders: number; total_items: number; first_order: number; last_order: number } | undefined;
-
-    const recentOrders = (await drizzleDb.all(sql`
-      SELECT order_id, order_number, processed_at, total_items
-      FROM shopify_orders
-      WHERE workspace_id = ${ctx.workspaceId}
-      ORDER BY processed_at DESC
-      LIMIT 15
-    `)) as { order_id: string; order_number: string; processed_at: number; total_items: number }[];
-
-    const dailyOrdersResult = (await drizzleDb.all(sql`
-      SELECT
-        DATE(processed_at, 'unixepoch') as day,
-        COUNT(*) as order_count,
-        SUM(total_items) as items_count
-      FROM shopify_orders
-      WHERE workspace_id = ${ctx.workspaceId} AND processed_at > ${cutoff30s}
-      GROUP BY day
-      ORDER BY day ASC
-    `)) as { day: string; order_count: number; items_count: number }[];
+    // Independent reads — run concurrently instead of three serial round-trips.
+    const [ordersResult, recentOrders, dailyOrdersResult] = await Promise.all([
+      drizzleDb.get(sql`
+        SELECT
+          COUNT(*) as total_orders,
+          SUM(total_items) as total_items,
+          MIN(processed_at) as first_order,
+          MAX(processed_at) as last_order
+        FROM shopify_orders
+        WHERE workspace_id = ${ctx.workspaceId}
+      `) as Promise<{ total_orders: number; total_items: number; first_order: number; last_order: number } | undefined>,
+      drizzleDb.all(sql`
+        SELECT order_id, order_number, processed_at, total_items
+        FROM shopify_orders
+        WHERE workspace_id = ${ctx.workspaceId}
+        ORDER BY processed_at DESC
+        LIMIT 15
+      `) as Promise<{ order_id: string; order_number: string; processed_at: number; total_items: number }[]>,
+      drizzleDb.all(sql`
+        SELECT
+          DATE(processed_at, 'unixepoch') as day,
+          COUNT(*) as order_count,
+          SUM(total_items) as items_count
+        FROM shopify_orders
+        WHERE workspace_id = ${ctx.workspaceId} AND processed_at > ${cutoff30s}
+        GROUP BY day
+        ORDER BY day ASC
+      `) as Promise<{ day: string; order_count: number; items_count: number }[]>,
+    ]);
 
     const dailyOrdersMap = new Map(dailyOrdersResult.map((r) => [r.day, r]));
     const dailyOrders = Array.from({ length: 30 }, (_, i) => {

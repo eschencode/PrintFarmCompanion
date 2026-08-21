@@ -1,6 +1,5 @@
 import type { PageServerLoad, Actions } from './$types';
 import * as db from '$lib/server';
-import { regenerateGlobalQueueIfStale } from '$lib/server/printQueue';
 import { AIContextBuilder } from '$lib/recomendation/context-builder';
 import { requireCtx } from '$lib/server/context';
 import type { DashboardPrinter, PrinterFull } from '$lib/types';
@@ -13,26 +12,35 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
     return { printers: [], spools: [], printModules: [], activePrintJobs: [], printJobs: [], spoolPresets: [], spoolUsage: [], gridPresets: [] };
   }
 
-  // Warm the global queue on dashboard load so the first per-printer spool-load
-  // assignment is fast (no synchronous full regeneration on the click path).
+  // NOTE: the global queue is NOT regenerated here. Doing so ran the heavy
+  // getInventoryWithVelocity() forecast a second time (it also runs below for the
+  // module cover labels) plus a per-object write loop, blowing the free plan's
+  // per-request CPU/subrequest limits (Error 1102). The queue is regenerated on
+  // the inventory page and on-demand by the per-printer assignment instead.
   const ctx = requireCtx(locals);
-  await regenerateGlobalQueueIfStale(ctx);
 
-  const [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets, sparePartsCatalog] = await Promise.all([
-    db.getAllPrintersFull(ctx),
-    db.getAllSpools(ctx),
-    db.getAllPrintModules(ctx),
-    db.getActivePrintJobs(ctx),
-    db.getAllPrintJobs(ctx),
-    db.getAllSpoolPresets(ctx),
-    db.getSpoolUsageStats(ctx),
-    db.getAllGridPresets(ctx),
-    db.getSparePartCatalog(ctx),
+  // Run velocity in parallel with the rest — it's independent, so awaiting it
+  // after the Promise.all just added a serial round-trip to every dashboard load.
+  const [
+    [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets, sparePartsCatalog],
+    inv,
+  ] = await Promise.all([
+    Promise.all([
+      db.getAllPrintersFull(ctx),
+      db.getAllSpools(ctx),
+      db.getAllPrintModules(ctx),
+      db.getActivePrintJobs(ctx),
+      db.getAllPrintJobs(ctx),
+      db.getAllSpoolPresets(ctx),
+      db.getSpoolUsageStats(ctx),
+      db.getAllGridPresets(ctx),
+      db.getSparePartCatalog(ctx),
+    ]),
+    new AIContextBuilder(ctx).getInventoryWithVelocity(),
   ]);
 
   // Days-of-cover per object → attached to each module so the start-print picker
   // can show "Xd left" alongside the spool-fill numbers. Purely days-till-stockout.
-  const inv = await new AIContextBuilder(ctx).getInventoryWithVelocity();
   const daysByObject = new Map(inv.map((i) => [i.id, i.days_until_stockout]));
   const printModulesWithCover = printModules.map((m: any) => ({
     ...m,

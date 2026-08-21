@@ -13,11 +13,8 @@
     type ObjectItemUI = ObjectItem & {
         daily_velocity?: number;
         days_until_stockout?: number;
-        stockout_risk?: number;
         confidence?: "high" | "medium" | "low";
         days_with_sales?: number;
-        demand_p50?: number;
-        demand_p90?: number;
         weight_per_unit?: number | null;
         minutes_per_unit?: number | null;
         sold_7d?: number;

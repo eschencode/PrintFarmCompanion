@@ -5,7 +5,6 @@ import type {
 import { sql } from 'drizzle-orm';
 import type { TenantContext } from '../server/context';
 import {
-  StockoutForecast,
   FORECAST_LOOKBACK_DAYS,
   confidenceFromDaysWithSales
 } from './forecast';
@@ -22,7 +21,6 @@ const SEC_PER_DAY = 86_400;
 
 export class AIContextBuilder {
   private ctx: TenantContext;
-  private forecast = new StockoutForecast();
 
   constructor(ctx: TenantContext) {
     this.ctx = ctx;
@@ -91,10 +89,6 @@ export class AIContextBuilder {
 
     return (inventoryRows ?? []).map(item => {
       const dailySales = salesByObject.get(item.id) ?? new Array(windowDays).fill(0);
-      const key = String(item.id);
-
-      this.forecast.fit(key, dailySales);
-      const stockout_risk = this.forecast.riskAtStock(key, item.in_stock);
 
       let total = 0;
       let daysWithSales = 0;
@@ -113,11 +107,8 @@ export class AIContextBuilder {
         min_threshold: item.min_threshold,
         daily_velocity,
         days_until_stockout,
-        stockout_risk,
         confidence,
         days_with_sales: daysWithSales,
-        demand_p50: Math.round(this.forecast.quantile(key, 0.5)),
-        demand_p90: Math.round(this.forecast.quantile(key, 0.9))
       };
     });
   }

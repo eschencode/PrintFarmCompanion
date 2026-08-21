@@ -84,10 +84,6 @@ export class AIRecommendationService {
   }
 }
 
-// bucketPriority now lives in ./forecast (cycle-free home shared with the
-// global print queue); re-exported here so existing imports keep working.
-export { bucketPriority } from './forecast';
-
 export interface SuggestedPrintQueueItem {
   module_id: number;
   module_name: string;

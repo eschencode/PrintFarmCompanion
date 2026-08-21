@@ -5,7 +5,6 @@
   "identifier": "dev.eschencode.printfarmcompanion",
   "build": {
     "beforeDevCommand": "cd .. && npm run dev",
-    "beforeBuildCommand": "npm run build:sidecar",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist-stub"
   },
@@ -19,7 +18,6 @@
     "active": true,
     "targets": ["dmg", "app"],
     "icon": ["icons/icon.icns", "icons/icon.png"],
-    "externalBin": ["binaries/pfc-file-handler"],
     "category": "Productivity",
     "shortDescription": "Desktop shell for Print Farm Companion",
     "longDescription": "Native desktop shell for the Print Farm Companion web app, with bundled file handler and direct printer control.",
