@@ -19,21 +19,28 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   // the inventory page and on-demand by the per-printer assignment instead.
   const ctx = requireCtx(locals);
 
-  const [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets, sparePartsCatalog] = await Promise.all([
-    db.getAllPrintersFull(ctx),
-    db.getAllSpools(ctx),
-    db.getAllPrintModules(ctx),
-    db.getActivePrintJobs(ctx),
-    db.getAllPrintJobs(ctx),
-    db.getAllSpoolPresets(ctx),
-    db.getSpoolUsageStats(ctx),
-    db.getAllGridPresets(ctx),
-    db.getSparePartCatalog(ctx),
+  // Run velocity in parallel with the rest — it's independent, so awaiting it
+  // after the Promise.all just added a serial round-trip to every dashboard load.
+  const [
+    [printersFull, spools, printModules, activePrintJobs, printJobs, spoolPresets, spoolUsage, gridPresets, sparePartsCatalog],
+    inv,
+  ] = await Promise.all([
+    Promise.all([
+      db.getAllPrintersFull(ctx),
+      db.getAllSpools(ctx),
+      db.getAllPrintModules(ctx),
+      db.getActivePrintJobs(ctx),
+      db.getAllPrintJobs(ctx),
+      db.getAllSpoolPresets(ctx),
+      db.getSpoolUsageStats(ctx),
+      db.getAllGridPresets(ctx),
+      db.getSparePartCatalog(ctx),
+    ]),
+    new AIContextBuilder(ctx).getInventoryWithVelocity(),
   ]);
 
   // Days-of-cover per object → attached to each module so the start-print picker
   // can show "Xd left" alongside the spool-fill numbers. Purely days-till-stockout.
-  const inv = await new AIContextBuilder(ctx).getInventoryWithVelocity();
   const daysByObject = new Map(inv.map((i) => [i.id, i.days_until_stockout]));
   const printModulesWithCover = printModules.map((m: any) => ({
     ...m,

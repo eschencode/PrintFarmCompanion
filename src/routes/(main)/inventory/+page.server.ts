@@ -150,68 +150,63 @@ export const load: PageServerLoad = async ({ platform, locals }) => {
   if (!db) return { items: [], logs: [], setDefinitions: [], unitWeights: [], categories: [], globalQueue: [] };
   const ctx = requireCtx(locals);
 
-  // Keep the global backlog fresh on visit, then read it as the single source of
-  // truth for the "Print queue" panel (same table that feeds printer assignment).
-  await regenerateGlobalQueueIfStale(ctx);
-  let globalQueue: PrintQueueItem[] = [];
-  try {
-    globalQueue = await getGlobalQueue(ctx);
-  } catch (err) {
-    console.error('Failed to load global print queue:', err);
-  }
+  // Every read below is independent except the queue write→read chain, so run
+  // them all concurrently. Serial awaits stacked ~8 DB round-trips per load —
+  // seconds against remote D1 in dev. allSettled keeps one slow/failing query
+  // from taking down the whole page (mirrors the original per-block fallbacks).
+  const queueChain = (async () => {
+    await regenerateGlobalQueueIfStale(ctx);
+    return getGlobalQueue(ctx);
+  })();
 
-  const items = await getAllObjects(ctx);
-  const logs = await getAllRecentLogs(ctx, 50);
-  const categories = await getAllCategories(ctx);
-
-  let setDefinitions: SetDefinition[] = [];
-  let unitWeights: UnitWeight[] = [];
-  let productionStats: ProductionStat[] = [];
-  let salesWindows: SalesWindow[] = [];
-  try {
-    [setDefinitions, unitWeights, productionStats, salesWindows] = await Promise.all([
-      getSetDefinitions(ctx),
-      getUnitWeights(ctx),
-      getProductionStats(ctx),
-      getSalesWindows(ctx),
+  const [queueRes, itemsRes, logsRes, categoriesRes, extrasRes, restockedRes, velocityRes] =
+    await Promise.allSettled([
+      queueChain,
+      getAllObjects(ctx),
+      getAllRecentLogs(ctx, 50),
+      getAllCategories(ctx),
+      Promise.all([getSetDefinitions(ctx), getUnitWeights(ctx), getProductionStats(ctx), getSalesWindows(ctx)]),
+      getRestocked7d(ctx),
+      new AIContextBuilder(ctx).getInventoryWithVelocity(),
     ]);
-  } catch (err) {
-    console.error('Failed to load set/weight/production/sales data:', err);
-  }
+
+  const globalQueue: PrintQueueItem[] = queueRes.status === 'fulfilled' ? queueRes.value : [];
+  const items = itemsRes.status === 'fulfilled' ? itemsRes.value : [];
+  const logs = logsRes.status === 'fulfilled' ? logsRes.value : [];
+  const categories = categoriesRes.status === 'fulfilled' ? categoriesRes.value : [];
+  const [setDefinitions, unitWeights, productionStats, salesWindows] = (
+    extrasRes.status === 'fulfilled'
+      ? extrasRes.value
+      : [[], [], [], []]
+  ) as [SetDefinition[], UnitWeight[], ProductionStat[], SalesWindow[]];
+  const restocked7d = restockedRes.status === 'fulfilled' ? restockedRes.value : 0;
+  const velocityList = velocityRes.status === 'fulfilled' ? velocityRes.value : [];
+
+  if (queueRes.status === 'rejected') console.error('Failed to load global print queue:', queueRes.reason);
 
   const prodById = new Map(productionStats.map(p => [p.object_id, p]));
   const salesById = new Map(salesWindows.map(s => [s.object_id, s]));
+  const velById = new Map(velocityList.map(v => [v.id, v]));
   const weeklyThroughput = salesWindows.reduce((sum, s) => sum + (s.sold_7d ?? 0), 0);
-  let restocked7d = 0;
-  try {
-    restocked7d = await getRestocked7d(ctx);
-  } catch (err) {
-    console.error('Failed to load restock window:', err);
-  }
 
-  try {
-    const builder = new AIContextBuilder(ctx);
-    const velocityList = await builder.getInventoryWithVelocity();
-    const itemsWithVelocity = items.map(i => {
-      const v = velocityList.find(v => v.id === i.id);
-      const p = prodById.get(i.id);
-      const s = salesById.get(i.id);
-      return {
-        ...i,
-        daily_velocity: v?.daily_velocity ?? 0,
-        days_until_stockout: v?.days_until_stockout ?? 999,
-        confidence: v?.confidence ?? 'low',
-        days_with_sales: v?.days_with_sales ?? 0,
-        weight_per_unit: p?.weight_per_unit ?? null,
-        minutes_per_unit: p?.minutes_per_unit ?? null,
-        sold_7d: s?.sold_7d ?? 0,
-        sold_30d: s?.sold_30d ?? 0,
-      };
-    });
-    return { items: itemsWithVelocity, logs, setDefinitions, unitWeights, categories, weeklyThroughput, restocked7d, globalQueue };
-  } catch {
-    return { items, logs, setDefinitions, unitWeights, categories, weeklyThroughput, restocked7d, globalQueue };
-  }
+  const itemsWithVelocity = items.map(i => {
+    const v = velById.get(i.id);
+    const p = prodById.get(i.id);
+    const s = salesById.get(i.id);
+    return {
+      ...i,
+      daily_velocity: v?.daily_velocity ?? 0,
+      days_until_stockout: v?.days_until_stockout ?? 999,
+      confidence: v?.confidence ?? 'low',
+      days_with_sales: v?.days_with_sales ?? 0,
+      weight_per_unit: p?.weight_per_unit ?? null,
+      minutes_per_unit: p?.minutes_per_unit ?? null,
+      sold_7d: s?.sold_7d ?? 0,
+      sold_30d: s?.sold_30d ?? 0,
+    };
+  });
+
+  return { items: itemsWithVelocity, logs, setDefinitions, unitWeights, categories, weeklyThroughput, restocked7d, globalQueue };
 };
 
 export const actions: Actions = {
