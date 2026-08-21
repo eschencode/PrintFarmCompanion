@@ -507,12 +507,8 @@ export interface ObjectWithVelocity {
   min_threshold: number;
   daily_velocity: number;
   days_until_stockout: number;
-  stockout_risk: number;
   confidence: 'high' | 'medium' | 'low';
   days_with_sales: number;
-  // Bootstrap cumulative-demand quantiles over the forecast horizon.
-  demand_p50: number;
-  demand_p90: number;
 }
 
 export interface SpoolSuggestion {
@@ -546,7 +542,6 @@ export interface PrintQueueItem {
   in_stock: number;
   daily_velocity: number;
   days_until_stockout: number;
-  stockout_risk: number;
   // Units produced per run of the preferred module — turns a unit deficit
   // (quantity) into the number of module runs to schedule.
   objects_per_print?: number | null;

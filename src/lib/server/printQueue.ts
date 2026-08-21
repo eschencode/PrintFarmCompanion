@@ -197,7 +197,6 @@ export async function getGlobalQueue(ctx: TenantContext): Promise<PrintQueueItem
       ...r,
       daily_velocity: v?.daily_velocity ?? 0,
       days_until_stockout: v?.days_until_stockout ?? 999,
-      stockout_risk: v?.stockout_risk ?? 0,
     } satisfies PrintQueueItem;
   });
 
